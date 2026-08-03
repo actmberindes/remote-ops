@@ -1,0 +1,278 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "name": "Administrator",
+      "email": "admin@88thfloor.com",
+      "passwordHash": "$2a$10$SgaDCvGtW.E0TmycMWLR6O3EG7/GZPHzuHpF2H5cls9iN1okDCZ3S",
+      "role": "Admin",
+      "department": "IT",
+      "jobTitle": "IT Administrator",
+      "managerId": null,
+      "status": "inactive"
+    },
+    {
+      "id": 2,
+      "name": "Daryl Garcia",
+      "email": "darylg@88thfloor.com",
+      "passwordHash": "$2a$10$SgaDCvGtW.E0TmycMWLR6O3EG7/GZPHzuHpF2H5cls9iN1okDCZ3S",
+      "role": "Manager",
+      "department": "IT",
+      "jobTitle": "IT Manager",
+      "managerId": null,
+      "status": "inactive"
+    },
+    {
+      "id": 3,
+      "name": "Leslie Occo",
+      "email": "leslieo@88thfloor.com",
+      "passwordHash": "$2a$10$SgaDCvGtW.E0TmycMWLR6O3EG7/GZPHzuHpF2H5cls9iN1okDCZ3S",
+      "role": "Manager",
+      "department": "Order Management",
+      "jobTitle": "OMD Manager",
+      "managerId": null,
+      "status": "inactive"
+    },
+    {
+      "id": 4,
+      "name": "Roshell Tecson",
+      "email": "roshellt@88thfloor.com",
+      "passwordHash": "$2a$10$SgaDCvGtW.E0TmycMWLR6O3EG7/GZPHzuHpF2H5cls9iN1okDCZ3S",
+      "role": "Employee",
+      "department": "Order Management",
+      "jobTitle": "Order Entry",
+      "managerId": 3,
+      "status": "inactive"
+    },
+    {
+      "id": 5,
+      "name": "Cloris Colonia",
+      "email": "clorisc@88thfloor.com",
+      "passwordHash": "$2a$10$SgaDCvGtW.E0TmycMWLR6O3EG7/GZPHzuHpF2H5cls9iN1okDCZ3S",
+      "role": "Employee",
+      "department": "Order Management",
+      "jobTitle": "Order Entry",
+      "managerId": 3,
+      "status": "inactive"
+    },
+    {
+      "id": 6,
+      "name": "Karen Asis",
+      "email": "karena@88thfloor.com",
+      "passwordHash": "$2a$10$SgaDCvGtW.E0TmycMWLR6O3EG7/GZPHzuHpF2H5cls9iN1okDCZ3S",
+      "role": "Employee",
+      "department": "IT",
+      "jobTitle": "Web Developer",
+      "managerId": 2,
+      "status": "inactive"
+    },
+    {
+      "id": 7,
+      "name": "Joshua Alvarez",
+      "email": "joshuaa@88thfloor.com",
+      "passwordHash": "$2a$10$SgaDCvGtW.E0TmycMWLR6O3EG7/GZPHzuHpF2H5cls9iN1okDCZ3S",
+      "role": "Employee",
+      "department": "IT",
+      "jobTitle": "Web Developer",
+      "managerId": 2,
+      "status": "inactive"
+    },
+    {
+      "id": 8,
+      "name": "Ronald Arabis",
+      "email": "ronalda@88thfloor.com",
+      "passwordHash": "$2a$10$SgaDCvGtW.E0TmycMWLR6O3EG7/GZPHzuHpF2H5cls9iN1okDCZ3S",
+      "role": "Manager",
+      "department": "ART",
+      "jobTitle": "ART Manager",
+      "managerId": null,
+      "status": "inactive"
+    },
+    {
+      "id": 9,
+      "name": "Karen Mirabel",
+      "email": "karenl@88thfloor.com",
+      "passwordHash": "$2a$10$SgaDCvGtW.E0TmycMWLR6O3EG7/GZPHzuHpF2H5cls9iN1okDCZ3S",
+      "role": "Employee",
+      "department": "ART",
+      "jobTitle": "Donor Wall",
+      "managerId": 8,
+      "status": "inactive"
+    },
+    {
+      "id": 1006,
+      "name": "Mark Anthony Almasin",
+      "email": "marka@88thfloor.com",
+      "passwordHash": "$2a$10$N.8PiI2uvaH7r2eTvHBmH.VVoSuKFUlY03EAeVarb0/6vP4XvDnu2",
+      "role": "Employee",
+      "department": "IT",
+      "jobTitle": "Web Developer",
+      "managerId": 2,
+      "status": "inactive"
+    },
+    {
+      "id": 1012,
+      "name": "JR Guardiano",
+      "email": "guardianoj@88thfloor.com",
+      "passwordHash": "$2a$10$RaS73ZAFT0TYwnOl9glgs.v99CqDHbBGAqdOe4s2A64C7lbLXJksa",
+      "role": "Employee",
+      "department": "IT",
+      "jobTitle": "App Developer",
+      "managerId": 2,
+      "status": "inactive"
+    }
+  ],
+  "applications": [
+    {
+      "id": 1001,
+      "userId": 4,
+      "status": "approved",
+      "submittedDate": "2026-06-01",
+      "location": "Cebu City Home Office",
+      "startDate": "2026-06-05",
+      "defaultEndDate": "2026-09-05",
+      "temporary": false,
+      "endDate": "2026-09-05",
+      "days": {
+        "mon": "WFH",
+        "tue": "WFH",
+        "wed": "Office",
+        "thu": "WFH",
+        "fri": "WFH",
+        "sat": "Off",
+        "sun": "Off"
+      },
+      "internetType": "Fiber",
+      "fileName": "speedtest-roshell.png",
+      "reason": "Focus work on primary order management processing."
+    },
+    {
+      "id": 1002,
+      "userId": 5,
+      "status": "pending",
+      "submittedDate": "2026-07-20",
+      "location": "Lapu-Lapu City Apartment",
+      "startDate": "2026-07-28",
+      "defaultEndDate": "2026-10-28",
+      "temporary": false,
+      "endDate": "2026-10-28",
+      "days": {
+        "mon": "WFH",
+        "tue": "Office",
+        "wed": "WFH",
+        "thu": "Office",
+        "fri": "WFH",
+        "sat": "Off",
+        "sun": "Off"
+      },
+      "internetType": "Cable",
+      "fileName": "speedtest-cloris.png",
+      "reason": "Reducing daily commute hours to increase availability during order processing peaks."
+    },
+    {
+      "id": 1008,
+      "userId": 9,
+      "status": "pending",
+      "submittedDate": "2026-08-03",
+      "location": "Cebu",
+      "startDate": "2026-07-30",
+      "defaultEndDate": "2026-10-30",
+      "temporary": false,
+      "endDate": "2026-10-30",
+      "days": {
+        "mon": "WFH",
+        "tue": "WFH",
+        "wed": "WFH",
+        "thu": "WFH",
+        "fri": "WFH",
+        "sat": "Off",
+        "sun": "Off"
+      },
+      "internetType": "Fiber",
+      "fileName": "speedtest.png",
+      "reason": "test"
+    },
+    {
+      "id": 1010,
+      "userId": 7,
+      "status": "pending",
+      "submittedDate": "2026-08-03",
+      "location": "Lapu-Lapu",
+      "startDate": "2026-08-03",
+      "defaultEndDate": "2026-11-03",
+      "temporary": true,
+      "endDate": "2026-09-03",
+      "days": {
+        "mon": "WFH",
+        "tue": "Office",
+        "wed": "WFH",
+        "thu": "Office",
+        "fri": "WFH",
+        "sat": "Off",
+        "sun": "Off"
+      },
+      "internetType": "Fiber",
+      "fileName": "Screenshot 2026-08-03 092858.png",
+      "reason": "Test"
+    }
+  ],
+  "timeSessions": [
+    {
+      "id": 1007,
+      "userId": 4,
+      "date": "2026-08-01",
+      "startTime": "07:54 AM",
+      "endTime": "07:56 AM",
+      "totalHours": 0.02,
+      "status": "Completed"
+    },
+    {
+      "id": 1003,
+      "userId": 4,
+      "date": "2026-07-27",
+      "startTime": "08:58 AM",
+      "endTime": "05:31 PM",
+      "totalHours": 8.55,
+      "status": "Completed"
+    },
+    {
+      "id": 1004,
+      "userId": 4,
+      "date": "2026-07-28",
+      "startTime": "09:03 AM",
+      "endTime": "05:12 PM",
+      "totalHours": 8.15,
+      "status": "Completed"
+    }
+  ],
+  "notifications": [
+    {
+      "id": 1005,
+      "audience": "role",
+      "role": "Admin",
+      "message": "WFH applications pending review across departments.",
+      "type": "warning",
+      "read": false,
+      "timestamp": "2026-07-29 09:12 AM"
+    },
+    {
+      "id": 1009,
+      "audience": "user",
+      "userId": 8,
+      "message": "Karen Mirabel submitted a new WFH application.",
+      "type": "info",
+      "read": false,
+      "timestamp": "8/3/2026, 8:52:00 AM"
+    },
+    {
+      "id": 1011,
+      "audience": "user",
+      "userId": 2,
+      "message": "Joshua Alvarez submitted a new WFH application.",
+      "type": "info",
+      "read": false,
+      "timestamp": "8/3/2026, 9:29:20 AM"
+    }
+  ],
+  "idSeq": 1012
+}
