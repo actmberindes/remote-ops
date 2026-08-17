@@ -12,6 +12,7 @@ import { assetTagsRouter } from './routes/asset-tags.js';
 import { uploadsRouter, uploadsDir } from './uploads.js';
 import { agentRouter } from './routes/agent.js';
 import { activityRouter } from './routes/activity.js';
+import { db, nextAssetTag } from './db.js';
 
 const app = express();
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
@@ -26,6 +27,27 @@ app.use('/api/applications', applicationsRouter);
 app.use('/api/time-sessions', timeSessionsRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/tickets', ticketsRouter);
+
+// The existing asset route calls nextAssetTag() before it has attached the request type.
+// Rewrite the newly-created asset tag at the response boundary so the stored record and
+// returned API object both use the selected asset type prefix.
+app.use('/api/assets', (req, res, next) => {
+  if (req.method !== 'POST' || !req.body?.type) return next();
+  const originalJson = res.json.bind(res);
+  res.json = (body) => {
+    if (body?.id && body?.assetTag) {
+      const asset = db.data.assets.find(a => a.id === Number(body.id));
+      if (asset) {
+        const tag = nextAssetTag(req.body.type);
+        asset.assetTag = tag;
+        void db.write();
+        body = { ...body, assetTag: tag };
+      }
+    }
+    return originalJson(body);
+  };
+  next();
+});
 app.use('/api/assets', assetsRouter);
 app.use('/api/asset-tags', assetTagsRouter);
 app.use('/api/uploads', uploadsRouter);
