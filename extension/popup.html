@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Remote Ops Activity Tracker</title>
+  <style>
+    body { width: 280px; font-family: -apple-system, "Segoe UI", Arial, sans-serif; margin: 0; padding: 16px; color: #12181f; background: #fff; }
+    h1 { font-size: 14px; font-weight: 700; margin: 0 0 4px; }
+    p { font-size: 11px; color: #5c6670; margin: 0 0 12px; line-height: 1.4; }
+    input { width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 16px; letter-spacing: 2px; text-align: center; border: 1px solid #e3e5e1; border-radius: 8px; margin-bottom: 8px; }
+    button { width: 100%; padding: 9px; font-size: 12px; font-weight: 700; border: none; border-radius: 8px; cursor: pointer; }
+    .primary { background: #4457e8; color: #fff; }
+    .secondary { background: #f5f6f4; color: #12181f; border: 1px solid #e3e5e1; }
+    .status { display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid #e3e5e1; border-radius: 8px; margin-bottom: 12px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #1f9d6b; flex-shrink: 0; }
+    .name { font-size: 12px; font-weight: 700; }
+    .error { color: #db4c4c; font-size: 11px; margin: -4px 0 8px; }
+    #pairedView, #pairView { display: none; }
+  </style>
+</head>
+<body>
+  <h1>Remote Ops Activity Tracker</h1>
+
+  <div id="pairView">
+    <p>Enter the pairing code from your Dashboard's "Pair This Device" card (valid 10 minutes).</p>
+    <input id="codeInput" maxlength="6" placeholder="000000" inputmode="numeric" />
+    <div id="pairError" class="error" style="display:none;"></div>
+    <button id="pairBtn" class="primary">Pair This Browser</button>
+  </div>
+
+  <div id="pairedView">
+    <div class="status">
+      <span class="dot"></span>
+      <div>
+        <div class="name" id="employeeName"></div>
+        <div style="font-size: 10px; color: #5c6670;">Web activity tracking active</div>
+      </div>
+    </div>
+    <button id="unpairBtn" class="secondary">Unpair This Browser</button>
+  </div>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>
