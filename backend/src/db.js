@@ -11,8 +11,14 @@ const defaultData = {
   tickets: [], ticketMessages: [], ticketAttachments: [],
   assets: [], assetAssignments: [], assetLogs: [],
   // Desktop agent / activity monitoring
-  devices: [], pairingCodes: [], screenshots: [], liveFrames: [], webUsageLogs: [],
-  agentConfig: { screenshotIntervalMinutes: 10, liveViewFrameIntervalSeconds: 5, screenshotRetentionDays: 30 },
+  devices: [], pairingCodes: [], screenshots: [], liveFrames: [], liveFrameHistory: [], webUsageLogs: [],
+  // Monitoring defaults: screenshots and historical live-view frames are retained for one week.
+  agentConfig: {
+    screenshotIntervalMinutes: 10,
+    liveViewFrameIntervalSeconds: 5,
+    screenshotRetentionDays: 7,
+    liveViewRetentionDays: 7,
+  },
   idSeq: 1000, ticketSeq: 0, assetTagSeq: 0,
 };
 
@@ -21,6 +27,15 @@ export const db = await JSONFilePreset(dbFile, defaultData);
 // Backfill collections for any db.json created before these existed.
 for (const key of Object.keys(defaultData)) {
   if (db.data[key] === undefined) db.data[key] = defaultData[key];
+}
+// Existing installations may have the older 30-day screenshot default. The requested
+// default for this application is one week; do not overwrite an administrator's
+// explicitly configured value once it has been changed.
+if (db.data.agentConfig && db.data.agentConfig.screenshotRetentionDays === 30 && !db.data.agentConfig.liveViewRetentionDays) {
+  db.data.agentConfig.screenshotRetentionDays = 7;
+}
+if (db.data.agentConfig && db.data.agentConfig.liveViewRetentionDays === undefined) {
+  db.data.agentConfig.liveViewRetentionDays = 7;
 }
 await db.write();
 
@@ -34,9 +49,53 @@ export function nextTicketNumber() {
   return `TCK-${String(db.data.ticketSeq).padStart(4, '0')}`;
 }
 
-export function nextAssetTag() {
+const ASSET_TAG_PREFIXES = {
+  desktop: 'DT',
+  laptop: 'LP',
+  server: 'SRV',
+  monitor: 'MON',
+  printer: 'PRN',
+  phone: 'PH',
+  tablet: 'TAB',
+  router: 'RTR',
+  switch: 'SWT',
+  firewall: 'FW',
+  keyboard: 'KB',
+  mouse: 'MSE',
+  headset: 'HS',
+  docking: 'DK',
+  'dock station': 'DK',
+};
+
+function assetTypePrefix(type) {
+  const normalized = String(type || '').trim().toLowerCase();
+  if (ASSET_TAG_PREFIXES[normalized]) return ASSET_TAG_PREFIXES[normalized];
+  const compact = normalized.replace(/[^a-z0-9]/g, '');
+  if (compact.includes('desktop')) return 'DT';
+  if (compact.includes('laptop') || compact.includes('notebook')) return 'LP';
+  if (compact.includes('server')) return 'SRV';
+  if (compact.includes('monitor')) return 'MON';
+  if (compact.includes('printer')) return 'PRN';
+  if (compact.includes('router')) return 'RTR';
+  if (compact.includes('switch')) return 'SWT';
+  if (compact.includes('keyboard')) return 'KB';
+  if (compact.includes('mouse')) return 'MSE';
+  if (compact.includes('headset')) return 'HS';
+  const letters = String(type || '').toUpperCase().replace(/[^A-Z]/g, '');
+  return (letters.slice(0, 3) || 'AST');
+}
+
+export function nextAssetTag(type) {
+  const prefix = assetTypePrefix(type);
+  // Four random digits, with a monotonic fallback sequence to avoid accidental duplicates.
+  // The uniqueness check also protects against an existing tag already using the same value.
+  let tag;
+  do {
+    const suffix = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+    tag = `${prefix}${suffix}`;
+  } while (db.data.assets.some(a => a.assetTag === tag));
   db.data.assetTagSeq = (db.data.assetTagSeq || 0) + 1;
-  return `AST-${String(db.data.assetTagSeq).padStart(4, '0')}`;
+  return tag;
 }
 
 const hash = (plain) => bcrypt.hashSync(plain, 10);
@@ -83,19 +142,19 @@ async function seedIfEmpty() {
 
   // --- Assets ---
   const asset1 = {
-    id: nextId(), name: 'Dell Latitude 5440', type: 'Laptop', assetTag: nextAssetTag(), brand: 'Dell', model: 'Latitude 5440',
+    id: nextId(), name: 'Dell Latitude 5440', type: 'Laptop', assetTag: nextAssetTag('Laptop'), brand: 'Dell', model: 'Latitude 5440',
     serialNumber: 'DL5440-2201', purchaseDate: '2025-02-10', warrantyExpiry: '2028-02-10', status: 'In Use', remarks: '',
     specs: { Motherboard: 'Dell 0XYZ12', CPU: 'Intel Core i7-1355U', RAM: '16GB DDR5', 'Storage Size': '512GB NVMe SSD', 'Video Card': 'Intel Iris Xe (Integrated)', OS: 'Windows 11 Pro' },
     imageUrl: null,
   };
   const asset2 = {
-    id: nextId(), name: 'HP LaserJet Pro', type: 'Printer', assetTag: nextAssetTag(), brand: 'HP', model: 'LaserJet Pro M404',
+    id: nextId(), name: 'HP LaserJet Pro', type: 'Printer', assetTag: nextAssetTag('Printer'), brand: 'HP', model: 'LaserJet Pro M404',
     serialNumber: 'HPLJ-9981', purchaseDate: '2024-11-02', warrantyExpiry: '2026-11-02', status: 'Available', remarks: 'Located at IT storage room',
     specs: { 'Print Type': 'Laser (Mono)', Connectivity: 'USB, Ethernet', 'Duty Cycle': '80,000 pages/month', 'Paper Size': 'A4, Letter, Legal' },
     imageUrl: null,
   };
   const asset3 = {
-    id: nextId(), name: 'Dell UltraSharp 27"', type: 'Monitor', assetTag: nextAssetTag(), brand: 'Dell', model: 'U2723QE',
+    id: nextId(), name: 'Dell UltraSharp 27"', type: 'Monitor', assetTag: nextAssetTag('Monitor'), brand: 'Dell', model: 'U2723QE',
     serialNumber: 'DLU27-0451', purchaseDate: '2025-05-18', warrantyExpiry: '2028-05-18', status: 'Available', remarks: '',
     specs: { 'Display Size': '27 inch', 'Panel Type': 'IPS Black', Resolution: '3840x2160 (4K UHD)', 'Viewing Angle': '178°/178°', 'Refresh Rate': '60Hz', Inputs: 'HDMI, DisplayPort, USB-C', 'Wall Mount Compatible': 'Yes (VESA 100x100)' },
     imageUrl: null,
