@@ -13,10 +13,21 @@ function userName(id) {
   return u ? u.name : 'Unknown';
 }
 
-function purgeOldScreenshots() {
-  const retentionMs = (db.data.agentConfig.screenshotRetentionDays || 30) * 24 * 60 * 60 * 1000;
-  const cutoff = Date.now() - retentionMs;
-  db.data.screenshots = db.data.screenshots.filter(s => new Date(s.capturedAt).getTime() > cutoff || Number.isNaN(new Date(s.capturedAt).getTime()));
+function retentionCutoff(days) {
+  return Date.now() - Number(days || 7) * 24 * 60 * 60 * 1000;
+}
+
+function purgeOldActivity() {
+  const screenshotCutoff = retentionCutoff(db.data.agentConfig.screenshotRetentionDays);
+  const liveCutoff = retentionCutoff(db.data.agentConfig.liveViewRetentionDays);
+  db.data.screenshots = db.data.screenshots.filter(s => {
+    const ts = new Date(s.capturedAt).getTime();
+    return Number.isNaN(ts) || ts > screenshotCutoff;
+  });
+  db.data.liveFrameHistory = (db.data.liveFrameHistory || []).filter(f => {
+    const ts = new Date(f.capturedAt).getTime();
+    return Number.isNaN(ts) || ts > liveCutoff;
+  });
 }
 
 /* ---- Ingestion: called by the desktop agent / browser extension (device auth) ---- */
@@ -29,7 +40,7 @@ activityRouter.post('/screenshots', requireDevice(db), async (req, res) => {
     url, filename: filename || '', capturedAt: capturedAt || new Date().toISOString(), type: 'scheduled',
   };
   db.data.screenshots.push(entry);
-  purgeOldScreenshots();
+  purgeOldActivity();
   await db.write();
   res.status(201).json(entry);
 });
@@ -46,6 +57,10 @@ activityRouter.post('/live-frame', requireDevice(db), async (req, res) => {
   } else {
     db.data.liveFrames.push({ employeeId: req.employee.id, deviceId: req.device.id, url, capturedAt: ts });
   }
+  // Keep every live frame as historical data as well as the latest frame used by Live View.
+  db.data.liveFrameHistory = db.data.liveFrameHistory || [];
+  db.data.liveFrameHistory.push({ id: nextId(), employeeId: req.employee.id, deviceId: req.device.id, url, capturedAt: ts });
+  purgeOldActivity();
   await db.write();
   res.status(201).json({ ok: true });
 });
@@ -70,7 +85,7 @@ activityRouter.post('/web-usage', requireDevice(db), async (req, res) => {
 /* ---- Consumption: called by the Admin/Manager/Employee web app (user auth) ---- */
 
 function scopedEmployeeIds(user) {
-  if (user.role === 'Admin') return null; // null = no restriction
+  if (user.role === 'Admin') return null;
   if (user.role === 'Manager') return teamIdsOf(user.id);
   return new Set([user.id]);
 }
@@ -91,6 +106,7 @@ activityRouter.get('/live-view', requireAuth(db), requireRole('Admin', 'Manager'
 });
 
 activityRouter.get('/screenshots', requireAuth(db), requireRole('Admin', 'Manager'), (req, res) => {
+  purgeOldActivity();
   const allowed = scopedEmployeeIds(req.user);
   const { employeeId, date, limit } = req.query;
 
@@ -103,11 +119,21 @@ activityRouter.get('/screenshots', requireAuth(db), requireRole('Admin', 'Manage
   res.json(list.slice(0, cap).map(s => ({ ...s, employeeName: userName(s.employeeId) })));
 });
 
+activityRouter.get('/live-history', requireAuth(db), requireRole('Admin', 'Manager'), (req, res) => {
+  purgeOldActivity();
+  const allowed = scopedEmployeeIds(req.user);
+  const { employeeId, date, limit } = req.query;
+  let list = (db.data.liveFrameHistory || []).filter(f => !allowed || allowed.has(f.employeeId));
+  if (employeeId) list = list.filter(f => f.employeeId === Number(employeeId));
+  if (date) list = list.filter(f => f.capturedAt.slice(0, 10) === date);
+  list.sort((a, b) => (a.capturedAt < b.capturedAt ? 1 : -1));
+  const cap = Math.min(Number(limit) || 100, 500);
+  res.json(list.slice(0, cap).map(f => ({ ...f, employeeName: userName(f.employeeId) })));
+});
+
 activityRouter.get('/web-usage', requireAuth(db), (req, res) => {
   const { employeeId, date } = req.query;
   let allowed = scopedEmployeeIds(req.user);
-
-  // Employees may only ever query their own usage.
   if (req.user.role === 'Employee') allowed = new Set([req.user.id]);
 
   let list = db.data.webUsageLogs.filter(r => !allowed || allowed.has(r.employeeId));
