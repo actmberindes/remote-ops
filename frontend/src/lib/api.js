@@ -69,7 +69,7 @@ export const api = {
       let data = {};
       try { data = await res.json(); } catch (e) { /* empty body */ }
       if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
-      return data; // { url, filename, mimeType, size }
+      return data;
     },
     fileUrl: (path) => (path && path.startsWith('/uploads/') ? `${API_URL.replace(/\/api$/, '')}${path}` : path),
   },
@@ -98,6 +98,14 @@ export const api = {
 
   activity: {
     liveView: () => request('/activity/live-view'),
+    liveHistory: ({ employeeId, date, limit } = {}) => {
+      const params = new URLSearchParams();
+      if (employeeId) params.set('employeeId', employeeId);
+      if (date) params.set('date', date);
+      if (limit) params.set('limit', limit);
+      const qs = params.toString();
+      return request(`/activity/live-history${qs ? `?${qs}` : ''}`);
+    },
     screenshots: ({ employeeId, date, limit } = {}) => {
       const params = new URLSearchParams();
       if (employeeId) params.set('employeeId', employeeId);
