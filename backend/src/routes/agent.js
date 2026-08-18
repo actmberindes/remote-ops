@@ -98,26 +98,11 @@ agentRouter.put('/config', requireAuth(db), requireRole('Admin'), async (req, re
   res.json(db.data.agentConfig);
 });
 
-// Employee self-service device view. Returns only devices paired to the signed-in employee.
 agentRouter.get('/my-devices', requireAuth(db), async (req, res) => {
   const devices = db.data.devices
     .filter(d => d.employeeId === req.user.id)
     .map(d => ({ ...d, employeeName: userName(d.employeeId) }));
   res.json(devices);
-});
-
-// Employee self-service unlink. This only affects the caller's own paired device.
-// Admins may continue using the existing /devices/:id/revoke endpoint.
-agentRouter.patch('/my-devices/:id/unlink', requireAuth(db), async (req, res) => {
-  const id = Number(req.params.id);
-  const device = db.data.devices.find(d => d.id === id && d.employeeId === req.user.id);
-  if (!device) return res.status(404).json({ error: 'Paired device not found.' });
-  if (device.revoked) return res.status(400).json({ error: 'This device is already unlinked.' });
-
-  device.revoked = true;
-  await db.write();
-
-  res.json({ ok: true, deviceId: device.id });
 });
 
 agentRouter.get('/devices', requireAuth(db), requireRole('Admin'), (req, res) => {
