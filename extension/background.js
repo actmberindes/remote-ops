@@ -51,7 +51,7 @@ async function refreshSessionState() {
     return active;
   } catch (e) {
     // Keep the last known state during a temporary network outage. The backend
-    // independently rejects Web Usage uploads while the employee is inactive.
+    // independently rejects monitoring uploads while the employee is inactive.
     return getSessionActive();
   }
 }
@@ -97,20 +97,10 @@ async function flush() {
   const { deviceToken } = await chrome.storage.local.get('deviceToken');
   if (!deviceToken) return;
 
-  // Do not transmit newly collected activity while the session is inactive.
-  // Previously buffered activity from an active session is still flushed once.
-  if (!active) {
-    try {
-      const apiUrl = await getApiUrl();
-      const res = await fetch(`${apiUrl}/activity/web-usage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${deviceToken}` },
-        body: JSON.stringify({ entries }),
-      });
-      if (res.ok) await setTrackingState({ buffer: {} });
-    } catch (e) { /* keep buffer for retry */ }
-    return;
-  }
+  // When the session is inactive, keep buffered activity locally. It represents
+  // activity collected while the previous session was active, and the backend
+  // intentionally rejects uploads while inactive.
+  if (!active) return;
 
   try {
     const apiUrl = await getApiUrl();
@@ -120,7 +110,7 @@ async function flush() {
       body: JSON.stringify({ entries }),
     });
     if (res.ok) await setTrackingState({ buffer: {} });
-  } catch (e) { /* offline or backend down — retry next interval */ }
+  } catch (e) { /* offline or backend down — keep the buffer for retry */ }
 
   await refreshTracking();
 }
