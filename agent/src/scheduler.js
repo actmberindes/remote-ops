@@ -1,4 +1,4 @@
-function startScheduler({ client, config, capture, log }) {
+function startScheduler({ client, config, capture, log, onSessionStateChange } = {}) {
   let running = true;
   let currentIntervalMinutes = null;
   let currentLiveSeconds = null;
@@ -56,6 +56,11 @@ function startScheduler({ client, config, capture, log }) {
       applyConfig(cfg);
       const wasActive = sessionActive;
       sessionActive = session.status === 'active';
+
+      if (sessionActive !== wasActive) {
+        onSessionStateChange?.(sessionActive);
+      }
+
       if (sessionActive && !wasActive) log('Session is now Active — monitoring started.');
       if (!sessionActive && wasActive) log('Session is no longer Active — monitoring paused.');
     } catch (e) {
