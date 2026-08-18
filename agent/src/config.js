@@ -18,6 +18,7 @@ const defaults = {
   employeeId: null,
   employeeName: null,
   pairedAt: null,
+  consentAcceptedAt: null,
 };
 
 function loadConfig() {
@@ -41,4 +42,8 @@ function isPaired(config) {
   return !!(config && config.deviceToken);
 }
 
-module.exports = { loadConfig, saveConfig, isPaired, CONFIG_PATH };
+function hasConsent(config) {
+  return !!(config && config.consentAcceptedAt);
+}
+
+module.exports = { loadConfig, saveConfig, isPaired, hasConsent, CONFIG_PATH };
