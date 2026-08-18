@@ -5,7 +5,7 @@ const { spawnSync } = require('node:child_process');
 const SysTrayModule = require('systray2');
 const SysTray = SysTrayModule.default || SysTrayModule;
 
-const ICON_BASE64 = 'AAABAAEAEBAAAAAAIAB6AAAAFgAAAIlQTkcNChoKAAAADUlIRFIAAAAQAAAAEAgGAAAAH/P/YQAAAEFJREFUeJxjtG769p+BAsBE';
+const ICON_BASE64 = 'AAABAAEAEBAAAAAAIAB6AAAAFgAAAIlQTkcNChoKAAAADUlIRFIAAAAQAAAAEAgGAAAAH/P/YQAAAEFJREFUeJxjtG769p+BAsBEiWaqGMCCzDlSy0mUJpvm7zRyATYbkAE2Fw58IA4DA7DGArHpgfouwBX/NHUBxQYAAHcIC9qF63yCAAAAAElFTkSuQmCC';
 
 function ensureTrayIcon() {
   const dir = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'RemoteOpsAgent');
