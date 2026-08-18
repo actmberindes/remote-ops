@@ -1,4 +1,4 @@
-import { domainFromUrl, todayStr, bufferToEntries, computeTransition } from './logic.js';
+import { pageFromUrl, domainFromUrl, todayStr, bufferToEntries, computeTransition } from './logic.js';
 
 const IDLE_THRESHOLD_SECONDS = 60;
 const FLUSH_PERIOD_MINUTES = 1;
@@ -9,8 +9,8 @@ async function getApiUrl() {
   return apiUrl || 'http://localhost:4000/api';
 }
 
-// MV3 service workers can be killed and restarted at any time between events,
-// so `current`/`buffer`/`sessionActive` live in chrome.storage.local.
+// MV3 service workers can be killed and restarted at any time,
+// so current/buffer/sessionActive live in chrome.storage.local.
 async function getTrackingState() {
   const { current, buffer, sessionActive } = await chrome.storage.local.get(['current', 'buffer', 'sessionActive']);
   return { current: current || null, buffer: buffer || {}, sessionActive: sessionActive === true };
@@ -56,17 +56,17 @@ async function refreshSessionState() {
   }
 }
 
-async function getObservedDomain() {
+async function getObservedPage() {
   try {
     let idleState = 'active';
-    try { idleState = await chrome.idle.queryState(IDLE_THRESHOLD_SECONDS); } catch (e) { /* idle API not available in some contexts */ }
+    try { idleState = await chrome.idle.queryState(IDLE_THRESHOLD_SECONDS); } catch (e) { /* idle API not available */ }
     if (idleState !== 'active') return null;
 
     const win = await chrome.windows.getLastFocused({});
     if (!win || win.focused === false) return null;
 
     const [tab] = await chrome.tabs.query({ active: true, windowId: win.id });
-    return tab ? domainFromUrl(tab.url) : null;
+    return tab ? pageFromUrl(tab.url) : null;
   } catch (e) {
     return null;
   }
@@ -76,9 +76,9 @@ async function refreshTracking() {
   const active = await refreshSessionState();
   if (!active) return;
 
-  const observedDomain = await getObservedDomain();
+  const observedPage = await getObservedPage();
   const { current, buffer } = await getTrackingState();
-  const result = computeTransition({ current, buffer, observedDomain });
+  const result = computeTransition({ current, buffer, observedPage });
   if (result.changed) {
     await setTrackingState({ buffer: result.buffer, current: result.current });
   }
@@ -87,7 +87,7 @@ async function refreshTracking() {
 async function flush() {
   const active = await refreshSessionState();
 
-  // Close out whatever segment is currently open so its elapsed time is included.
+  // Close out whatever page segment is currently open so its elapsed time is included.
   await refreshTrackingForceClose();
 
   const { buffer } = await getTrackingState();
@@ -97,9 +97,8 @@ async function flush() {
   const { deviceToken } = await chrome.storage.local.get('deviceToken');
   if (!deviceToken) return;
 
-  // When the session is inactive, keep buffered activity locally. It represents
-  // activity collected while the previous session was active, and the backend
-  // intentionally rejects uploads while inactive.
+  // Keep buffered activity locally while inactive. It was collected during an
+  // active session and will be uploaded once the session becomes active again.
   if (!active) return;
 
   try {
@@ -117,7 +116,7 @@ async function flush() {
 
 async function refreshTrackingForceClose() {
   const { current, buffer } = await getTrackingState();
-  const result = computeTransition({ current, buffer, observedDomain: null });
+  const result = computeTransition({ current, buffer, observedPage: null });
   await setTrackingState({ buffer: result.buffer, current: null });
 }
 
