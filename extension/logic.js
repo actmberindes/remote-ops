@@ -1,17 +1,12 @@
 /**
- * Pure logic for page-level browser tracking, kept free of any `chrome.*` API calls
- * so it can be unit tested in plain Node without a real browser.
- * background.js is the thin Chrome-API wrapper around these functions.
+ * Pure logic for page-level browser tracking.
  */
 
 function pageFromUrl(url) {
   try {
     const u = new URL(url);
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
-    return {
-      url: u.href,
-      domain: u.hostname,
-    };
+    return { url: u.href, domain: u.hostname };
   } catch (e) {
     return null;
   }
@@ -26,71 +21,56 @@ function todayStr(now = new Date()) {
   return now.toISOString().slice(0, 10);
 }
 
-// New buffer shape: { 'YYYY-MM-DD|<exact-url>': { date, url, domain, seconds } }
-function accumulate(buffer, date, url, domain, seconds) {
+function accumulate(buffer, date, url, domain, seconds, startedAt, endedAt) {
   if (!url || !(seconds > 0)) return buffer;
-  const key = JSON.stringify([date, url]);
-  const existing = buffer[key] || { date, url, domain: domain || '', seconds: 0 };
-  return {
-    ...buffer,
-    [key]: {
-      ...existing,
-      domain: existing.domain || domain || '',
-      seconds: existing.seconds + seconds,
-    },
+
+  const entry = {
+    date,
+    url,
+    domain: domain || '',
+    seconds,
+    startedAt,
+    endedAt,
   };
+
+  return [...buffer, entry];
 }
 
-// Converts both the new page-level buffer shape and the legacy numeric
-// domain-only buffer shape into upload entries. Legacy rows remain domain-only
-// rather than inventing an incorrect exact URL.
 function bufferToEntries(buffer) {
-  return Object.entries(buffer)
-    .map(([key, value]) => {
-      if (value && typeof value === 'object') {
-        return {
-          date: value.date,
-          url: value.url || null,
-          domain: value.domain || '',
-          seconds: Math.round(value.seconds),
-        };
-      }
-
-      const sep = key.indexOf('|');
-      return {
-        date: key.slice(0, sep),
-        url: null,
-        domain: key.slice(sep + 1),
-        seconds: Math.round(Number(value) || 0),
-      };
-    })
+  return (Array.isArray(buffer) ? buffer : Object.values(buffer || {}))
+    .map(e => ({
+      date: e.date,
+      url: e.url || null,
+      domain: e.domain || '',
+      seconds: Math.round(Number(e.seconds) || 0),
+      startedAt: e.startedAt || null,
+      endedAt: e.endedAt || null,
+    }))
     .filter(e => e.seconds > 0 && (e.url || e.domain));
 }
 
-// Given the current tracked page and a newly-observed page (or null if idle/unfocused/non-http tab),
-// decides whether a segment boundary occurred and returns the updated state.
 function computeTransition({ current, buffer, observedPage, now = Date.now(), date = todayStr() }) {
   const currentUrl = current ? (current.url || null) : null;
-  const currentDomain = current ? (current.domain || null) : null;
   const observedUrl = observedPage ? observedPage.url : null;
-  const pageChanged = currentUrl
-    ? currentUrl !== observedUrl
-    : currentDomain !== (observedPage ? observedPage.domain : null);
+  const pageChanged = currentUrl ? currentUrl !== observedUrl : !!observedPage;
 
-  if (!pageChanged) {
+  if (!pageChanged && currentUrl === observedUrl) {
     return { buffer, current, changed: false };
   }
 
   let nextBuffer = buffer;
+
   if (current) {
-    const elapsedSeconds = (now - current.startedAt) / 1000;
+    const elapsedSeconds = Math.max(0, (now - current.startedAt) / 1000);
     if (current.url) {
       nextBuffer = accumulate(
         nextBuffer,
         current.date,
         current.url,
         current.domain,
-        elapsedSeconds
+        elapsedSeconds,
+        new Date(current.startedAt).toISOString(),
+        new Date(now).toISOString()
       );
     }
   }
