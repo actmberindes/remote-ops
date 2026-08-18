@@ -4291,11 +4291,17 @@ function AuthenticatedLayout() {
 }
 
 export default function App() {
-  const [theme, setTheme] = useState('dark');
+  const [theme, setTheme] = useState(
+  () => localStorage.getItem('remote_ops_theme') || 'dark'
+  );
   const [currentUser, setCurrentUser] = useState(null);
   const [section, setSection] = useState('login');
   const [page, setPage] = useState('dashboard');
   const [dataLoaded, setDataLoaded] = useState(false);
+
+  useEffect(() => {
+  localStorage.setItem('remote_ops_theme', theme);
+  }, [theme]);
 
   const [users, setUsers] = useState([]);
   const [applications, setApplications] = useState([]);
