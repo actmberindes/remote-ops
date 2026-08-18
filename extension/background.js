@@ -2,6 +2,7 @@ import { domainFromUrl, todayStr, bufferToEntries, computeTransition } from './l
 
 const IDLE_THRESHOLD_SECONDS = 60;
 const FLUSH_PERIOD_MINUTES = 1;
+const SESSION_POLL_PERIOD_MINUTES = 0.25; // 15 seconds
 
 async function getApiUrl() {
   const { apiUrl } = await chrome.storage.local.get('apiUrl');
@@ -9,15 +10,50 @@ async function getApiUrl() {
 }
 
 // MV3 service workers can be killed and restarted at any time between events,
-// so `current`/`buffer` live in chrome.storage.local (not a plain JS variable)
-// to survive that — otherwise every worker restart would silently drop data.
+// so `current`/`buffer`/`sessionActive` live in chrome.storage.local.
 async function getTrackingState() {
-  const { current, buffer } = await chrome.storage.local.get(['current', 'buffer']);
-  return { current: current || null, buffer: buffer || {} };
+  const { current, buffer, sessionActive } = await chrome.storage.local.get(['current', 'buffer', 'sessionActive']);
+  return { current: current || null, buffer: buffer || {}, sessionActive: sessionActive === true };
 }
 
 async function setTrackingState(partial) {
   await chrome.storage.local.set(partial);
+}
+
+async function getSessionActive() {
+  const { sessionActive } = await getTrackingState();
+  return sessionActive;
+}
+
+async function refreshSessionState() {
+  const { deviceToken } = await chrome.storage.local.get('deviceToken');
+  if (!deviceToken) {
+    await setTrackingState({ sessionActive: false });
+    return false;
+  }
+
+  try {
+    const apiUrl = await getApiUrl();
+    const res = await fetch(`${apiUrl}/agent/session-status`, {
+      headers: { Authorization: `Bearer ${deviceToken}` },
+    });
+    if (!res.ok) throw new Error(`Session status request failed (${res.status})`);
+
+    const data = await res.json();
+    const active = data.status === 'active';
+    const previous = await getSessionActive();
+
+    if (!active && previous) {
+      await refreshTrackingForceClose();
+    }
+
+    await setTrackingState({ sessionActive: active });
+    return active;
+  } catch (e) {
+    // Keep the last known state during a temporary network outage. The backend
+    // independently rejects Web Usage uploads while the employee is inactive.
+    return getSessionActive();
+  }
 }
 
 async function getObservedDomain() {
@@ -32,11 +68,14 @@ async function getObservedDomain() {
     const [tab] = await chrome.tabs.query({ active: true, windowId: win.id });
     return tab ? domainFromUrl(tab.url) : null;
   } catch (e) {
-    return null; // transient errors shouldn't crash tracking; just skip this tick
+    return null;
   }
 }
 
 async function refreshTracking() {
+  const active = await refreshSessionState();
+  if (!active) return;
+
   const observedDomain = await getObservedDomain();
   const { current, buffer } = await getTrackingState();
   const result = computeTransition({ current, buffer, observedDomain });
@@ -46,6 +85,8 @@ async function refreshTracking() {
 }
 
 async function flush() {
+  const active = await refreshSessionState();
+
   // Close out whatever segment is currently open so its elapsed time is included.
   await refreshTrackingForceClose();
 
@@ -54,7 +95,22 @@ async function flush() {
   if (entries.length === 0) return;
 
   const { deviceToken } = await chrome.storage.local.get('deviceToken');
-  if (!deviceToken) return; // not paired yet — keep buffering until it is
+  if (!deviceToken) return;
+
+  // Do not transmit newly collected activity while the session is inactive.
+  // Previously buffered activity from an active session is still flushed once.
+  if (!active) {
+    try {
+      const apiUrl = await getApiUrl();
+      const res = await fetch(`${apiUrl}/activity/web-usage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${deviceToken}` },
+        body: JSON.stringify({ entries }),
+      });
+      if (res.ok) await setTrackingState({ buffer: {} });
+    } catch (e) { /* keep buffer for retry */ }
+    return;
+  }
 
   try {
     const apiUrl = await getApiUrl();
@@ -64,10 +120,9 @@ async function flush() {
       body: JSON.stringify({ entries }),
     });
     if (res.ok) await setTrackingState({ buffer: {} });
-    // on failure, leave the buffer intact so the next flush retries with everything
   } catch (e) { /* offline or backend down — retry next interval */ }
 
-  await refreshTracking(); // resume tracking a fresh segment
+  await refreshTracking();
 }
 
 async function refreshTrackingForceClose() {
@@ -83,7 +138,14 @@ chrome.idle.onStateChanged.addListener(() => refreshTracking());
 chrome.idle.setDetectionInterval(IDLE_THRESHOLD_SECONDS);
 
 chrome.alarms.create('flush', { periodInMinutes: FLUSH_PERIOD_MINUTES });
-chrome.alarms.onAlarm.addListener((alarm) => { if (alarm.name === 'flush') flush(); });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'flush') flush();
+});
+
+chrome.alarms.create('session-status', { periodInMinutes: SESSION_POLL_PERIOD_MINUTES });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'session-status') refreshSessionState();
+});
 
 chrome.runtime.onStartup.addListener(() => refreshTracking());
 chrome.runtime.onInstalled.addListener(() => refreshTracking());
