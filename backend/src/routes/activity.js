@@ -36,8 +36,8 @@ function purgeOldActivity() {
     return Number.isNaN(ts) || ts > liveCutoff;
   });
 
-  // Web usage is stored as one row per employee/page/day, so retention is evaluated
-  // against the row's YYYY-MM-DD activity date.
+  // Web usage is stored as one row per employee/page/day for new records.
+  // Older domain-only rows are also retained until their normal date cutoff.
   db.data.webUsageLogs = (db.data.webUsageLogs || []).filter(r => {
     return !r.date || r.date >= webUsageCutoffDate;
   });
@@ -94,30 +94,54 @@ activityRouter.post('/web-usage', requireDevice(db), async (req, res) => {
   if (!Array.isArray(entries) || entries.length === 0) return res.status(400).json({ error: 'entries array is required.' });
 
   for (const e of entries) {
-    if (!e.domain || !e.url || !e.seconds || !e.date) continue;
+    if (!e.domain || !e.seconds || !e.date) continue;
 
-    // New page-level tracking: aggregate by employee + date + exact URL.
-    let row = db.data.webUsageLogs.find(
-      r => r.employeeId === req.employee.id &&
-           r.date === e.date &&
-           (r.url || '') === e.url
-    );
+    if (e.url) {
+      // New page-level tracking: aggregate by employee + date + exact URL.
+      let row = db.data.webUsageLogs.find(
+        r => r.employeeId === req.employee.id &&
+             r.date === e.date &&
+             (r.url || '') === e.url
+      );
 
-    if (!row) {
-      row = {
-        id: nextId(),
-        employeeId: req.employee.id,
-        date: e.date,
-        domain: e.domain,
-        url: e.url,
-        seconds: 0,
-      };
-      db.data.webUsageLogs.push(row);
+      if (!row) {
+        row = {
+          id: nextId(),
+          employeeId: req.employee.id,
+          date: e.date,
+          domain: e.domain,
+          url: e.url,
+          seconds: 0,
+        };
+        db.data.webUsageLogs.push(row);
+      }
+
+      row.domain = e.domain || row.domain || '';
+      row.url = e.url || row.url || '';
+      row.seconds += Number(e.seconds) || 0;
+    } else {
+      // Legacy extension compatibility: preserve older domain-only buffers.
+      let row = db.data.webUsageLogs.find(
+        r => r.employeeId === req.employee.id &&
+             r.date === e.date &&
+             !r.url &&
+             r.domain === e.domain
+      );
+
+      if (!row) {
+        row = {
+          id: nextId(),
+          employeeId: req.employee.id,
+          date: e.date,
+          domain: e.domain,
+          url: null,
+          seconds: 0,
+        };
+        db.data.webUsageLogs.push(row);
+      }
+
+      row.seconds += Number(e.seconds) || 0;
     }
-
-    row.domain = e.domain || row.domain || '';
-    row.url = e.url || row.url || '';
-    row.seconds += Number(e.seconds) || 0;
   }
 
   purgeOldActivity();
