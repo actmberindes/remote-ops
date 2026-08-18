@@ -4228,7 +4228,9 @@ function WebUsagePage({
                 <th className="pb-2.5 px-2">Employee</th>
                 <th className="pb-2.5 px-2">Website / Activity</th>
                 <th className="pb-2.5 px-2">URL</th>
-                <th className="pb-2.5 px-2">Time</th>
+                <th className="pb-2.5 px-2">Started</th>
+                <th className="pb-2.5 px-2">Ended</th>
+                <th className="pb-2.5 px-2">Duration</th>
               </tr>
             </thead>
 
@@ -4254,17 +4256,33 @@ function WebUsagePage({
                     )}
                   </td>
 
-                  <td className="py-3 px-2 text-muted max-w-[360px]">
-                    <div className="truncate">
+                  <td className="py-3 px-2 text-muted max-w-[320px]">
+                    <div
+                      className="truncate"
+                      title={log.url || ''}
+                    >
                       {log.url || '—'}
                     </div>
                   </td>
 
                   <td className="py-3 px-2 text-muted whitespace-nowrap">
-                    {log.timestamp ||
-                      log.createdAt ||
-                      log.capturedAt ||
-                      '—'}
+                    {log.startedAt
+                      ? new Date(log.startedAt).toLocaleString()
+                      : '—'}
+                  </td>
+
+                  <td className="py-3 px-2 text-muted whitespace-nowrap">
+                    {log.endedAt
+                      ? new Date(log.endedAt).toLocaleString()
+                      : '—'}
+                  </td>
+
+                  <td className="py-3 px-2 text-muted whitespace-nowrap">
+                    {log.minutes !== undefined
+                      ? `${log.minutes} min`
+                      : log.seconds !== undefined
+                        ? `${Math.round((log.seconds / 60) * 10) / 10} min`
+                        : '—'}
                   </td>
                 </tr>
               ))}
