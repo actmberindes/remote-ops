@@ -117,3 +117,13 @@ agentRouter.patch('/devices/:id/revoke', requireAuth(db), requireRole('Admin'), 
   await db.write();
   res.json(device);
 });
+
+agentRouter.delete('/devices/:id', requireAuth(db), requireRole('Admin'), async (req, res) => {
+  const id = Number(req.params.id);
+  const index = db.data.devices.findIndex(d => d.id === id);
+  if (index === -1) return res.status(404).json({ error: 'Device not found.' });
+
+  db.data.devices.splice(index, 1);
+  await db.write();
+  res.json({ ok: true, deviceId: id });
+});
