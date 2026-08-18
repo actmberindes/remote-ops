@@ -98,6 +98,13 @@ agentRouter.put('/config', requireAuth(db), requireRole('Admin'), async (req, re
   res.json(db.data.agentConfig);
 });
 
+agentRouter.get('/my-devices', requireAuth(db), async (req, res) => {
+  const devices = db.data.devices
+    .filter(d => d.employeeId === req.user.id)
+    .map(d => ({ ...d, employeeName: userName(d.employeeId) }));
+  res.json(devices);
+});
+
 agentRouter.get('/devices', requireAuth(db), requireRole('Admin'), (req, res) => {
   res.json(db.data.devices.map(d => ({ ...d, employeeName: userName(d.employeeId) })));
 });

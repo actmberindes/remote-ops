@@ -46,6 +46,10 @@ function purgeOldActivity() {
 /* ---- Ingestion: called by the desktop agent / browser extension (device auth) ---- */
 
 activityRouter.post('/screenshots', requireDevice(db), async (req, res) => {
+  if (req.employee.status !== 'active') {
+    return res.status(409).json({ error: 'Monitoring is not active. Start an employee session before sending screenshots.' });
+  }
+
   const { url, filename, capturedAt } = req.body || {};
   if (!url) return res.status(400).json({ error: 'url is required (upload the file to /api/uploads first).' });
   const entry = {
@@ -59,6 +63,10 @@ activityRouter.post('/screenshots', requireDevice(db), async (req, res) => {
 });
 
 activityRouter.post('/live-frame', requireDevice(db), async (req, res) => {
+  if (req.employee.status !== 'active') {
+    return res.status(409).json({ error: 'Monitoring is not active. Start an employee session before sending Live View frames.' });
+  }
+
   const { url, capturedAt } = req.body || {};
   if (!url) return res.status(400).json({ error: 'url is required.' });
   const ts = capturedAt || new Date().toISOString();
@@ -79,6 +87,10 @@ activityRouter.post('/live-frame', requireDevice(db), async (req, res) => {
 });
 
 activityRouter.post('/web-usage', requireDevice(db), async (req, res) => {
+  if (req.employee.status !== 'active') {
+    return res.status(409).json({ error: 'Monitoring is not active. Start an employee session before sending Web Usage activity.' });
+  }
+
   const { entries } = req.body || {};
   if (!Array.isArray(entries) || entries.length === 0) return res.status(400).json({ error: 'entries array is required.' });
 

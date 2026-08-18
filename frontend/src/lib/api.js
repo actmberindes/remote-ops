@@ -152,6 +152,8 @@ export const api = {
 
   agent: {
     pairingCode: () => request('/agent/pairing-code', { method: 'POST' }),
+    myDevices: () => request('/agent/my-devices'),
+    unlinkDevice: (id) => request(`/agent/my-devices/${id}/unlink`, { method: 'PATCH' }),
     devices: () => request('/agent/devices'),
     revokeDevice: (id) => request(`/agent/devices/${id}/revoke`, { method: 'PATCH' }),
     getConfig: () => request('/agent/config-admin'),
