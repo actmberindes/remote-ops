@@ -1,8 +1,8 @@
 {
   "name": "remote-ops-agent",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "Windows background agent for scheduled screenshots and near-live desktop view",
+  "description": "Windows background agent for scheduled screenshots, near-live desktop view, and session-controlled monitoring",
   "main": "src/index.js",
   "bin": "src/index.js",
   "scripts": {
@@ -11,12 +11,17 @@
     "build:win": "pkg . --targets node18-win-x64 --output dist/remote-ops-agent.exe"
   },
   "dependencies": {
-    "screenshot-desktop": "^1.15.1"
+    "node-hide-console-window": "^2.2.0",
+    "screenshot-desktop": "^1.15.1",
+    "systray2": "^2.1.4"
   },
   "devDependencies": {
     "pkg": "^5.8.1"
   },
   "pkg": {
-    "assets": ["node_modules/screenshot-desktop/lib/**/*"]
+    "assets": [
+      "node_modules/screenshot-desktop/lib/**/*",
+      "node_modules/systray2/traybin/**/*"
+    ]
   }
 }
