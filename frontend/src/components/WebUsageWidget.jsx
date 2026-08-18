@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Globe2, ExternalLink, RefreshCw } from 'lucide-react';
-import { api } from '../api.js';
+import { api } from "../lib/api.js";
 
 export default function WebUsageWidget({ navigate, scopeUserIds = null, routeRole = 'admin' }) {
   const [logs, setLogs] = useState([]);

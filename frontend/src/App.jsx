@@ -6,9 +6,10 @@ import {
   Search, CheckCircle2, XCircle, AlertCircle, Play, Square, Users, Home, ArrowLeft, ArrowRight,
   Monitor, Wifi, MapPin, Briefcase, FileText, Eye, Ticket, Package, Paperclip, Download, ZoomIn,
   Send, UserPlus, RotateCcw, Archive, History, ImageOff, ImagePlus, RefreshCw, Camera, Radio,
-  Laptop, ShieldOff, KeyRound, Copy
+  Laptop, ShieldOff, KeyRound, Copy, Globe2
 } from 'lucide-react';
 import { api, getToken, setToken } from './lib/api.js';
+import WebUsageWidget from './components/WebUsageWidget.jsx';
 
 /* ============================== CONSTANTS ============================== */
 
@@ -530,6 +531,8 @@ const NAV_BY_ROLE = {
     { key: 'assets', label: 'Assets', icon: Package },
     { key: 'live-view', label: 'Live View', icon: Radio },
     { key: 'screenshots', label: 'Screenshots', icon: Camera },
+    { key: 'web-usage', label: 'Web Usage', icon: Globe2 },
+    { key: 'monitoring-settings', label: 'Monitoring Settings', icon: ShieldAlert },
   ],
   Manager: [
     { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -538,6 +541,7 @@ const NAV_BY_ROLE = {
     { key: 'assets', label: 'Assigned Assets', icon: Package },
     { key: 'live-view', label: 'Live View', icon: Radio },
     { key: 'screenshots', label: 'Screenshots', icon: Camera },
+    { key: 'web-usage', label: 'Web Usage', icon: Globe2 },
   ],
   Employee: [
     { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -715,17 +719,287 @@ function OpsCharts() {
     </div>
   );
 }
+function AdminMonitoringSettings() {
+  const { addToast } = useApp();
+
+  const [config, setConfig] = useState({
+    screenshotIntervalMinutes: 10,
+    liveViewFrameIntervalSeconds: 5,
+    screenshotRetentionDays: 7,
+    liveViewRetentionDays: 7,
+  });
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const saved = await api.agent.getConfig();
+
+        setConfig({
+          screenshotIntervalMinutes: saved.screenshotIntervalMinutes ?? 10,
+          liveViewFrameIntervalSeconds: saved.liveViewFrameIntervalSeconds ?? 5,
+          screenshotRetentionDays: saved.screenshotRetentionDays ?? 7,
+          liveViewRetentionDays: saved.liveViewRetentionDays ?? 7,
+        });
+      } catch (e) {
+        addToast(e.message, 'error');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadConfig();
+  }, []);
+
+  const update = (key, value) => {
+    setConfig(prev => ({
+      ...prev,
+      [key]: Number(value),
+    }));
+  };
+
+  const save = async () => {
+    setSaving(true);
+
+    try {
+      const saved = await api.agent.updateConfig(config);
+
+      setConfig({
+        screenshotIntervalMinutes: saved.screenshotIntervalMinutes ?? config.screenshotIntervalMinutes,
+        liveViewFrameIntervalSeconds: saved.liveViewFrameIntervalSeconds ?? config.liveViewFrameIntervalSeconds,
+        screenshotRetentionDays: saved.screenshotRetentionDays ?? config.screenshotRetentionDays,
+        liveViewRetentionDays: saved.liveViewRetentionDays ?? config.liveViewRetentionDays,
+      });
+
+      addToast('Monitoring settings saved successfully.', 'success');
+    } catch (e) {
+      addToast(e.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <Card className="w-full">
+        <div className="py-10 text-center text-sm text-muted">
+          Loading monitoring settings…
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-5 w-full">
+      <Card>
+        <div className="mb-5">
+          <h3 className="font-display font-bold text-base">
+            Monitoring Settings
+          </h3>
+          <p className="text-xs text-muted mt-1">
+            Configure screenshot capture and historical monitoring retention.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+          <div className="p-4 rounded-xl border border-[var(--border)]">
+            <div className="flex items-center gap-2 mb-1">
+              <Camera size={16} className="accent-text" />
+              <h4 className="font-semibold text-sm">
+                Screenshot Capture Interval
+              </h4>
+            </div>
+
+            <p className="text-[11px] text-muted mb-3">
+              How frequently the desktop agent captures a screenshot.
+            </p>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min="1"
+                max="1440"
+                className={`${inputCls} max-w-[140px]`}
+                value={config.screenshotIntervalMinutes}
+                onChange={e =>
+                  update('screenshotIntervalMinutes', e.target.value)
+                }
+              />
+              <span className="text-xs text-muted">
+                minutes
+              </span>
+            </div>
+          </div>
+
+
+          <div className="p-4 rounded-xl border border-[var(--border)]">
+            <div className="flex items-center gap-2 mb-1">
+              <Radio size={16} className="accent-text" />
+              <h4 className="font-semibold text-sm">
+                Live View Frame Interval
+              </h4>
+            </div>
+
+            <p className="text-[11px] text-muted mb-3">
+              Controls how frequently Live View frames are captured.
+            </p>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min="1"
+                max="300"
+                className={`${inputCls} max-w-[140px]`}
+                value={config.liveViewFrameIntervalSeconds}
+                onChange={e =>
+                  update('liveViewFrameIntervalSeconds', e.target.value)
+                }
+              />
+              <span className="text-xs text-muted">
+                seconds
+              </span>
+            </div>
+          </div>
+
+
+          <div className="p-4 rounded-xl border border-[var(--border)]">
+            <div className="flex items-center gap-2 mb-1">
+              <History size={16} className="accent-text" />
+              <h4 className="font-semibold text-sm">
+                Screenshot Retention
+              </h4>
+            </div>
+
+            <p className="text-[11px] text-muted mb-3">
+              Number of days screenshot history is retained.
+            </p>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min="1"
+                max="3650"
+                className={`${inputCls} max-w-[140px]`}
+                value={config.screenshotRetentionDays}
+                onChange={e =>
+                  update('screenshotRetentionDays', e.target.value)
+                }
+              />
+              <span className="text-xs text-muted">
+                days
+              </span>
+            </div>
+
+            <div className="text-[10px] text-muted mt-2">
+              Default: <strong>7 days</strong>
+            </div>
+          </div>
+
+
+          <div className="p-4 rounded-xl border border-[var(--border)]">
+            <div className="flex items-center gap-2 mb-1">
+              <History size={16} className="accent-text" />
+              <h4 className="font-semibold text-sm">
+                Live View Retention
+              </h4>
+            </div>
+
+            <p className="text-[11px] text-muted mb-3">
+              Number of days historical Live View frames are retained.
+            </p>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min="1"
+                max="3650"
+                className={`${inputCls} max-w-[140px]`}
+                value={config.liveViewRetentionDays}
+                onChange={e =>
+                  update('liveViewRetentionDays', e.target.value)
+                }
+              />
+              <span className="text-xs text-muted">
+                days
+              </span>
+            </div>
+
+            <div className="text-[10px] text-muted mt-2">
+              Default: <strong>7 days</strong>
+            </div>
+          </div>
+
+        </div>
+
+        <div className="flex justify-end mt-5 pt-4 border-t border-[var(--border)]">
+          <button
+            onClick={save}
+            disabled={saving}
+            className="px-5 py-2.5 rounded-lg text-xs font-bold accent-bg-solid shadow-sm"
+          >
+            {saving ? 'Saving…' : 'Save Monitoring Settings'}
+          </button>
+        </div>
+      </Card>
+
+      <Card className="rail">
+        <div className="flex items-start gap-3">
+          <ShieldAlert size={18} className="accent-text mt-0.5" />
+
+          <div>
+            <div className="font-display font-bold text-sm">
+              Data Retention Policy
+            </div>
+
+            <p className="text-xs text-muted mt-1 leading-relaxed">
+              Live View history and screenshot logs are automatically
+              retained according to the configured values above.
+              The default retention period is one week (7 days).
+            </p>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 
 function AdminDashboard() {
   const { users, applications, navigate } = useApp();
+
   return (
     <div className="flex flex-col gap-5">
-      <DashboardShared scopeUsers={users} scopeApps={applications} onViewApplications={() => navigate('admin', 'applications')} />
+      <DashboardShared
+        scopeUsers={users}
+        scopeApps={applications}
+        onViewApplications={() => navigate('admin', 'applications')}
+      />
+
       <OpsCharts />
+
       <div className="grid grid-cols-2 gap-5">
-        <LiveViewSection title="Live Desktop View" subtitle="Employees currently active" limit={3} onViewAll={() => navigate('admin', 'live-view')} />
-        <ScreenshotsSection title="Recent Screenshots" subtitle="Latest scheduled captures" limit={8} onViewAll={() => navigate('admin', 'screenshots')} />
+        <LiveViewSection
+          title="Live Desktop View"
+          subtitle="Employees currently active"
+          limit={3}
+          onViewAll={() => navigate('admin', 'live-view')}
+        />
+
+        <ScreenshotsSection
+          title="Recent Screenshots"
+          subtitle="Latest scheduled captures"
+          limit={8}
+          onViewAll={() => navigate('admin', 'screenshots')}
+        />
       </div>
+
+      <WebUsageWidget
+        navigate={navigate}
+        routeRole="admin"
+      />
     </div>
   );
 }
@@ -1134,16 +1408,39 @@ function AdminUserManagement() {
 
 function ManagerDashboard() {
   const { users, applications, currentUser, navigate } = useApp();
+
   const team = users.filter(u => u.managerId === currentUser.id);
   const teamIds = new Set(team.map(u => u.id));
   const teamApps = applications.filter(a => teamIds.has(a.userId));
+
   return (
     <div className="flex flex-col gap-5">
-      <DashboardShared scopeUsers={team} scopeApps={teamApps} onViewApplications={() => navigate('manager', 'applications')} />
+      <DashboardShared
+        scopeUsers={team}
+        scopeApps={teamApps}
+        onViewApplications={() => navigate('manager', 'applications')}
+      />
+
       <div className="grid grid-cols-2 gap-5">
-        <LiveViewSection title="Team Live View" subtitle="Your direct reports currently active" limit={3} onViewAll={() => navigate('manager', 'live-view')} />
-        <ScreenshotsSection title="Recent Screenshots" subtitle="Latest captures from your team" limit={8} onViewAll={() => navigate('manager', 'screenshots')} />
+        <LiveViewSection
+          title="Team Live View"
+          subtitle="Your direct reports currently active"
+          limit={3}
+          onViewAll={() => navigate('manager', 'live-view')}
+        />
+
+        <ScreenshotsSection
+          title="Recent Screenshots"
+          subtitle="Latest captures from your team"
+          limit={8}
+          onViewAll={() => navigate('manager', 'screenshots')}
+        />
       </div>
+
+      <WebUsageWidget
+        navigate={navigate}
+        routeRole="manager"
+      />
     </div>
   );
 }
@@ -2149,25 +2446,85 @@ function TicketsTable({ tickets, onOpen }) {
 
 function TicketSearchFilterBar({ query, setQuery, typeFilter, setTypeFilter, statusFilter, setStatusFilter, priorityFilter, setPriorityFilter }) {
   return (
-    <div className="flex items-center gap-2 mb-3">
-      <div className="relative flex-1 min-w-0 max-w-xs">
-        <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
-        <input className={`${inputCls} pl-7 py-1.5`} placeholder="Search tickets…" value={query} onChange={e => setQuery(e.target.value)} />
+  <div className="flex flex-wrap items-end gap-2 mb-4 w-full">
+    <div className="flex-1 min-w-[220px]">
+      <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">
+        Search
+      </label>
+
+      <div className="relative">
+        <Search
+          size={13}
+          className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted"
+        />
+
+        <input
+          className={`${inputCls} pl-7 h-9`}
+          placeholder="Search tickets…"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+        />
       </div>
-      <select className={`${inputCls} w-auto py-1.5`} value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+    </div>
+
+    <div className="w-[150px]">
+      <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">
+        Type
+      </label>
+
+      <select
+        className={`${inputCls} h-9`}
+        value={typeFilter}
+        onChange={e => setTypeFilter(e.target.value)}
+      >
         <option value="">All Types</option>
-        {TICKET_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-      </select>
-      <select className={`${inputCls} w-auto py-1.5`} value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}>
-        <option value="">All Priorities</option>
-        {TICKET_PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
-      </select>
-      <select className={`${inputCls} w-auto py-1.5`} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-        <option value="">All Statuses</option>
-        {TICKET_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+        {TICKET_TYPES.map(t => (
+          <option key={t} value={t}>
+            {t}
+          </option>
+        ))}
       </select>
     </div>
-  );
+
+    <div className="w-[160px]">
+      <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">
+        Priority
+      </label>
+
+      <select
+        className={`${inputCls} h-9`}
+        value={priorityFilter}
+        onChange={e => setPriorityFilter(e.target.value)}
+      >
+        <option value="">All Priorities</option>
+        {TICKET_PRIORITIES.map(p => (
+          <option key={p} value={p}>
+            {p}
+          </option>
+        ))}
+      </select>
+    </div>
+
+    <div className="w-[160px]">
+      <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">
+        Status
+      </label>
+
+      <select
+        className={`${inputCls} h-9`}
+        value={statusFilter}
+        onChange={e => setStatusFilter(e.target.value)}
+      >
+        <option value="">All Statuses</option>
+        {TICKET_STATUSES.map(s => (
+          <option key={s} value={s}>
+            {s}
+          </option>
+        ))}
+      </select>
+    </div>
+  </div>
+);
 }
 
 function useTicketFilters(tickets) {
@@ -2607,6 +2964,7 @@ function AssetImageLightbox({ url, name, onClose }) {
 }
 
 function AssetsGrid({ assetList, mode, onEdit, onAssign, onBulkAssign, onReturn, onRetire, onDelete, onHistory, onView }) {
+  const { addToast } = useApp();
   const [lightbox, setLightbox] = useState(null);
   return (
     <div className="overflow-x-auto">
@@ -2657,6 +3015,29 @@ function AssetsGrid({ assetList, mode, onEdit, onAssign, onBulkAssign, onReturn,
                   {mode === 'admin' && (
                     <>
                       <button onClick={() => onEdit(a)} className="p-1.5 rounded-lg hover-surface" title="Edit"><Pencil size={13} /></button>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const html = await api.assets.printTag(a.id);
+
+                            const printWindow = window.open('', '_blank');
+
+                            if (!printWindow) {
+                              throw new Error('The browser blocked the print window. Please allow pop-ups for Remote Ops.');
+                            }
+
+                            printWindow.document.open();
+                            printWindow.document.write(html);
+                            printWindow.document.close();
+                          } catch (e) {
+                            addToast(e.message, 'error');
+                          }
+                        }}
+                        className="p-1.5 rounded-lg hover-surface"
+                        title="Print Asset Tag"
+                      >
+                        <FileText size={13} />
+                      </button>
                       <button onClick={() => onHistory(a)} className="p-1.5 rounded-lg hover-surface" title="History"><History size={13} /></button>
                       {(a.status === 'Available') && (
                         <button onClick={() => onAssign(a)} className="p-1.5 rounded-lg hover-surface" title="Assign"><UserPlus size={13} /></button>
@@ -2692,21 +3073,68 @@ function AssetsGrid({ assetList, mode, onEdit, onAssign, onBulkAssign, onReturn,
 
 function AssetSearchFilterBar({ query, setQuery, typeFilter, setTypeFilter, statusFilter, setStatusFilter, statusOptions }) {
   return (
-    <div className="flex items-center gap-2 mb-3">
-      <div className="relative flex-1 min-w-0 max-w-xs">
-        <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
-        <input className={`${inputCls} pl-7 py-1.5`} placeholder="Search assets…" value={query} onChange={e => setQuery(e.target.value)} />
+  <div className="flex flex-wrap items-end gap-2 mb-4 w-full">
+    <div className="flex-1 min-w-[220px]">
+      <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">
+        Search
+      </label>
+
+      <div className="relative">
+        <Search
+          size={13}
+          className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted"
+        />
+
+        <input
+          className={`${inputCls} pl-7 h-9`}
+          placeholder="Search assets…"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+        />
       </div>
-      <select className={`${inputCls} w-auto py-1.5`} value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+    </div>
+
+    <div className="w-[160px]">
+      <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">
+        Asset Type
+      </label>
+
+      <select
+        className={`${inputCls} h-9`}
+        value={typeFilter}
+        onChange={e => setTypeFilter(e.target.value)}
+      >
         <option value="">All Types</option>
-        {ASSET_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-      </select>
-      <select className={`${inputCls} w-auto py-1.5`} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-        <option value="">All Statuses</option>
-        {statusOptions.map(s => <option key={s} value={s}>{s}</option>)}
+
+        {ASSET_TYPES.map(t => (
+          <option key={t} value={t}>
+            {t}
+          </option>
+        ))}
       </select>
     </div>
-  );
+
+    <div className="w-[160px]">
+      <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">
+        Status
+      </label>
+
+      <select
+        className={`${inputCls} h-9`}
+        value={statusFilter}
+        onChange={e => setStatusFilter(e.target.value)}
+      >
+        <option value="">All Statuses</option>
+
+        {statusOptions.map(s => (
+          <option key={s} value={s}>
+            {s}
+          </option>
+        ))}
+      </select>
+    </div>
+  </div>
+);
 }
 
 function useAssetFilters(assets) {
@@ -2875,38 +3303,169 @@ function LiveTile({ tile }) {
   );
 }
 
-function LiveViewSection({ title, subtitle, limit, onViewAll }) {
+function LiveViewSection({
+  title,
+  subtitle,
+  limit,
+  onViewAll,
+  showFilters = false,
+  employeeOptions = []
+}) {
   const { tiles, loading } = useLiveView(5000);
-  const shown = limit ? tiles.slice(0, limit) : tiles;
+
+  const [query, setQuery] = useState('');
+  const [employeeFilter, setEmployeeFilter] = useState('');
+
+  const filteredTiles = tiles.filter(tile => {
+    if (
+      employeeFilter &&
+      Number(tile.employeeId) !== Number(employeeFilter)
+    ) {
+      return false;
+    }
+
+    if (query) {
+      const q = query.toLowerCase();
+
+      const haystack = `
+        ${tile.employeeName || ''}
+        ${tile.department || ''}
+        ${tile.deviceName || ''}
+      `.toLowerCase();
+
+      if (!haystack.includes(q)) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  const shown = limit
+    ? filteredTiles.slice(0, limit)
+    : filteredTiles;
+
   return (
     <Card>
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="font-display font-bold text-base flex items-center gap-2">
-            <Radio size={16} className="accent-text" /> {title}
+            <Radio size={16} className="accent-text" />
+            {title}
           </h3>
-          {subtitle && <p className="text-xs text-muted mt-0.5">{subtitle}</p>}
+
+          {subtitle && (
+            <p className="text-xs text-muted mt-0.5">
+              {subtitle}
+            </p>
+          )}
         </div>
+
         <div className="flex items-center gap-2">
-          <Badge tone={tiles.length > 0 ? 'success' : 'neutral'}>{tiles.length} Active</Badge>
-          {onViewAll && <button onClick={onViewAll} className="text-xs font-bold accent-text">View All</button>}
+          <Badge tone={filteredTiles.length > 0 ? 'success' : 'neutral'}>
+            {filteredTiles.length} Active
+          </Badge>
+
+          {onViewAll && (
+            <button
+              onClick={onViewAll}
+              className="text-xs font-bold accent-text"
+            >
+              View All
+            </button>
+          )}
         </div>
       </div>
+
+      {showFilters && (
+        <div className="flex flex-wrap items-end gap-2 mb-4 w-full">
+          <div className="flex-1 min-w-[220px]">
+            <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">
+              Search
+            </label>
+
+            <div className="relative">
+              <Search
+                size={13}
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted"
+              />
+
+              <input
+                className={`${inputCls} pl-7 h-9`}
+                placeholder="Search employee or device…"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="w-[180px]">
+            <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">
+              Employee
+            </label>
+
+            <select
+              className={`${inputCls} h-9`}
+              value={employeeFilter}
+              onChange={e => setEmployeeFilter(e.target.value)}
+            >
+              <option value="">All Employees</option>
+
+              {employeeOptions.map(e => (
+                <option key={e.id} value={e.id}>
+                  {e.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {(query || employeeFilter) && (
+            <button
+              onClick={() => {
+                setQuery('');
+                setEmployeeFilter('');
+              }}
+              className="h-9 px-3 rounded-lg text-xs font-bold border border-[var(--border)] hover-surface"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+
       {loading ? (
-        <div className="py-10 text-center text-sm text-muted">Loading…</div>
+        <div className="py-10 text-center text-sm text-muted">
+          Loading…
+        </div>
       ) : shown.length === 0 ? (
-        <div className="py-10 text-center text-sm text-muted">No employees are currently active.</div>
+        <div className="py-10 text-center text-sm text-muted">
+          {tiles.length === 0
+            ? 'No employees are currently active.'
+            : 'No active employees match your filter.'}
+        </div>
       ) : (
         <div className={`grid gap-4 ${limit ? 'grid-cols-2' : 'grid-cols-3'}`}>
-          {shown.map(t => <LiveTile key={t.employeeId} tile={t} />)}
+          {shown.map(t => (
+            <LiveTile
+              key={t.employeeId}
+              tile={t}
+            />
+          ))}
         </div>
       )}
     </Card>
   );
 }
 
-function LiveViewPage({ title, subtitle }) {
-  return <LiveViewSection title={title} subtitle={subtitle} />;
+function LiveViewPage({ title, subtitle, employeeOptions = [] }) {
+  return (
+    <LiveViewSection
+      title={title}
+      subtitle={subtitle}
+      showFilters
+      employeeOptions={employeeOptions}
+    />
+  );
 }
 
 function ScreenshotsSection({ title, subtitle, limit, employeeOptions, showFilters, onViewAll }) {
@@ -2937,17 +3496,53 @@ function ScreenshotsSection({ title, subtitle, limit, employeeOptions, showFilte
         {onViewAll && <button onClick={onViewAll} className="text-xs font-bold accent-text shrink-0">View All</button>}
       </div>
       {showFilters && (
-        <div className="flex flex-wrap gap-2 mb-4">
-          <select className={`${inputCls} w-auto`} value={employeeFilter} onChange={e => setEmployeeFilter(e.target.value)}>
-            <option value="">All Employees</option>
-            {employeeOptions.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-          </select>
-          <input type="date" className={`${inputCls} w-auto`} value={dateFilter} onChange={e => setDateFilter(e.target.value)} />
-          {(employeeFilter || dateFilter) && (
-            <button onClick={() => { setEmployeeFilter(''); setDateFilter(''); }} className="text-xs font-bold text-muted hover:text-[var(--text)]">Clear</button>
-          )}
-        </div>
-      )}
+  <div className="flex flex-wrap items-end gap-2 mb-4 w-full">
+    <div className="flex-1 min-w-[220px]">
+      <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">
+        Employee
+      </label>
+
+      <select
+        className={`${inputCls} h-9`}
+        value={employeeFilter}
+        onChange={e => setEmployeeFilter(e.target.value)}
+      >
+        <option value="">All Employees</option>
+
+        {employeeOptions.map(e => (
+          <option key={e.id} value={e.id}>
+            {e.name}
+          </option>
+        ))}
+      </select>
+    </div>
+
+    <div className="w-[180px]">
+      <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">
+        Capture Date
+      </label>
+
+      <input
+        type="date"
+        className={`${inputCls} h-9`}
+        value={dateFilter}
+        onChange={e => setDateFilter(e.target.value)}
+      />
+    </div>
+
+    {(employeeFilter || dateFilter) && (
+      <button
+        onClick={() => {
+          setEmployeeFilter('');
+          setDateFilter('');
+        }}
+        className="h-9 px-3 rounded-lg text-xs font-bold border border-[var(--border)] hover-surface"
+      >
+        Clear
+      </button>
+    )}
+  </div>
+)}
       {loading ? (
         <div className="py-10 text-center text-sm text-muted">Loading…</div>
       ) : shots.length === 0 ? (
@@ -2972,13 +3567,39 @@ function ScreenshotsPage({ title, subtitle, employeeOptions: overrideOptions }) 
 }
 
 function AdminLiveView() {
-  return <LiveViewPage title="Live Desktop View" subtitle="Employees currently in an active work session, organization-wide." />;
+  const { users } = useApp();
+
+  const employeeOptions = users.filter(
+    u => u.role === 'Employee'
+  );
+
+  return (
+    <LiveViewPage
+      title="Live Desktop View"
+      subtitle="Employees currently in an active work session, organization-wide."
+      employeeOptions={employeeOptions}
+    />
+  );
 }
 function AdminScreenshots() {
   return <ScreenshotsPage title="Screenshots" subtitle="Scheduled desktop captures across the organization." />;
 }
 function ManagerLiveView() {
-  return <LiveViewPage title="Team Live View" subtitle="Your direct reports who are currently in an active work session." />;
+  const { users, currentUser } = useApp();
+
+  const employeeOptions = users.filter(
+    u =>
+      u.role === 'Employee' &&
+      u.managerId === currentUser.id
+  );
+
+  return (
+    <LiveViewPage
+      title="Team Live View"
+      subtitle="Your direct reports who are currently in an active work session."
+      employeeOptions={employeeOptions}
+    />
+  );
 }
 function ManagerScreenshots() {
   const { users, currentUser } = useApp();
@@ -2986,12 +3607,272 @@ function ManagerScreenshots() {
   return <ScreenshotsPage title="Team Screenshots" subtitle="Scheduled desktop captures from your direct reports." employeeOptions={teamOptions} />;
 }
 
+function WebUsagePage({
+  title = 'Web Usage / Internet Activity',
+  subtitle = 'Recorded browser activity from monitored devices.'
+}) {
+  const { users, currentUser } = useApp();
+
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const [query, setQuery] = useState('');
+  const [employeeFilter, setEmployeeFilter] = useState('');
+  const [dateFilter, setDateFilter] = useState('');
+
+  const employeeOptions =
+    currentUser.role === 'Manager'
+      ? users.filter(
+          u => u.role === 'Employee' && u.managerId === currentUser.id
+        )
+      : users.filter(u => u.role === 'Employee');
+
+  const load = async () => {
+    setLoading(true);
+
+    try {
+      const data = await api.activity.webUsage({
+        employeeId: employeeFilter || undefined,
+        date: dateFilter || undefined,
+      });
+
+      const visible =
+        currentUser.role === 'Manager'
+          ? data.filter(log =>
+              employeeOptions.some(
+                e => Number(e.id) === Number(log.employeeId)
+              )
+            )
+          : data;
+
+      setLogs(visible);
+    } catch (e) {
+      setLogs([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, [employeeFilter, dateFilter, currentUser.id]);
+
+  const filteredLogs = logs.filter(log => {
+    if (!query) return true;
+
+    const q = query.toLowerCase();
+
+    const haystack = `
+      ${log.employeeName || ''}
+      ${log.title || ''}
+      ${log.url || ''}
+      ${log.domain || ''}
+    `.toLowerCase();
+
+    return haystack.includes(q);
+  });
+
+  const clearFilters = () => {
+    setQuery('');
+    setEmployeeFilter('');
+    setDateFilter('');
+  };
+
+  return (
+    <Card className="w-full">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="font-display font-bold text-base flex items-center gap-2">
+            <Globe2 size={16} className="accent-text" />
+            {title}
+          </h3>
+
+          <p className="text-xs text-muted mt-0.5">
+            {subtitle}
+          </p>
+        </div>
+
+        <button
+          onClick={load}
+          className="p-2 rounded-lg hover-surface"
+          title="Refresh"
+        >
+          <RefreshCw size={14} />
+        </button>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-2 mb-4 w-full">
+
+        {/* Search */}
+        <div className="flex-1 min-w-[240px]">
+          <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">
+            Search
+          </label>
+
+          <div className="relative">
+            <Search
+              size={13}
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted"
+            />
+
+            <input
+              className={`${inputCls} pl-7 h-9`}
+              placeholder="Search employee, website, or URL…"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Employee */}
+        <div className="w-[190px]">
+          <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">
+            Employee
+          </label>
+
+          <select
+            className={`${inputCls} h-9`}
+            value={employeeFilter}
+            onChange={e => setEmployeeFilter(e.target.value)}
+          >
+            <option value="">All Employees</option>
+
+            {employeeOptions.map(employee => (
+              <option key={employee.id} value={employee.id}>
+                {employee.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Date */}
+        <div className="w-[180px]">
+          <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">
+            Activity Date
+          </label>
+
+          <input
+            type="date"
+            className={`${inputCls} h-9`}
+            value={dateFilter}
+            onChange={e => setDateFilter(e.target.value)}
+          />
+        </div>
+
+        {/* Clear */}
+        {(query || employeeFilter || dateFilter) && (
+          <button
+            onClick={clearFilters}
+            className="h-9 px-3 rounded-lg text-xs font-bold border border-[var(--border)] hover-surface"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[10px] font-bold text-muted uppercase tracking-wider">
+          {filteredLogs.length} {filteredLogs.length === 1 ? 'Record' : 'Records'}
+        </span>
+      </div>
+
+      {loading ? (
+        <div className="py-10 text-center text-sm text-muted">
+          Loading web activity…
+        </div>
+      ) : filteredLogs.length === 0 ? (
+        <div className="py-10 text-center text-sm text-muted">
+          {logs.length === 0
+            ? 'No web usage records found.'
+            : 'No records match your filters.'}
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="font-bold text-muted uppercase tracking-wider border-b border-[var(--border)]">
+                <th className="pb-2.5 px-2">Employee</th>
+                <th className="pb-2.5 px-2">Website / Activity</th>
+                <th className="pb-2.5 px-2">URL</th>
+                <th className="pb-2.5 px-2">Time</th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-[var(--border)]">
+              {filteredLogs.map((log, index) => (
+                <tr
+                  key={log.id || index}
+                  className="hover:bg-[var(--bg)] transition-colors"
+                >
+                  <td className="py-3 px-2 font-semibold">
+                    {log.employeeName || 'Unknown Employee'}
+                  </td>
+
+                  <td className="py-3 px-2">
+                    <div className="font-semibold">
+                      {log.title || log.domain || 'Web Activity'}
+                    </div>
+
+                    {log.domain && (
+                      <div className="text-[10px] text-muted">
+                        {log.domain}
+                      </div>
+                    )}
+                  </td>
+
+                  <td className="py-3 px-2 text-muted max-w-[360px]">
+                    <div className="truncate">
+                      {log.url || '—'}
+                    </div>
+                  </td>
+
+                  <td className="py-3 px-2 text-muted whitespace-nowrap">
+                    {log.timestamp ||
+                      log.createdAt ||
+                      log.capturedAt ||
+                      '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 /* ============================== LAYOUT GUARD & ENTRYPOINT ============================== */
 
 const PAGES = {
-  admin: { dashboard: AdminDashboard, applications: AdminApplicationsAndSchedules, users: AdminUserManagement, tickets: AdminTickets, assets: AdminAssets, 'live-view': AdminLiveView, screenshots: AdminScreenshots },
-  manager: { dashboard: ManagerDashboard, applications: ManagerApplicationsAndSchedules, tickets: ManagerTickets, assets: ManagerAssetsReadOnly, 'live-view': ManagerLiveView, screenshots: ManagerScreenshots },
-  employee: { dashboard: EmployeeDashboard, wfh: EmployeeWFHAndSchedule, tickets: EmployeeTickets, assets: EmployeeAssetsAssigned },
+  admin: {
+    dashboard: AdminDashboard,
+    applications: AdminApplicationsAndSchedules,
+    users: AdminUserManagement,
+    tickets: AdminTickets,
+    assets: AdminAssets,
+    'live-view': AdminLiveView,
+    screenshots: AdminScreenshots,
+    'web-usage': WebUsagePage,
+    'monitoring-settings': AdminMonitoringSettings
+  },
+
+  manager: {
+    dashboard: ManagerDashboard,
+    applications: ManagerApplicationsAndSchedules,
+    tickets: ManagerTickets,
+    assets: ManagerAssetsReadOnly,
+    'live-view': ManagerLiveView,
+    screenshots: ManagerScreenshots,
+    'web-usage': WebUsagePage
+  },
+
+  employee: {
+    dashboard: EmployeeDashboard,
+    wfh: EmployeeWFHAndSchedule,
+    tickets: EmployeeTickets,
+    assets: EmployeeAssetsAssigned
+  },
 };
 
 function AuthenticatedLayout() {

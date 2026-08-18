@@ -85,16 +85,43 @@ export const api = {
   },
 
   assets: {
-    list: () => request('/assets'),
-    create: (body) => request('/assets', { method: 'POST', body }),
-    update: (id, body) => request(`/assets/${id}`, { method: 'PUT', body }),
-    remove: (id) => request(`/assets/${id}`, { method: 'DELETE' }),
-    assign: (id, employeeId) => request(`/assets/${id}/assign`, { method: 'POST', body: { employeeId } }),
-    bulkAssign: (id, employeeIds) => request(`/assets/${id}/bulk-assign`, { method: 'POST', body: { employeeIds } }),
-    return: (id, employeeId) => request(`/assets/${id}/return`, { method: 'POST', body: employeeId !== undefined ? { employeeId } : undefined }),
-    retire: (id) => request(`/assets/${id}/retire`, { method: 'POST' }),
-    history: (id) => request(`/assets/${id}/history`),
+  list: () => request('/assets'),
+  create: (body) => request('/assets', { method: 'POST', body }),
+  update: (id, body) => request(`/assets/${id}`, { method: 'PUT', body }),
+  remove: (id) => request(`/assets/${id}`, { method: 'DELETE' }),
+  assign: (id, employeeId) => request(`/assets/${id}/assign`, { method: 'POST', body: { employeeId } }),
+  bulkAssign: (id, employeeIds) => request(`/assets/${id}/bulk-assign`, { method: 'POST', body: { employeeIds } }),
+  return: (id, employeeId) => request(`/assets/${id}/return`, { method: 'POST', body: employeeId !== undefined ? { employeeId } : undefined }),
+  retire: (id) => request(`/assets/${id}/retire`, { method: 'POST' }),
+  history: (id) => request(`/assets/${id}/history`),
+  printTag: async (id) => {
+    const token = getToken();
+
+    const res = await fetch(
+      `${API_URL}/asset-tags/${id}/print`,
+      {
+        headers: token
+          ? { Authorization: `Bearer ${token}` }
+          : {},
+      }
+    );
+
+    const html = await res.text();
+
+    if (!res.ok) {
+      let message = `Request failed (${res.status})`;
+
+      try {
+        const data = JSON.parse(html);
+        message = data.error || message;
+      } catch (_) {}
+
+      throw new Error(message);
+    }
+
+    return html;
   },
+},
 
   activity: {
     liveView: () => request('/activity/live-view'),
