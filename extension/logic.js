@@ -26,8 +26,7 @@ function todayStr(now = new Date()) {
   return now.toISOString().slice(0, 10);
 }
 
-// Folds an elapsed segment (exact page URL + domain + seconds spent) into the accumulation buffer.
-// buffer shape: { 'YYYY-MM-DD|<exact-url>': { date, url, domain, seconds } }
+// New buffer shape: { 'YYYY-MM-DD|<exact-url>': { date, url, domain, seconds } }
 function accumulate(buffer, date, url, domain, seconds) {
   if (!url || !(seconds > 0)) return buffer;
   const key = JSON.stringify([date, url]);
@@ -42,24 +41,41 @@ function accumulate(buffer, date, url, domain, seconds) {
   };
 }
 
-// Converts the buffer into the { domain, url, seconds, date } array the backend expects.
+// Converts both the new page-level buffer shape and the legacy numeric
+// domain-only buffer shape into upload entries. Legacy rows remain domain-only
+// rather than inventing an incorrect exact URL.
 function bufferToEntries(buffer) {
-  return Object.values(buffer)
-    .map(entry => ({
-      date: entry.date,
-      url: entry.url,
-      domain: entry.domain,
-      seconds: Math.round(entry.seconds),
-    }))
-    .filter(e => e.url && e.seconds > 0);
+  return Object.entries(buffer)
+    .map(([key, value]) => {
+      if (value && typeof value === 'object') {
+        return {
+          date: value.date,
+          url: value.url || null,
+          domain: value.domain || '',
+          seconds: Math.round(value.seconds),
+        };
+      }
+
+      const sep = key.indexOf('|');
+      return {
+        date: key.slice(0, sep),
+        url: null,
+        domain: key.slice(sep + 1),
+        seconds: Math.round(Number(value) || 0),
+      };
+    })
+    .filter(e => e.seconds > 0 && (e.url || e.domain));
 }
 
 // Given the current tracked page and a newly-observed page (or null if idle/unfocused/non-http tab),
 // decides whether a segment boundary occurred and returns the updated state.
 function computeTransition({ current, buffer, observedPage, now = Date.now(), date = todayStr() }) {
-  const currentUrl = current ? current.url : null;
+  const currentUrl = current ? (current.url || null) : null;
+  const currentDomain = current ? (current.domain || null) : null;
   const observedUrl = observedPage ? observedPage.url : null;
-  const pageChanged = currentUrl !== observedUrl;
+  const pageChanged = currentUrl
+    ? currentUrl !== observedUrl
+    : currentDomain !== (observedPage ? observedPage.domain : null);
 
   if (!pageChanged) {
     return { buffer, current, changed: false };
@@ -68,13 +84,15 @@ function computeTransition({ current, buffer, observedPage, now = Date.now(), da
   let nextBuffer = buffer;
   if (current) {
     const elapsedSeconds = (now - current.startedAt) / 1000;
-    nextBuffer = accumulate(
-      nextBuffer,
-      current.date,
-      current.url,
-      current.domain,
-      elapsedSeconds
-    );
+    if (current.url) {
+      nextBuffer = accumulate(
+        nextBuffer,
+        current.date,
+        current.url,
+        current.domain,
+        elapsedSeconds
+      );
+    }
   }
 
   const nextCurrent = observedPage
