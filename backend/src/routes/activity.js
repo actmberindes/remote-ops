@@ -36,14 +36,10 @@ function purgeOldActivity() {
     return Number.isNaN(ts) || ts > liveCutoff;
   });
 
-  // Web usage is stored as one row per employee/page/day for new records.
-  // Older domain-only rows are also retained until their normal date cutoff.
   db.data.webUsageLogs = (db.data.webUsageLogs || []).filter(r => {
     return !r.date || r.date >= webUsageCutoffDate;
   });
 }
-
-/* ---- Ingestion: called by the desktop agent / browser extension (device auth) ---- */
 
 activityRouter.post('/screenshots', requireDevice(db), async (req, res) => {
   if (req.employee.status !== 'active') {
@@ -97,30 +93,18 @@ activityRouter.post('/web-usage', requireDevice(db), async (req, res) => {
     if (!e.domain || !e.seconds || !e.date) continue;
 
     if (e.url) {
-      // New page-level tracking: aggregate by employee + date + exact URL.
-      let row = db.data.webUsageLogs.find(
-        r => r.employeeId === req.employee.id &&
-             r.date === e.date &&
-             (r.url || '') === e.url
-      );
-
-      if (!row) {
-        row = {
-          id: nextId(),
-          employeeId: req.employee.id,
-          date: e.date,
-          domain: e.domain,
-          url: e.url,
-          seconds: 0,
-        };
-        db.data.webUsageLogs.push(row);
-      }
-
-      row.domain = e.domain || row.domain || '';
-      row.url = e.url || row.url || '';
-      row.seconds += Number(e.seconds) || 0;
+      const row = {
+        id: nextId(),
+        employeeId: req.employee.id,
+        date: e.date,
+        domain: e.domain,
+        url: e.url,
+        seconds: Number(e.seconds) || 0,
+        startedAt: e.startedAt || null,
+        endedAt: e.endedAt || null,
+      };
+      db.data.webUsageLogs.push(row);
     } else {
-      // Legacy extension compatibility: preserve older domain-only buffers.
       let row = db.data.webUsageLogs.find(
         r => r.employeeId === req.employee.id &&
              r.date === e.date &&
@@ -136,6 +120,8 @@ activityRouter.post('/web-usage', requireDevice(db), async (req, res) => {
           domain: e.domain,
           url: null,
           seconds: 0,
+          startedAt: null,
+          endedAt: null,
         };
         db.data.webUsageLogs.push(row);
       }
@@ -148,8 +134,6 @@ activityRouter.post('/web-usage', requireDevice(db), async (req, res) => {
   await db.write();
   res.status(201).json({ ok: true });
 });
-
-/* ---- Consumption: called by the Admin/Manager/Employee web app (user auth) ---- */
 
 function scopedEmployeeIds(user) {
   if (user.role === 'Admin') return null;
@@ -207,6 +191,12 @@ activityRouter.get('/web-usage', requireAuth(db), (req, res) => {
   let list = db.data.webUsageLogs.filter(r => !allowed || allowed.has(r.employeeId));
   if (employeeId) list = list.filter(r => r.employeeId === Number(employeeId));
   if (date) list = list.filter(r => r.date === date);
+
+  list.sort((a, b) => {
+    const aTime = new Date(a.startedAt || `${a.date}T00:00:00Z`).getTime();
+    const bTime = new Date(b.startedAt || `${b.date}T00:00:00Z`).getTime();
+    return bTime - aTime;
+  });
 
   res.json(list.map(r => ({
     ...r,
