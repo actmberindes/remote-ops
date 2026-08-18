@@ -65,6 +65,7 @@ agentRouter.put('/config', requireAuth(db), requireRole('Admin'), async (req, re
     liveViewFrameIntervalSeconds,
     screenshotRetentionDays,
     liveViewRetentionDays,
+    webUsageRetentionDays,
   } = req.body || {};
 
   if (screenshotIntervalMinutes !== undefined) {
@@ -87,6 +88,11 @@ agentRouter.put('/config', requireAuth(db), requireRole('Admin'), async (req, re
     const v = Number(liveViewRetentionDays);
     if (!(v >= 1 && v <= 365)) return res.status(400).json({ error: 'liveViewRetentionDays must be between 1 and 365.' });
     db.data.agentConfig.liveViewRetentionDays = v;
+  }
+  if (webUsageRetentionDays !== undefined) {
+    const v = Number(webUsageRetentionDays);
+    if (!(v >= 1 && v <= 365)) return res.status(400).json({ error: 'webUsageRetentionDays must be between 1 and 365.' });
+    db.data.agentConfig.webUsageRetentionDays = v;
   }
   await db.write();
   res.json(db.data.agentConfig);

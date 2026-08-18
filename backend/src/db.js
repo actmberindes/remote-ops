@@ -12,12 +12,13 @@ const defaultData = {
   assets: [], assetAssignments: [], assetLogs: [],
   // Desktop agent / activity monitoring
   devices: [], pairingCodes: [], screenshots: [], liveFrames: [], liveFrameHistory: [], webUsageLogs: [],
-  // Monitoring defaults: screenshots and historical live-view frames are retained for one week.
+  // Monitoring defaults: screenshots, historical live-view frames, and web usage are retained for one week.
   agentConfig: {
     screenshotIntervalMinutes: 10,
     liveViewFrameIntervalSeconds: 5,
     screenshotRetentionDays: 7,
     liveViewRetentionDays: 7,
+    webUsageRetentionDays: 7,
   },
   idSeq: 1000, ticketSeq: 0, assetTagSeq: 0,
 };
@@ -30,12 +31,15 @@ for (const key of Object.keys(defaultData)) {
 }
 // Existing installations may have the older 30-day screenshot default. The requested
 // default for this application is one week; do not overwrite an administrator's
-// explicitly configured value once it has been changed.
+// explicitly configured values once they have been changed.
 if (db.data.agentConfig && db.data.agentConfig.screenshotRetentionDays === 30 && !db.data.agentConfig.liveViewRetentionDays) {
   db.data.agentConfig.screenshotRetentionDays = 7;
 }
 if (db.data.agentConfig && db.data.agentConfig.liveViewRetentionDays === undefined) {
   db.data.agentConfig.liveViewRetentionDays = 7;
+}
+if (db.data.agentConfig && db.data.agentConfig.webUsageRetentionDays === undefined) {
+  db.data.agentConfig.webUsageRetentionDays = 7;
 }
 await db.write();
 
@@ -87,8 +91,7 @@ function assetTypePrefix(type) {
 
 export function nextAssetTag(type) {
   const prefix = assetTypePrefix(type);
-  // Four random digits, with a monotonic fallback sequence to avoid accidental duplicates.
-  // The uniqueness check also protects against an existing tag already using the same value.
+  // Four random digits. The uniqueness check protects against an existing duplicate tag.
   let tag;
   do {
     const suffix = String(Math.floor(Math.random() * 10000)).padStart(4, '0');

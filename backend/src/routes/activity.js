@@ -17,16 +17,29 @@ function retentionCutoff(days) {
   return Date.now() - Number(days || 7) * 24 * 60 * 60 * 1000;
 }
 
+function retentionCutoffDate(days) {
+  return new Date(retentionCutoff(days)).toISOString().slice(0, 10);
+}
+
 function purgeOldActivity() {
   const screenshotCutoff = retentionCutoff(db.data.agentConfig.screenshotRetentionDays);
   const liveCutoff = retentionCutoff(db.data.agentConfig.liveViewRetentionDays);
+  const webUsageCutoffDate = retentionCutoffDate(db.data.agentConfig.webUsageRetentionDays);
+
   db.data.screenshots = db.data.screenshots.filter(s => {
     const ts = new Date(s.capturedAt).getTime();
     return Number.isNaN(ts) || ts > screenshotCutoff;
   });
+
   db.data.liveFrameHistory = (db.data.liveFrameHistory || []).filter(f => {
     const ts = new Date(f.capturedAt).getTime();
     return Number.isNaN(ts) || ts > liveCutoff;
+  });
+
+  // Web usage is stored as one row per employee/domain/day, so retention is
+  // evaluated against the row's YYYY-MM-DD activity date.
+  db.data.webUsageLogs = (db.data.webUsageLogs || []).filter(r => {
+    return !r.date || r.date >= webUsageCutoffDate;
   });
 }
 
@@ -78,6 +91,7 @@ activityRouter.post('/web-usage', requireDevice(db), async (req, res) => {
     }
     row.seconds += Number(e.seconds) || 0;
   }
+  purgeOldActivity();
   await db.write();
   res.status(201).json({ ok: true });
 });
@@ -132,6 +146,7 @@ activityRouter.get('/live-history', requireAuth(db), requireRole('Admin', 'Manag
 });
 
 activityRouter.get('/web-usage', requireAuth(db), (req, res) => {
+  purgeOldActivity();
   const { employeeId, date } = req.query;
   let allowed = scopedEmployeeIds(req.user);
   if (req.user.role === 'Employee') allowed = new Set([req.user.id]);
