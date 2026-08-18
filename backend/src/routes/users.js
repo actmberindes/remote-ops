@@ -11,15 +11,36 @@ usersRouter.get('/', (req, res) => {
   res.json(db.data.users.map(publicUser));
 });
 
-// Self-service: the time tracker flips the caller's own live status (active/idle/inactive)
+// Self-service: the time tracker flips the caller's own live status (active/idle/inactive).
+// Session timestamps are persisted so the UI and monitoring agents can recover the same
+// session state after navigation, refresh, or process restarts.
 usersRouter.patch('/me/status', async (req, res) => {
   const { status } = req.body || {};
   if (!['active', 'idle', 'inactive'].includes(status)) {
     return res.status(400).json({ error: 'status must be active, idle, or inactive.' });
   }
+
   const user = db.data.users.find(u => u.id === req.user.id);
+  if (!user) return res.status(404).json({ error: 'User not found.' });
+
+  const now = new Date().toISOString();
+
+  if (status === 'active') {
+    if (user.status !== 'active' || !user.sessionStartedAt) {
+      user.sessionStartedAt = now;
+    }
+    user.sessionEndedAt = null;
+  } else if (status === 'inactive') {
+    if (user.status === 'active' && user.sessionStartedAt) {
+      user.sessionEndedAt = now;
+    } else if (!user.sessionEndedAt) {
+      user.sessionEndedAt = now;
+    }
+  }
+
   user.status = status;
   await db.write();
+
   res.json(publicUser(user));
 });
 
@@ -34,6 +55,8 @@ usersRouter.post('/', requireRole('Admin'), async (req, res) => {
     id: nextId(), name: name.trim(), email: normalizedEmail, passwordHash: bcrypt.hashSync(password, 10),
     role: role || 'Employee', department: department || 'Operations', jobTitle: jobTitle || '',
     managerId: managerId || null, status: status || 'active',
+    sessionStartedAt: null,
+    sessionEndedAt: null,
   };
   db.data.users.push(user);
   await db.write();
