@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Remote Ops Activity Tracker",
   "version": "1.0.0",
-  "description": "Tracks domain-level web usage time for Remote Ops workforce management. Only active while paired to an employee account.",
+  "description": "Tracks exact active browser page URLs, domains, and time spent during an active Remote Ops work session. Only active while paired to an employee account.",
   "permissions": ["tabs", "idle", "alarms", "storage"],
   "host_permissions": ["<all_urls>"],
   "background": {
