@@ -1582,27 +1582,100 @@ function ManagerApplicationsAndSchedules() {
 
 function DynamicTimeTracker() {
   const { currentUser, setUsers, setTimeSessions, addToast } = useApp();
+
   const [tracking, setTracking] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [isIdle, setIsIdle] = useState(false);
-  const lastActivity = useRef(Date.now());
-  const startedAt = useRef(null);
+  const [sessionStartedAt, setSessionStartedAt] = useState(null);
+  const [loadingSession, setLoadingSession] = useState(true);
 
-  const pushStatus = (status) => {
-    setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, status } : u));
-    api.users.setMyStatus(status).catch(() => { /* best-effort; local state already updated */ });
+  const lastActivity = useRef(Date.now());
+
+  const pushStatus = async (status) => {
+    try {
+      const updated = await api.users.setMyStatus(status);
+
+      setUsers(prev =>
+        prev.map(u =>
+          u.id === currentUser.id
+            ? { ...u, ...updated }
+            : u
+        )
+      );
+
+      return updated;
+    } catch (e) {
+      addToast(e.message, 'error');
+      throw e;
+    }
   };
+
+  // Restore the real session state from the server.
+  const syncSession = async () => {
+    try {
+      const { user } = await api.me();
+
+      const active = user.status === 'active';
+      const idle = user.status === 'idle';
+
+      setTracking(active || idle);
+      setIsIdle(idle);
+
+      if (user.sessionStartedAt) {
+        setSessionStartedAt(user.sessionStartedAt);
+
+        const started = new Date(user.sessionStartedAt).getTime();
+
+        if (!Number.isNaN(started)) {
+          setElapsed(
+            Math.max(
+              0,
+              Math.floor((Date.now() - started) / 1000)
+            )
+          );
+        }
+      } else {
+        setSessionStartedAt(null);
+        setElapsed(0);
+      }
+
+      setUsers(prev =>
+        prev.map(u =>
+          u.id === currentUser.id
+            ? { ...u, ...user }
+            : u
+        )
+      );
+    } catch (e) {
+      // Keep the current UI state during a temporary network problem.
+    } finally {
+      setLoadingSession(false);
+    }
+  };
+
+  // Restore session immediately and keep the button synchronized
+  // with the backend after navigation/refresh.
+  useEffect(() => {
+    syncSession();
+
+    const interval = setInterval(syncSession, 10000);
+
+    return () => clearInterval(interval);
+  }, [currentUser.id]);
 
   useEffect(() => {
     const bumpActivity = () => {
       lastActivity.current = Date.now();
+
       if (isIdle && tracking) {
         setIsIdle(false);
-        pushStatus('active');
+        pushStatus('active').catch(() => {});
       }
     };
+
     window.addEventListener('mousemove', bumpActivity);
     window.addEventListener('keydown', bumpActivity);
+
     return () => {
       window.removeEventListener('mousemove', bumpActivity);
       window.removeEventListener('keydown', bumpActivity);
@@ -1611,50 +1684,116 @@ function DynamicTimeTracker() {
 
   useEffect(() => {
     if (!tracking) return;
+
     const interval = setInterval(() => {
       const now = Date.now();
       const idleTime = now - lastActivity.current;
 
       if (idleTime >= IDLE_THRESHOLD_MS && !isIdle) {
         setIsIdle(true);
-        pushStatus('idle');
+        pushStatus('idle').catch(() => {});
       }
 
-      if (!isIdle) {
-        setElapsed(e => e + 1);
+      if (sessionStartedAt) {
+        const started = new Date(sessionStartedAt).getTime();
+
+        if (!Number.isNaN(started)) {
+          setElapsed(
+            Math.max(
+              0,
+              Math.floor((now - started) / 1000)
+            )
+          );
+        }
       }
     }, 1000);
+
     return () => clearInterval(interval);
-  }, [tracking, isIdle, currentUser.id]);
+  }, [tracking, isIdle, sessionStartedAt, currentUser.id]);
 
   const toggleTracking = async () => {
-    if (!tracking) {
-      setTracking(true);
-      setElapsed(0);
-      setIsIdle(false);
-      startedAt.current = new Date();
-      lastActivity.current = Date.now();
-      pushStatus('active');
-      addToast('Time tracking started.', 'info');
-    } else {
-      setTracking(false);
+    if (tracking) {
       const end = new Date();
-      const totalHours = Math.max(0.01, Math.round((elapsed / 3600) * 100) / 100);
-      const payload = {
-        date: toISO(end),
-        startTime: startedAt.current.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-        endTime: end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-        totalHours,
-      };
+
       try {
+        const updated = await pushStatus('inactive');
+
+        const started = sessionStartedAt
+          ? new Date(sessionStartedAt).getTime()
+          : end.getTime();
+
+        const totalHours = Math.max(
+          0.01,
+          Math.round(
+            ((end.getTime() - started) / 3600000) * 100
+          ) / 100
+        );
+
+        const payload = {
+          date: toISO(end),
+          startTime: sessionStartedAt
+            ? new Date(sessionStartedAt).toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+            : end.toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+              }),
+          endTime: end.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+          totalHours,
+        };
+
         const saved = await api.timeSessions.create(payload);
+
         setTimeSessions(prev => [saved, ...prev]);
-        addToast(`Session saved (${totalHours} hrs).`, 'success');
+
+        setTracking(false);
+        setIsIdle(false);
+        setElapsed(0);
+        setSessionStartedAt(null);
+
+        setUsers(prev =>
+          prev.map(u =>
+            u.id === currentUser.id
+              ? { ...u, ...updated, status: 'inactive' }
+              : u
+          )
+        );
+
+        addToast(
+          `Session saved (${totalHours} hrs).`,
+          'success'
+        );
       } catch (e) {
         addToast(e.message, 'error');
       }
-      pushStatus('inactive');
+
+      return;
+    }
+
+    try {
+      const updated = await pushStatus('active');
+
+      const startedAt =
+        updated.sessionStartedAt ||
+        new Date().toISOString();
+
+      setSessionStartedAt(startedAt);
+      setTracking(true);
       setElapsed(0);
+      setIsIdle(false);
+      lastActivity.current = Date.now();
+
+      addToast(
+        'Time tracking started. Monitoring is now active.',
+        'info'
+      );
+    } catch (e) {
+      // Error already shown by pushStatus().
     }
   };
 
@@ -1662,22 +1801,52 @@ function DynamicTimeTracker() {
     <Card className="flex flex-col sm:flex-row items-center justify-between gap-4 rail border border-[var(--border)] shadow-md">
       <div>
         <div className="flex items-center gap-2 mb-1">
-          <StatusDot status={tracking ? (isIdle ? 'idle' : 'active') : 'inactive'} />
+          <StatusDot
+            status={
+              loadingSession
+                ? 'inactive'
+                : tracking
+                  ? (isIdle ? 'idle' : 'active')
+                  : 'inactive'
+            }
+          />
+
           <span className="text-[10px] font-bold uppercase tracking-wider text-muted">
-            {tracking ? (isIdle ? 'Idle — Away > 5 mins' : 'Live Active Tracking') : 'Clocked Out — Ready to Start'}
+            {loadingSession
+              ? 'Checking Session…'
+              : tracking
+                ? (isIdle
+                    ? 'Idle — Away > 5 mins'
+                    : 'Live Active Tracking')
+                : 'Clocked Out — Ready to Start'}
           </span>
         </div>
-        <div className="font-display font-bold text-3xl tracking-tight mono">{formatHMS(elapsed)}</div>
+
+        <div className="font-display font-bold text-3xl tracking-tight mono">
+          {formatHMS(elapsed)}
+        </div>
       </div>
 
       <button
         onClick={toggleTracking}
+        disabled={loadingSession}
         className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-semibold text-xs shadow-md transition-all ${
           tracking
             ? 'bg-[var(--danger)] text-white active:scale-95'
             : 'bg-[var(--success)] text-white active:scale-95'
-        }`}>
-        {tracking ? <><Square size={14} /> Stop Session</> : <><Play size={14} /> Start Session</>}
+        }`}
+      >
+        {tracking ? (
+          <>
+            <Square size={14} />
+            Stop Session
+          </>
+        ) : (
+          <>
+            <Play size={14} />
+            Start Session
+          </>
+        )}
       </button>
     </Card>
   );
@@ -1685,25 +1854,91 @@ function DynamicTimeTracker() {
 
 function DevicePairingCard() {
   const { addToast } = useApp();
+
+  const [devices, setDevices] = useState([]);
   const [code, setCode] = useState(null);
   const [expiresAt, setExpiresAt] = useState(null);
   const [secondsLeft, setSecondsLeft] = useState(0);
+  const [loadingDevices, setLoadingDevices] = useState(true);
   const [generating, setGenerating] = useState(false);
+
+  const loadDevices = async () => {
+    try {
+      const data = await api.agent.myDevices();
+
+      const activeDevices = data.filter(d => !d.revoked);
+
+      setDevices(activeDevices);
+
+      // A successful pairing can happen from the desktop agent
+      // or the browser extension. As soon as the server sees the
+      // new device, clear the old pairing-code screen immediately.
+      if (activeDevices.length > 0 && code) {
+        setCode(null);
+        setExpiresAt(null);
+        setSecondsLeft(0);
+      }
+    } catch (e) {
+      // Don't interrupt the employee dashboard for a temporary
+      // device-status request failure.
+    } finally {
+      setLoadingDevices(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDevices();
+
+    // Detect a successful desktop-agent or browser-extension
+    // pairing without requiring the employee to wait for the
+    // 10-minute pairing countdown.
+    const interval = setInterval(loadDevices, 3000);
+
+    return () => clearInterval(interval);
+  }, [code]);
 
   useEffect(() => {
     if (!expiresAt) return;
-    const tick = () => setSecondsLeft(Math.max(0, Math.round((new Date(expiresAt).getTime() - Date.now()) / 1000)));
+
+    const tick = () => {
+      const remaining = Math.max(
+        0,
+        Math.round(
+          (new Date(expiresAt).getTime() - Date.now()) / 1000
+        )
+      );
+
+      setSecondsLeft(remaining);
+
+      if (remaining === 0) {
+        setCode(null);
+        setExpiresAt(null);
+      }
+    };
+
     tick();
+
     const interval = setInterval(tick, 1000);
+
     return () => clearInterval(interval);
   }, [expiresAt]);
 
   const generate = async () => {
     setGenerating(true);
+
     try {
       const res = await api.agent.pairingCode();
+
       setCode(res.code);
       setExpiresAt(res.expiresAtISO);
+      setSecondsLeft(
+        Math.max(
+          0,
+          Math.round(
+            (new Date(res.expiresAtISO).getTime() - Date.now()) / 1000
+          )
+        )
+      );
     } catch (e) {
       addToast(e.message, 'error');
     } finally {
@@ -1711,34 +1946,160 @@ function DevicePairingCard() {
     }
   };
 
-  const copyCode = () => {
-    if (navigator.clipboard) navigator.clipboard.writeText(code);
-    addToast('Code copied to clipboard.', 'success');
+  const copyCode = async () => {
+    if (!code) return;
+
+    try {
+      await navigator.clipboard.writeText(code);
+      addToast('Code copied to clipboard.', 'success');
+    } catch (e) {
+      addToast('Unable to copy the code.', 'error');
+    }
   };
 
   return (
     <Card className="rail">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <h3 className="font-display font-bold text-sm flex items-center gap-2"><Laptop size={16} className="accent-text" /> Pair This Device</h3>
-          <p className="text-xs text-muted mt-0.5">Link the desktop agent to your account for activity tracking.</p>
+          <h3 className="font-display font-bold text-sm flex items-center gap-2">
+            <Laptop size={16} className="accent-text" />
+            Device Pairing
+          </h3>
+
+          <p className="text-xs text-muted mt-0.5">
+            Link your desktop agent or browser extension for activity monitoring.
+          </p>
         </div>
-        {!code && (
-          <button onClick={generate} disabled={generating} className="px-4 py-2 rounded-lg text-xs font-bold accent-bg-solid shadow-sm shrink-0">
-            {generating ? 'Generating…' : 'Generate Code'}
-          </button>
-        )}
+
+        <button
+          onClick={generate}
+          disabled={generating}
+          className="px-4 py-2 rounded-lg text-xs font-bold accent-bg-solid shadow-sm shrink-0"
+        >
+          {generating
+            ? 'Generating…'
+            : devices.length > 0
+              ? 'Pair Another Device'
+              : 'Generate Code'}
+        </button>
       </div>
-      {code && (
-        <div className="mt-3 flex items-center gap-3 p-3 rounded-lg border border-[var(--border)]" style={{ background: 'var(--bg)' }}>
-          <KeyRound size={18} className="text-muted shrink-0" />
-          <div className="flex-1">
-            <div className="text-xl font-bold mono tracking-widest">{code}</div>
-            <div className="text-[10px] text-muted">{secondsLeft > 0 ? `Expires in ${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, '0')}` : 'Expired — generate a new code'}</div>
+
+      {loadingDevices ? (
+        <div className="mt-4 py-4 text-center text-xs text-muted">
+          Checking paired devices…
+        </div>
+      ) : devices.length > 0 ? (
+        <div className="mt-4 flex flex-col gap-2">
+          <div className="text-[10px] font-bold text-muted uppercase tracking-wider">
+            Paired Devices
           </div>
-          <button onClick={copyCode} className="p-2 rounded-lg hover-surface" title="Copy"><Copy size={15} /></button>
+
+          {devices.map(device => (
+            <div
+              key={device.id}
+              className="flex items-center gap-3 p-3 rounded-lg border border-[var(--border)]"
+              style={{ background: 'var(--bg)' }}
+            >
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center accent-bg shrink-0">
+                {device.type === 'desktop-agent' ? (
+                  <Laptop size={17} />
+                ) : (
+                  <Globe2 size={17} />
+                )}
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-semibold truncate">
+                  {device.deviceName}
+                </div>
+
+                <div className="text-[10px] text-muted">
+                  {device.type === 'desktop-agent'
+                    ? 'Desktop Agent'
+                    : 'Browser Extension'}
+                  {' · '}
+                  Paired {device.pairedAt}
+                </div>
+
+                <div className="flex items-center gap-1.5 mt-1">
+                  <span
+                    className="rounded-full"
+                    style={{
+                      width: 6,
+                      height: 6,
+                      background: 'var(--success)',
+                    }}
+                  />
+                  <span className="text-[10px] font-semibold text-[var(--success)]">
+                    Paired
+                  </span>
+                </div>
+              </div>
+
+              <div className="px-3 py-1.5 rounded-lg text-[10px] font-bold border border-[var(--border)] text-muted shrink-0">
+                Managed by IT
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-4">
+          <div
+            className="flex items-center gap-2 p-3 rounded-lg border border-[var(--border)]"
+            style={{ background: 'var(--bg)' }}
+          >
+            <ShieldOff size={16} className="text-muted" />
+
+            <div>
+              <div className="text-xs font-semibold">
+                No paired devices
+              </div>
+
+              <div className="text-[10px] text-muted">
+                Generate a code to pair your desktop agent or browser extension.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {code && (
+        <div
+          className="mt-3 flex items-center gap-3 p-3 rounded-lg border border-[var(--border)]"
+          style={{ background: 'var(--bg)' }}
+        >
+          <KeyRound size={18} className="text-muted shrink-0" />
+
+          <div className="flex-1">
+            <div className="text-xl font-bold mono tracking-widest">
+              {code}
+            </div>
+
+            <div className="text-[10px] text-muted">
+              {secondsLeft > 0
+                ? `Expires in ${Math.floor(secondsLeft / 60)}:${String(
+                    secondsLeft % 60
+                  ).padStart(2, '0')}`
+                : 'Expired — generate a new code'}
+            </div>
+          </div>
+
+          <button
+            onClick={copyCode}
+            className="p-2 rounded-lg hover-surface"
+            title="Copy"
+          >
+            <Copy size={15} />
+          </button>
+
           {secondsLeft <= 0 && (
-            <button onClick={generate} className="px-3 py-1.5 rounded-lg text-xs font-bold accent-bg-solid">New Code</button>
+            <button
+              onClick={generate}
+              disabled={generating}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold accent-bg-solid"
+            >
+              New Code
+            </button>
           )}
         </div>
       )}
