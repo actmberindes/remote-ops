@@ -36,8 +36,8 @@ function purgeOldActivity() {
     return Number.isNaN(ts) || ts > liveCutoff;
   });
 
-  // Web usage is stored as one row per employee/domain/day, so retention is
-  // evaluated against the row's YYYY-MM-DD activity date.
+  // Web usage is stored as one row per employee/page/day, so retention is evaluated
+  // against the row's YYYY-MM-DD activity date.
   db.data.webUsageLogs = (db.data.webUsageLogs || []).filter(r => {
     return !r.date || r.date >= webUsageCutoffDate;
   });
@@ -78,7 +78,6 @@ activityRouter.post('/live-frame', requireDevice(db), async (req, res) => {
   } else {
     db.data.liveFrames.push({ employeeId: req.employee.id, deviceId: req.device.id, url, capturedAt: ts });
   }
-  // Keep every live frame as historical data as well as the latest frame used by Live View.
   db.data.liveFrameHistory = db.data.liveFrameHistory || [];
   db.data.liveFrameHistory.push({ id: nextId(), employeeId: req.employee.id, deviceId: req.device.id, url, capturedAt: ts });
   purgeOldActivity();
@@ -95,14 +94,32 @@ activityRouter.post('/web-usage', requireDevice(db), async (req, res) => {
   if (!Array.isArray(entries) || entries.length === 0) return res.status(400).json({ error: 'entries array is required.' });
 
   for (const e of entries) {
-    if (!e.domain || !e.seconds || !e.date) continue;
-    let row = db.data.webUsageLogs.find(r => r.employeeId === req.employee.id && r.date === e.date && r.domain === e.domain);
+    if (!e.domain || !e.url || !e.seconds || !e.date) continue;
+
+    // New page-level tracking: aggregate by employee + date + exact URL.
+    let row = db.data.webUsageLogs.find(
+      r => r.employeeId === req.employee.id &&
+           r.date === e.date &&
+           (r.url || '') === e.url
+    );
+
     if (!row) {
-      row = { id: nextId(), employeeId: req.employee.id, date: e.date, domain: e.domain, seconds: 0 };
+      row = {
+        id: nextId(),
+        employeeId: req.employee.id,
+        date: e.date,
+        domain: e.domain,
+        url: e.url,
+        seconds: 0,
+      };
       db.data.webUsageLogs.push(row);
     }
+
+    row.domain = e.domain || row.domain || '';
+    row.url = e.url || row.url || '';
     row.seconds += Number(e.seconds) || 0;
   }
+
   purgeOldActivity();
   await db.write();
   res.status(201).json({ ok: true });
@@ -167,5 +184,9 @@ activityRouter.get('/web-usage', requireAuth(db), (req, res) => {
   if (employeeId) list = list.filter(r => r.employeeId === Number(employeeId));
   if (date) list = list.filter(r => r.date === date);
 
-  res.json(list.map(r => ({ ...r, minutes: Math.round((r.seconds / 60) * 10) / 10, employeeName: userName(r.employeeId) })));
+  res.json(list.map(r => ({
+    ...r,
+    minutes: Math.round((r.seconds / 60) * 10) / 10,
+    employeeName: userName(r.employeeId),
+  })));
 });
