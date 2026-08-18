@@ -1209,6 +1209,27 @@ function AdminDevicesPanel() {
       addToast('Device revoked.', 'success');
     } catch (e) { addToast(e.message, 'error'); }
   };
+  const deleteDevice = async (device) => {
+    const confirmed = window.confirm(
+      `Permanently delete "${device.deviceName}"?\n\n` +
+      `This will remove the paired-device record. ` +
+      `The device will need to be paired again before it can monitor.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      await api.agent.deleteDevice(device.id);
+
+      setDevices(prev =>
+        prev.filter(d => d.id !== device.id)
+      );
+
+      addToast('Paired device deleted permanently.', 'success');
+    } catch (e) {
+      addToast(e.message, 'error');
+    }
+  };
 
   return (
     <Card className="w-full">
@@ -1247,12 +1268,28 @@ function AdminDevicesPanel() {
                     <Badge tone={d.revoked ? 'danger' : 'success'}>{d.revoked ? 'Revoked' : 'Active'}</Badge>
                   </td>
                   <td className="py-2.5 px-2 text-right">
+                    <div className="flex items-center justify-end gap-1">
+
                     {!d.revoked && (
-                      <button onClick={() => revoke(d)} className="p-1.5 rounded-lg hover-surface text-muted hover:text-[var(--danger)]" title="Revoke">
+                      <button
+                        onClick={() => revoke(d)}
+                        className="p-1.5 rounded-lg hover-surface text-muted hover:text-[var(--danger)]"
+                        title="Revoke Device"
+                      >
                         <ShieldOff size={14} />
                       </button>
                     )}
-                  </td>
+
+                    <button
+                      onClick={() => deleteDevice(d)}
+                      className="p-1.5 rounded-lg hover-surface text-muted hover:text-[var(--danger)]"
+                      title="Delete Device"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+
+                  </div>
+                </td>
                 </tr>
               ))}
               {devices.length === 0 && <tr><td colSpan={7} className="py-6 text-center text-muted">No devices have been paired yet.</td></tr>}
