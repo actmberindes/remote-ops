@@ -727,6 +727,7 @@ function AdminMonitoringSettings() {
     liveViewFrameIntervalSeconds: 5,
     screenshotRetentionDays: 7,
     liveViewRetentionDays: 7,
+    webUsageRetentionDays: 7,
   });
 
   const [loading, setLoading] = useState(true);
@@ -742,6 +743,7 @@ function AdminMonitoringSettings() {
           liveViewFrameIntervalSeconds: saved.liveViewFrameIntervalSeconds ?? 5,
           screenshotRetentionDays: saved.screenshotRetentionDays ?? 7,
           liveViewRetentionDays: saved.liveViewRetentionDays ?? 7,
+          webUsageRetentionDays: saved.webUsageRetentionDays ?? 7,
         });
       } catch (e) {
         addToast(e.message, 'error');
@@ -771,6 +773,7 @@ function AdminMonitoringSettings() {
         liveViewFrameIntervalSeconds: saved.liveViewFrameIntervalSeconds ?? config.liveViewFrameIntervalSeconds,
         screenshotRetentionDays: saved.screenshotRetentionDays ?? config.screenshotRetentionDays,
         liveViewRetentionDays: saved.liveViewRetentionDays ?? config.liveViewRetentionDays,
+        webUsageRetentionDays: saved.webUsageRetentionDays ?? config.webUsageRetentionDays,
       });
 
       addToast('Monitoring settings saved successfully.', 'success');
@@ -932,6 +935,39 @@ function AdminMonitoringSettings() {
             </div>
           </div>
 
+        </div>
+
+        <div className="p-4 rounded-xl border border-[var(--border)]">
+          <div className="flex items-center gap-2 mb-1">
+            <Globe2 size={16} className="accent-text" />
+            <h4 className="font-semibold text-sm">
+              Web Usage Retention
+            </h4>
+          </div>
+
+          <p className="text-[11px] text-muted mb-3">
+            Number of days Web Usage / Internet Activity history is retained.
+          </p>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min="1"
+              max="365"
+              className={`${inputCls} max-w-[140px]`}
+              value={config.webUsageRetentionDays}
+              onChange={e =>
+                update('webUsageRetentionDays', e.target.value)
+              }
+            />
+            <span className="text-xs text-muted">
+              days
+            </span>
+          </div>
+
+          <div className="text-[10px] text-muted mt-2">
+            Default: <strong>7 days</strong>
+          </div>
         </div>
 
         <div className="flex justify-end mt-5 pt-4 border-t border-[var(--border)]">
