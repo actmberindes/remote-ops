@@ -10,9 +10,10 @@ function configDir() {
 }
 
 const CONFIG_PATH = path.join(configDir(), 'config.json');
+const DEFAULT_API_URL = process.env.REMOTE_OPS_API_URL || 'http://192.168.1.2:4000/api';
 
 const defaults = {
-  apiUrl: process.env.REMOTE_OPS_API_URL || 'http://192.168.1.2:4000/api',
+  apiUrl: DEFAULT_API_URL,
   deviceToken: null,
   deviceId: null,
   employeeId: null,
@@ -23,8 +24,16 @@ const defaults = {
 
 function loadConfig() {
   try {
-    const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
-    return { ...defaults, ...JSON.parse(raw) };
+    const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+    const merged = { ...defaults, ...raw };
+
+    // Migrate older local-dev configurations so existing agents stop pointing
+    // at localhost on the employee's own machine.
+    if (!merged.apiUrl || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/api\/?$/i.test(merged.apiUrl)) {
+      merged.apiUrl = DEFAULT_API_URL;
+    }
+
+    return merged;
   } catch (e) {
     return { ...defaults };
   }
