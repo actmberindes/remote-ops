@@ -12,7 +12,7 @@ function configDir() {
 const CONFIG_PATH = path.join(configDir(), 'config.json');
 
 const defaults = {
-  apiUrl: process.env.REMOTE_OPS_API_URL || 'http://localhost:4000/api',
+  apiUrl: process.env.REMOTE_OPS_API_URL || 'http://192.168.1.2:4000/api',
   deviceToken: null,
   deviceId: null,
   employeeId: null,
