@@ -1,6 +1,6 @@
 async function getApiUrl() {
   const { apiUrl } = await chrome.storage.local.get('apiUrl');
-  return apiUrl || 'http://localhost:4000/api';
+  return apiUrl || 'http://192.168.1.2:4000/api';
 }
 
 async function render() {
