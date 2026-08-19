@@ -1,6 +1,13 @@
+const DEFAULT_API_URL = 'http://192.168.1.2:4000/api';
+
 async function getApiUrl() {
   const { apiUrl } = await chrome.storage.local.get('apiUrl');
-  return apiUrl || 'http://192.168.1.2:4000/api';
+  if (apiUrl && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/api\/?$/i.test(apiUrl)) {
+    return apiUrl;
+  }
+
+  await chrome.storage.local.set({ apiUrl: DEFAULT_API_URL });
+  return DEFAULT_API_URL;
 }
 
 async function render() {
