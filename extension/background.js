@@ -3,10 +3,16 @@ import { pageFromUrl, domainFromUrl, todayStr, bufferToEntries, computeTransitio
 const IDLE_THRESHOLD_SECONDS = 60;
 const FLUSH_PERIOD_MINUTES = 1;
 const SESSION_POLL_PERIOD_MINUTES = 0.25; // 15 seconds
+const DEFAULT_API_URL = 'http://192.168.1.2:4000/api';
 
 async function getApiUrl() {
   const { apiUrl } = await chrome.storage.local.get('apiUrl');
-  return apiUrl || 'http://192.168.1.2:4000/api';
+  if (apiUrl && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/api\/?$/i.test(apiUrl)) {
+    return apiUrl;
+  }
+
+  await chrome.storage.local.set({ apiUrl: DEFAULT_API_URL });
+  return DEFAULT_API_URL;
 }
 
 // MV3 service workers can be killed and restarted at any time,
