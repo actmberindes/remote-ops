@@ -6,7 +6,7 @@ const SESSION_POLL_PERIOD_MINUTES = 0.25; // 15 seconds
 
 async function getApiUrl() {
   const { apiUrl } = await chrome.storage.local.get('apiUrl');
-  return apiUrl || 'http://localhost:4000/api';
+  return apiUrl || 'http://192.168.1.2:4000/api';
 }
 
 // MV3 service workers can be killed and restarted at any time,
@@ -108,7 +108,7 @@ async function flush() {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${deviceToken}` },
       body: JSON.stringify({ entries }),
     });
-    if (res.ok) await setTrackingState({ buffer: {} });
+    if (res.ok) await setTrackingState({ buffer: [] });
   } catch (e) { /* offline or backend down — keep the buffer for retry */ }
 
   await refreshTracking();
