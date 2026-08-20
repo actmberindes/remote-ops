@@ -1,7 +1,7 @@
 const readline = require('node:readline');
-const os = require('node:os');
-const { loadConfig, saveConfig, isPaired } = require('./config.js');
+const { loadConfig, saveConfig, isEnrolled } = require('./config.js');
 const { createClient } = require('./api.js');
+const { getDeviceState } = require('./telemetry.js');
 
 function ask(question) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -10,44 +10,52 @@ function ask(question) {
 
 async function runPairingFlow({ log = console.log } = {}) {
   const config = loadConfig();
-  if (isPaired(config)) {
-    log(`Already paired to ${config.employeeName} (device #${config.deviceId}). Delete the config file to re-pair.`);
+  if (isEnrolled(config)) {
+    log(`Already enrolled as ${config.employeeName} on ${config.deviceName || config.hostname || config.deviceId}.`);
     return config;
   }
 
   log('');
   log('=========================================');
-  log('  Remote Ops Agent — Device Setup');
+  log('  Remote Ops Agent — Device Enrollment');
   log('=========================================');
-  log('This computer will be monitored during active work sessions:');
-  log('  - Periodic desktop screenshots (interval set by your Admin)');
-  log('  - Near-live desktop preview while a session is Active');
-  log('  - Web browsing activity, if the companion browser extension is installed');
-  log('');
-  log('To link this computer to your account:');
-  log('  1. Sign in to the employee portal');
-  log('  2. Go to Dashboard -> "Pair This Device" and generate a code');
-  log('  3. Enter that code below (valid for 10 minutes)');
+  log('This computer is being enrolled by IT for managed monitoring.');
+  log('The Admin must register this computer first and provide an enrollment code.');
   log('');
 
   const client = createClient(config.apiUrl);
-  const code = await ask('Pairing code: ');
-  const deviceName = `${os.hostname()} (${os.platform()})`;
+  const code = await ask('Enrollment code: ');
+  const telemetry = getDeviceState();
 
   try {
-    const result = await client.pair(code, deviceName, 'desktop-agent');
+    const result = await client.enroll(code, {
+      machineId: telemetry.machineId,
+      hostname: telemetry.hostname,
+      domain: telemetry.domain,
+      domainUser: telemetry.domainUser,
+      deviceType: 'desktop-agent',
+      agentVersion: config.agentVersion,
+    });
+
     const saved = saveConfig({
       deviceToken: result.deviceToken,
       deviceId: result.deviceId,
       employeeId: result.employeeId,
       employeeName: result.employeeName,
-      pairedAt: new Date().toISOString(),
+      deviceName: telemetry.hostname,
+      enrolledAt: new Date().toISOString(),
+      machineId: telemetry.machineId,
+      hostname: telemetry.hostname,
+      domain: telemetry.domain,
+      domainUser: telemetry.domainUser,
     });
+
     log('');
-    log(`✔ Paired successfully as ${result.employeeName}. Monitoring will begin the next time your session is Active.`);
+    log(`✔ Enrolled successfully to ${result.employeeName}.`);
+    log('The agent will now monitor the registered device automatically while it is online.');
     return saved;
   } catch (e) {
-    log(`✘ Pairing failed: ${e.message}`);
+    log(`✘ Enrollment failed: ${e.message}`);
     process.exitCode = 1;
     throw e;
   }
@@ -55,7 +63,6 @@ async function runPairingFlow({ log = console.log } = {}) {
 
 module.exports = { runPairingFlow };
 
-// Allow running directly: `npm run pair`
 if (require.main === module) {
   runPairingFlow().catch(() => process.exit(1));
 }
