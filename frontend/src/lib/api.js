@@ -151,9 +151,10 @@ export const api = {
   },
 
   agent: {
-    pairingCode: () => request('/agent/pairing-code', { method: 'POST' }),
-    myDevices: () => request('/agent/my-devices'),
+    registerDevice: (body) => request('/agent/devices/register', { method: 'POST', body }),
     devices: () => request('/agent/devices'),
+    myDevices: () => request('/agent/my-devices'),
+    deviceHistory: (id) => request(`/agent/devices/${id}/history`),
     revokeDevice: (id) => request(`/agent/devices/${id}/revoke`, { method: 'PATCH' }),
     deleteDevice: (id) => request(`/agent/devices/${id}`, { method: 'DELETE' }),
     getConfig: () => request('/agent/config-admin'),
