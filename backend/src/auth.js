@@ -35,12 +35,16 @@ export function publicUser(u) {
   return rest;
 }
 
-/* ---- Device auth: the desktop agent and browser extension authenticate as a
-   paired device, not as a logged-in user. Tokens are long-lived (1 year) and
-   individually revocable from Admin > User Management > Devices. ---- */
-
+/* ---- Device auth ----
+   Desktop agents and browser extensions authenticate as managed devices.
+   Devices are registered by Admin and receive a revocable long-lived token
+   only after successful enrollment. */
 export function signDeviceToken(device) {
-  return jwt.sign({ deviceId: device.id, employeeId: device.employeeId, kind: 'device' }, SECRET, { expiresIn: '365d' });
+  return jwt.sign(
+    { deviceId: device.id, employeeId: device.employeeId, kind: 'device' },
+    SECRET,
+    { expiresIn: '365d' },
+  );
 }
 
 export function requireDevice(db) {
@@ -48,14 +52,19 @@ export function requireDevice(db) {
     const header = req.headers.authorization || '';
     const token = header.startsWith('Bearer ') ? header.slice(7) : null;
     if (!token) return res.status(401).json({ error: 'Missing device token.' });
+
     try {
       const payload = jwt.verify(token, SECRET);
       if (payload.kind !== 'device') return res.status(401).json({ error: 'Not a device token.' });
-      const device = db.data.devices.find(d => d.id === payload.deviceId && d.revoked !== true);
-      if (!device) return res.status(401).json({ error: 'This device has been unpaired or no longer exists.' });
+
+      const device = db.data.devices.find(
+        d => d.id === payload.deviceId && d.revoked !== true && d.enrolled !== false
+      );
+      if (!device) return res.status(401).json({ error: 'This device is not enrolled, has been revoked, or no longer exists.' });
+
       const employee = db.data.users.find(u => u.id === device.employeeId);
       if (!employee) return res.status(401).json({ error: 'Associated employee account no longer exists.' });
-      device.lastSeenAt = new Date().toLocaleString('en-US');
+
       req.device = device;
       req.employee = employee;
       next();
@@ -65,24 +74,29 @@ export function requireDevice(db) {
   };
 }
 
-// Accepts either a normal user session token OR a paired-device token. Used by shared
-// infrastructure (like file uploads) that both the web app and the desktop agent/extension call.
+// Accepts either a normal user session token OR a managed-device token. Used by
+// shared infrastructure such as file uploads.
 export function requireAuthOrDevice(db) {
   return (req, res, next) => {
     const header = req.headers.authorization || '';
     const token = header.startsWith('Bearer ') ? header.slice(7) : null;
     if (!token) return res.status(401).json({ error: 'Missing authentication token.' });
+
     try {
       const payload = jwt.verify(token, SECRET);
+
       if (payload.kind === 'device') {
-        const device = db.data.devices.find(d => d.id === payload.deviceId && d.revoked !== true);
-        if (!device) return res.status(401).json({ error: 'This device has been unpaired.' });
+        const device = db.data.devices.find(
+          d => d.id === payload.deviceId && d.revoked !== true && d.enrolled !== false
+        );
+        if (!device) return res.status(401).json({ error: 'This device is not enrolled, has been revoked, or no longer exists.' });
         const employee = db.data.users.find(u => u.id === device.employeeId);
         if (!employee) return res.status(401).json({ error: 'Associated employee account no longer exists.' });
         req.device = device;
         req.user = employee;
         return next();
       }
+
       const user = db.data.users.find(u => u.id === payload.id);
       if (!user) return res.status(401).json({ error: 'User no longer exists.' });
       req.user = user;
