@@ -1,5 +1,5 @@
 const { spawnSync } = require('node:child_process');
-const { saveConfig } = require('./config.js');
+const { saveConfig, loadConfig } = require('./config.js');
 
 const CONSENT_TITLE = 'Remote Ops Monitoring Consent';
 
@@ -8,9 +8,7 @@ function escapePowerShell(value) {
 }
 
 function showConsentDialog() {
-  if (process.platform !== 'win32') {
-    return false;
-  }
+  if (process.platform !== 'win32') return false;
 
   const script = `
 Add-Type -AssemblyName System.Windows.Forms
@@ -19,8 +17,8 @@ Add-Type -AssemblyName System.Drawing
 $form = New-Object System.Windows.Forms.Form
 $form.Text = '${escapePowerShell(CONSENT_TITLE)}'
 $form.StartPosition = 'CenterScreen'
-$form.Size = New-Object System.Drawing.Size(650, 520)
-$form.MinimumSize = New-Object System.Drawing.Size(650, 520)
+$form.Size = New-Object System.Drawing.Size(650, 560)
+$form.MinimumSize = New-Object System.Drawing.Size(650, 560)
 $form.MaximizeBox = $false
 $form.MinimizeBox = $false
 $form.TopMost = $true
@@ -34,7 +32,7 @@ $title.Size = New-Object System.Drawing.Size(590, 35)
 $form.Controls.Add($title)
 
 $intro = New-Object System.Windows.Forms.Label
-$intro.Text = 'This computer is paired with Remote Ops. Monitoring is only active during an active work session started from the employee portal.'
+$intro.Text = 'This computer is managed by Remote Ops. Monitoring is automatic after IT enrollment and while the device is online.'
 $intro.Font = New-Object System.Drawing.Font('Segoe UI', 10)
 $intro.Location = New-Object System.Drawing.Point(25, 65)
 $intro.Size = New-Object System.Drawing.Size(590, 55)
@@ -46,27 +44,31 @@ $box.ReadOnly = $true
 $box.ScrollBars = 'Vertical'
 $box.Font = New-Object System.Drawing.Font('Segoe UI', 9.5)
 $box.Location = New-Object System.Drawing.Point(25, 125)
-$box.Size = New-Object System.Drawing.Size(590, 255)
+$box.Size = New-Object System.Drawing.Size(590, 285)
 $box.Text = @'
-Remote Ops may capture the following information while your work session is Active:
+Remote Ops may capture and process the following information from this managed computer:
 
-1. Periodic desktop screenshots at the interval configured by your administrator.
+1. Device identity information such as hostname, Windows/domain user, domain, machine identifier, and agent version.
 
-2. Near-live desktop frames for the Live View monitoring page, at the interval configured by your administrator.
+2. Device availability information, including Active, Idle, No User Logged In, and Offline state with timestamps.
 
-3. Browser activity from the paired browser extension, including domain/website information and time spent, when the extension is installed and the work session is Active.
+3. Periodic desktop screenshots at the interval configured by your administrator.
 
-4. Monitoring history is retained according to the administrator-configured retention settings.
+4. Near-live desktop frames for the Live View monitoring page at the interval configured by your administrator.
 
-Monitoring does not begin until you acknowledge this notice. Stopping the work session stops new desktop and browser monitoring activity.
+5. Browser activity from the companion browser extension, including exact page URLs, domains, access timestamps, and active time spent on pages.
+
+6. Historical monitoring data is retained according to administrator-configured retention settings.
+
+Monitoring is managed by IT and does not require a Start/Stop button in the employee portal.
 '@
 $form.Controls.Add($box)
 
 $ack = New-Object System.Windows.Forms.CheckBox
-$ack.Text = 'I acknowledge the monitoring notice and understand what data may be captured during an Active session.'
+$ack.Text = 'I acknowledge the monitoring notice and understand what information may be captured from this managed computer.'
 $ack.Font = New-Object System.Drawing.Font('Segoe UI', 9.5)
-$ack.Location = New-Object System.Drawing.Point(25, 395)
-$ack.Size = New-Object System.Drawing.Size(590, 40)
+$ack.Location = New-Object System.Drawing.Point(25, 425)
+$ack.Size = New-Object System.Drawing.Size(590, 45)
 $form.Controls.Add($ack)
 
 $continue = New-Object System.Windows.Forms.Button
@@ -74,7 +76,7 @@ $continue.Text = 'I Acknowledge'
 $continue.Enabled = $false
 $continue.Width = 135
 $continue.Height = 34
-$continue.Location = New-Object System.Drawing.Point(455, 440)
+$continue.Location = New-Object System.Drawing.Point(455, 485)
 $continue.Add_Click({ $form.DialogResult = [System.Windows.Forms.DialogResult]::OK; $form.Close() })
 $form.Controls.Add($continue)
 
@@ -102,7 +104,7 @@ exit 1
 }
 
 async function runConsentFlow({ log = console.log } = {}) {
-  const config = require('./config.js').loadConfig();
+  const config = loadConfig();
   if (config.consentAcceptedAt) return config;
 
   log('First run detected — waiting for monitoring consent.');
