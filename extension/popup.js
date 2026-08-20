@@ -10,12 +10,21 @@ async function getApiUrl() {
   return DEFAULT_API_URL;
 }
 
+async function getMachineId() {
+  const { machineId } = await chrome.storage.local.get('machineId');
+  if (machineId) return machineId;
+  const id = crypto.randomUUID();
+  await chrome.storage.local.set({ machineId: id });
+  return id;
+}
+
 async function render() {
   const { deviceToken, employeeName } = await chrome.storage.local.get(['deviceToken', 'employeeName']);
+
   if (deviceToken) {
     document.getElementById('pairView').style.display = 'none';
     document.getElementById('pairedView').style.display = 'block';
-    document.getElementById('employeeName').textContent = `Paired as ${employeeName || 'Unknown'}`;
+    document.getElementById('employeeName').textContent = `Assigned to ${employeeName || 'Unknown'}`;
   } else {
     document.getElementById('pairView').style.display = 'block';
     document.getElementById('pairedView').style.display = 'none';
@@ -26,21 +35,34 @@ document.getElementById('pairBtn').addEventListener('click', async () => {
   const code = document.getElementById('codeInput').value.trim();
   const errorEl = document.getElementById('pairError');
   errorEl.style.display = 'none';
-  if (!/^\d{6}$/.test(code)) {
-    errorEl.textContent = 'Enter the 6-digit code exactly as shown on your Dashboard.';
+
+  if (!/^\d{8}$/.test(code)) {
+    errorEl.textContent = 'Enter the 8-digit enrollment code provided by IT.';
     errorEl.style.display = 'block';
     return;
   }
 
   try {
     const apiUrl = await getApiUrl();
-    const res = await fetch(`${apiUrl}/agent/pair`, {
+    const machineId = await getMachineId();
+    const browserName = navigator.userAgent.includes('Edg') ? 'Edge' : 'Chrome';
+
+    const res = await fetch(`${apiUrl}/agent/enroll`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, deviceName: `${navigator.userAgent.includes('Edg') ? 'Edge' : 'Chrome'} — ${navigator.platform}`, type: 'browser-extension' }),
+      body: JSON.stringify({
+        code,
+        machineId,
+        hostname: `${browserName} — ${navigator.platform || 'Browser'}`,
+        domain: null,
+        domainUser: null,
+        deviceType: 'browser-extension',
+        agentVersion: chrome.runtime.getManifest().version,
+      }),
     });
+
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Pairing failed.');
+    if (!res.ok) throw new Error(data.error || 'Enrollment failed.');
 
     await chrome.storage.local.set({
       deviceToken: data.deviceToken,
@@ -48,16 +70,12 @@ document.getElementById('pairBtn').addEventListener('click', async () => {
       employeeId: data.employeeId,
       employeeName: data.employeeName,
     });
+
     await render();
   } catch (e) {
     errorEl.textContent = e.message;
     errorEl.style.display = 'block';
   }
-});
-
-document.getElementById('unpairBtn').addEventListener('click', async () => {
-  await chrome.storage.local.remove(['deviceToken', 'deviceId', 'employeeId', 'employeeName', 'buffer', 'current']);
-  await render();
 });
 
 render();
