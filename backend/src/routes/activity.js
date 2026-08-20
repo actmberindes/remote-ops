@@ -177,8 +177,6 @@ activityRouter.get('/live-view', requireAuth(db), requireRole('Admin', 'Manager'
     .filter(device => device.employeeId && deviceIsOnline(device) && deviceState(device) === 'active')
     .filter(device => !allowed || allowed.has(device.employeeId));
 
-  // Preserve the existing one-tile-per-employee UX by choosing the most recently
-  // seen active device for each employee.
   const chosen = new Map();
   for (const device of eligible) {
     const existing = chosen.get(device.employeeId);
@@ -234,11 +232,12 @@ activityRouter.get('/live-history', requireAuth(db), requireRole('Admin', 'Manag
   res.json(list.slice(0, cap).map(f => ({ ...f, employeeName: userName(f.employeeId) })));
 });
 
-activityRouter.get('/web-usage', requireAuth(db), (req, res) => {
+// Web Usage is an administrator/manager monitoring function. Employees no longer
+// have a portal or API access to their monitoring history.
+activityRouter.get('/web-usage', requireAuth(db), requireRole('Admin', 'Manager'), (req, res) => {
   purgeOldActivity();
   const { employeeId, date } = req.query;
-  let allowed = scopedEmployeeIds(req.user);
-  if (req.user.role === 'Employee') allowed = new Set([req.user.id]);
+  const allowed = scopedEmployeeIds(req.user);
 
   let list = db.data.webUsageLogs.filter(r => !allowed || allowed.has(r.employeeId));
   if (employeeId) list = list.filter(r => r.employeeId === Number(employeeId));
