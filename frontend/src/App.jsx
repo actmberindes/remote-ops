@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { api, getToken, setToken } from './lib/api.js';
 import WebUsageWidget from './components/WebUsageWidget.jsx';
+import AdminDeviceManagementPanel from './components/AdminDeviceManagementPanel.jsx';
 
 /* ============================== CONSTANTS ============================== */
 
@@ -1474,7 +1475,10 @@ function AdminUserManagement() {
       <UserFormModal isOpen={Boolean(editingUser)} onClose={() => setEditingUser(null)} user={editingUser} onSaved={handleSaved} />
       <UserFormModal isOpen={creating} onClose={() => setCreating(false)} user={null} onSaved={handleSaved} />
     </Card>
-    <AdminDevicesPanel />
+    <AdminDeviceManagementPanel
+      users={users}
+      addToast={addToast}
+    />
     </div>
   );
 }
@@ -2180,50 +2184,118 @@ function AssignedAssetsWidget() {
 }
 
 function EmployeeDashboard() {
-  const { currentUser, timeSessions } = useApp();
-  const [dateFilter, setDateFilter] = useState('');
-  const mine = timeSessions
-    .filter(s => s.userId === currentUser.id)
-    .filter(s => !dateFilter || s.date === dateFilter);
+  const { currentUser, navigate, assets } = useApp();
+
+  const assignedAssets = assets.slice(0, 3);
 
   return (
     <div className="flex flex-col gap-5 w-full">
-      <DynamicTimeTracker />
-      <DevicePairingCard />
-      <AssignedAssetsWidget />
       <Card>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-display font-bold text-base">Logged Work Sessions</h3>
-          <div className="flex items-center gap-2">
-            <input type="date" className={`${inputCls} w-auto`} value={dateFilter} onChange={e => setDateFilter(e.target.value)} />
-            {dateFilter && <button onClick={() => setDateFilter('')} className="text-xs font-bold text-muted hover:text-[var(--text)]">Clear</button>}
+        <div className="flex items-center gap-3">
+          <Avatar name={currentUser.name} size={42} />
+
+          <div>
+            <h2 className="font-display font-bold text-lg">
+              Welcome, {currentUser.name}
+            </h2>
+
+            <p className="text-xs text-muted mt-0.5">
+              Employee Portal
+            </p>
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="font-bold text-muted uppercase tracking-wider border-b border-[var(--border)]">
-                <th className="pb-2.5 px-2">Date</th>
-                <th className="pb-2.5 px-2">Start Time</th>
-                <th className="pb-2.5 px-2">End Time</th>
-                <th className="pb-2.5 px-2">Hours Logged</th>
-                <th className="pb-2.5 px-2">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--border)]">
-              {mine.map(s => (
-                <tr key={s.id}>
-                  <td className="py-3 px-2 font-semibold">{formatNiceDate(s.date)}</td>
-                  <td className="py-3 px-2 text-muted mono">{s.startTime}</td>
-                  <td className="py-3 px-2 text-muted mono">{s.endTime}</td>
-                  <td className="py-3 px-2 font-bold">{s.totalHours} hrs</td>
-                  <td className="py-3 px-2"><Badge tone="success">{s.status}</Badge></td>
-                </tr>
-              ))}
-              {mine.length === 0 && <tr><td colSpan={5} className="py-6 text-center text-muted">{dateFilter ? 'No sessions logged on this date.' : 'No sessions logged yet.'}</td></tr>}
-            </tbody>
-          </table>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-5">
+          <button
+            onClick={() => navigate('employee', 'wfh')}
+            className="p-4 rounded-xl border border-[var(--border)] text-left hover-surface"
+          >
+            <div className="font-semibold text-sm">
+              WFH Applications
+            </div>
+
+            <div className="text-[10px] text-muted mt-1">
+              Submit and review your remote-work requests.
+            </div>
+          </button>
+
+          <button
+            onClick={() => navigate('employee', 'tickets')}
+            className="p-4 rounded-xl border border-[var(--border)] text-left hover-surface"
+          >
+            <div className="font-semibold text-sm">
+              My Tickets
+            </div>
+
+            <div className="text-[10px] text-muted mt-1">
+              Submit and track your IT support requests.
+            </div>
+          </button>
+
+          <button
+            onClick={() => navigate('employee', 'assets')}
+            className="p-4 rounded-xl border border-[var(--border)] text-left hover-surface"
+          >
+            <div className="font-semibold text-sm">
+              Assigned Assets
+            </div>
+
+            <div className="text-[10px] text-muted mt-1">
+              View company equipment assigned to you.
+            </div>
+          </button>
         </div>
+      </Card>
+
+      <Card>
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 className="font-display font-bold text-base flex items-center gap-2">
+              <Package size={16} className="accent-text" />
+              Assigned Assets
+            </h3>
+
+            <p className="text-xs text-muted mt-0.5">
+              Company equipment currently assigned to you.
+            </p>
+          </div>
+
+          <button
+            onClick={() => navigate('employee', 'assets')}
+            className="text-xs font-bold accent-text"
+          >
+            View All
+          </button>
+        </div>
+
+        {assignedAssets.length === 0 ? (
+          <p className="text-xs text-muted">
+            No assets are currently assigned to you.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {assignedAssets.map(asset => (
+              <div
+                key={asset.id}
+                className="flex items-center gap-3 p-3 rounded-lg border border-[var(--border)]"
+              >
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center accent-bg shrink-0">
+                  <Package size={16} />
+                </div>
+
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold truncate">
+                    {asset.name}
+                  </div>
+
+                  <div className="text-[10px] text-muted">
+                    {asset.assetTag} · {asset.type}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   );
