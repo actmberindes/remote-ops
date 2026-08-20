@@ -10,9 +10,8 @@ const defaultData = {
   users: [], applications: [], timeSessions: [], notifications: [],
   tickets: [], ticketMessages: [], ticketAttachments: [],
   assets: [], assetAssignments: [], assetLogs: [],
-  // Desktop agent / activity monitoring
-  devices: [], pairingCodes: [], screenshots: [], liveFrames: [], liveFrameHistory: [], webUsageLogs: [],
-  // Monitoring defaults: screenshots, historical live-view frames, and web usage are retained for one week.
+  // Device monitoring / telemetry
+  devices: [], pairingCodes: [], deviceStateHistory: [], screenshots: [], liveFrames: [], liveFrameHistory: [], webUsageLogs: [],
   agentConfig: {
     screenshotIntervalMinutes: 10,
     liveViewFrameIntervalSeconds: 5,
@@ -25,13 +24,20 @@ const defaultData = {
 
 export const db = await JSONFilePreset(dbFile, defaultData);
 
-// Backfill collections for any db.json created before these existed.
 for (const key of Object.keys(defaultData)) {
   if (db.data[key] === undefined) db.data[key] = defaultData[key];
 }
-// Existing installations may have the older 30-day screenshot default. The requested
-// default for this application is one week; do not overwrite an administrator's
-// explicitly configured values once they have been changed.
+if (!Array.isArray(db.data.deviceStateHistory)) db.data.deviceStateHistory = [];
+for (const device of db.data.devices) {
+  if (device.enrolled === undefined) device.enrolled = !!device.deviceToken;
+  if (device.state === undefined) device.state = device.revoked ? 'revoked' : 'offline';
+  if (device.lastSeenAt === undefined) device.lastSeenAt = null;
+  if (device.machineId === undefined) device.machineId = null;
+  if (device.hostname === undefined) device.hostname = device.deviceName || null;
+  if (device.domain === undefined) device.domain = null;
+  if (device.domainUser === undefined) device.domainUser = null;
+  if (device.agentVersion === undefined) device.agentVersion = null;
+}
 if (db.data.agentConfig && db.data.agentConfig.screenshotRetentionDays === 30 && !db.data.agentConfig.liveViewRetentionDays) {
   db.data.agentConfig.screenshotRetentionDays = 7;
 }
@@ -91,7 +97,6 @@ function assetTypePrefix(type) {
 
 export function nextAssetTag(type) {
   const prefix = assetTypePrefix(type);
-  // Four random digits. The uniqueness check protects against an existing duplicate tag.
   let tag;
   do {
     const suffix = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
@@ -143,7 +148,6 @@ async function seedIfEmpty() {
     { id: nextId(), audience: 'role', role: 'Admin', message: 'WFH applications pending review across departments.', type: 'warning', read: false, timestamp: '2026-07-29 09:12 AM' },
   ];
 
-  // --- Assets ---
   const asset1 = {
     id: nextId(), name: 'Dell Latitude 5440', type: 'Laptop', assetTag: nextAssetTag('Laptop'), brand: 'Dell', model: 'Latitude 5440',
     serialNumber: 'DL5440-2201', purchaseDate: '2025-02-10', warrantyExpiry: '2028-02-10', status: 'In Use', remarks: '',
@@ -174,7 +178,6 @@ async function seedIfEmpty() {
     { id: nextId(), assetId: asset3.id, action: 'Created', performedBy: 1, message: `${asset3.name} (${asset3.assetTag}) was added to inventory by 88TH Admin.`, timestamp: '2026-06-01 10:10 AM' },
   ];
 
-  // --- Tickets ---
   const ticket1 = {
     id: nextId(), ticketNumber: nextTicketNumber(), employeeId: 5, assignedTo: null,
     subject: 'Laptop keyboard keys unresponsive', description: 'Several keys on my laptop keyboard have stopped responding since this morning.',
