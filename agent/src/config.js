@@ -2,8 +2,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
-// Windows: C:\Users\<user>\AppData\Roaming\RemoteOpsAgent\config.json
-// (falls back sensibly on other OSes for local dev/testing on this machine)
 function configDir() {
   const base = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
   return path.join(base, 'RemoteOpsAgent');
@@ -18,7 +16,13 @@ const defaults = {
   deviceId: null,
   employeeId: null,
   employeeName: null,
-  pairedAt: null,
+  deviceName: null,
+  enrolledAt: null,
+  machineId: null,
+  hostname: null,
+  domain: null,
+  domainUser: null,
+  agentVersion: '2.0.0',
   consentAcceptedAt: null,
 };
 
@@ -27,8 +31,6 @@ function loadConfig() {
     const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
     const merged = { ...defaults, ...raw };
 
-    // Migrate older local-dev configurations so existing agents stop pointing
-    // at localhost on the employee's own machine.
     if (!merged.apiUrl || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/api\/?$/i.test(merged.apiUrl)) {
       merged.apiUrl = DEFAULT_API_URL;
     }
@@ -47,12 +49,12 @@ function saveConfig(partial) {
   return next;
 }
 
-function isPaired(config) {
-  return !!(config && config.deviceToken);
+function isEnrolled(config) {
+  return !!(config && config.deviceToken && config.deviceId && config.employeeId);
 }
 
 function hasConsent(config) {
   return !!(config && config.consentAcceptedAt);
 }
 
-module.exports = { loadConfig, saveConfig, isPaired, hasConsent, CONFIG_PATH };
+module.exports = { loadConfig, saveConfig, isEnrolled, isPaired: isEnrolled, hasConsent, CONFIG_PATH };
