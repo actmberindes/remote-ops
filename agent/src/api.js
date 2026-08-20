@@ -29,11 +29,14 @@ async function request(apiUrl, path, { method = 'GET', body, token, isMultipart,
 
 function createClient(apiUrl) {
   return {
-    generatePairingCode: (userToken) => request(apiUrl, '/agent/pairing-code', { method: 'POST', token: userToken }),
-    pair: (code, deviceName, type = 'desktop-agent') =>
-      request(apiUrl, '/agent/pair', { method: 'POST', body: { code, deviceName, type } }),
+    enroll: (code, telemetry) =>
+      request(apiUrl, '/agent/enroll', {
+        method: 'POST',
+        body: { code, ...telemetry },
+      }),
     getConfig: (deviceToken) => request(apiUrl, '/agent/config', { token: deviceToken }),
-    getSessionStatus: (deviceToken) => request(apiUrl, '/agent/session-status', { token: deviceToken }),
+    heartbeat: (deviceToken, telemetry) =>
+      request(apiUrl, '/agent/heartbeat', { method: 'POST', token: deviceToken, body: telemetry }),
     uploadFile: (deviceToken, filePath) => request(apiUrl, '/uploads', { method: 'POST', token: deviceToken, isMultipart: true, filePath }),
     postScheduledScreenshot: (deviceToken, url, filename) =>
       request(apiUrl, '/activity/screenshots', { method: 'POST', token: deviceToken, body: { url, filename, capturedAt: new Date().toISOString() } }),
