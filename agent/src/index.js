@@ -1,5 +1,4 @@
 const { loadConfig, isEnrolled } = require('./config.js');
-const { runConsentFlow } = require('./consent.js');
 const { createClient } = require('./api.js');
 const { runPairingFlow } = require('./pairing.js');
 const { startScheduler } = require('./scheduler.js');
@@ -11,7 +10,7 @@ if (process.platform === 'win32') {
     const ConsoleWindow = require('node-hide-console-window');
     ConsoleWindow.hideConsole();
   } catch (_) {
-    // Continue normally if the optional console-hiding native module is unavailable.
+    // Console hiding is optional; continue if the native module is unavailable.
   }
 }
 
@@ -22,9 +21,8 @@ function log(message) {
 async function main() {
   let config = loadConfig();
 
-  // First run must be acknowledged before enrollment or monitoring can begin.
-  config = await runConsentFlow({ log });
-
+  // Enrollment is Admin-controlled. There is no employee Start/Stop or
+  // blocking first-run consent step in the agent startup flow.
   if (!isEnrolled(config)) {
     log('No enrolled device found — starting Admin enrollment flow.');
     config = await runPairingFlow({ log });
