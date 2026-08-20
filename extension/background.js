@@ -1,8 +1,8 @@
 import { pageFromUrl, domainFromUrl, todayStr, bufferToEntries, computeTransition } from './logic.js';
 
-const IDLE_THRESHOLD_SECONDS = 60;
+const IDLE_THRESHOLD_SECONDS = 300;
 const FLUSH_PERIOD_MINUTES = 1;
-const SESSION_POLL_PERIOD_MINUTES = 0.25; // 15 seconds
+const HEARTBEAT_PERIOD_MINUTES = 0.5;
 const DEFAULT_API_URL = 'http://192.168.1.2:4000/api';
 
 async function getApiUrl() {
@@ -15,51 +15,13 @@ async function getApiUrl() {
   return DEFAULT_API_URL;
 }
 
-// MV3 service workers can be killed and restarted at any time,
-// so current/buffer/sessionActive live in chrome.storage.local.
 async function getTrackingState() {
-  const { current, buffer, sessionActive } = await chrome.storage.local.get(['current', 'buffer', 'sessionActive']);
-  return { current: current || null, buffer: buffer || {}, sessionActive: sessionActive === true };
+  const { current, buffer } = await chrome.storage.local.get(['current', 'buffer']);
+  return { current: current || null, buffer: buffer || {} };
 }
 
 async function setTrackingState(partial) {
   await chrome.storage.local.set(partial);
-}
-
-async function getSessionActive() {
-  const { sessionActive } = await getTrackingState();
-  return sessionActive;
-}
-
-async function refreshSessionState() {
-  const { deviceToken } = await chrome.storage.local.get('deviceToken');
-  if (!deviceToken) {
-    await setTrackingState({ sessionActive: false });
-    return false;
-  }
-
-  try {
-    const apiUrl = await getApiUrl();
-    const res = await fetch(`${apiUrl}/agent/session-status`, {
-      headers: { Authorization: `Bearer ${deviceToken}` },
-    });
-    if (!res.ok) throw new Error(`Session status request failed (${res.status})`);
-
-    const data = await res.json();
-    const active = data.status === 'active';
-    const previous = await getSessionActive();
-
-    if (!active && previous) {
-      await refreshTrackingForceClose();
-    }
-
-    await setTrackingState({ sessionActive: active });
-    return active;
-  } catch (e) {
-    // Keep the last known state during a temporary network outage. The backend
-    // independently rejects monitoring uploads while the employee is inactive.
-    return getSessionActive();
-  }
 }
 
 async function getObservedPage() {
@@ -78,10 +40,55 @@ async function getObservedPage() {
   }
 }
 
-async function refreshTracking() {
-  const active = await refreshSessionState();
-  if (!active) return;
+async function getDeviceState() {
+  try {
+    const idleState = await chrome.idle.queryState(IDLE_THRESHOLD_SECONDS);
+    return idleState === 'active' ? 'active' : 'idle';
+  } catch (e) {
+    return 'active';
+  }
+}
 
+async function ensureMachineId() {
+  const { machineId } = await chrome.storage.local.get('machineId');
+  if (machineId) return machineId;
+  const id = crypto.randomUUID();
+  await chrome.storage.local.set({ machineId: id });
+  return id;
+}
+
+async function sendHeartbeat() {
+  const { deviceToken } = await chrome.storage.local.get('deviceToken');
+  if (!deviceToken) return;
+
+  try {
+    const apiUrl = await getApiUrl();
+    const machineId = await ensureMachineId();
+    const state = await getDeviceState();
+    const platform = navigator.platform || 'Browser';
+    const browserName = /Edg/i.test(navigator.userAgent) ? 'Edge' : 'Chrome';
+
+    await fetch(`${apiUrl}/agent/heartbeat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${deviceToken}`,
+      },
+      body: JSON.stringify({
+        state,
+        machineId,
+        hostname: `${browserName} — ${platform}`,
+        domain: null,
+        domainUser: null,
+        agentVersion: chrome.runtime.getManifest().version,
+      }),
+    });
+  } catch (e) {
+    // Backend will determine Offline when heartbeats stop arriving.
+  }
+}
+
+async function refreshTracking() {
   const observedPage = await getObservedPage();
   const { current, buffer } = await getTrackingState();
   const result = computeTransition({ current, buffer, observedPage });
@@ -91,9 +98,6 @@ async function refreshTracking() {
 }
 
 async function flush() {
-  const active = await refreshSessionState();
-
-  // Close out whatever page segment is currently open so its elapsed time is included.
   await refreshTrackingForceClose();
 
   const { buffer } = await getTrackingState();
@@ -103,19 +107,21 @@ async function flush() {
   const { deviceToken } = await chrome.storage.local.get('deviceToken');
   if (!deviceToken) return;
 
-  // Keep buffered activity locally while inactive. It was collected during an
-  // active session and will be uploaded once the session becomes active again.
-  if (!active) return;
-
   try {
     const apiUrl = await getApiUrl();
     const res = await fetch(`${apiUrl}/activity/web-usage`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${deviceToken}` },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${deviceToken}`,
+      },
       body: JSON.stringify({ entries }),
     });
+
     if (res.ok) await setTrackingState({ buffer: [] });
-  } catch (e) { /* offline or backend down — keep the buffer for retry */ }
+  } catch (e) {
+    // Offline or backend down — keep the buffer for retry.
+  }
 
   await refreshTracking();
 }
@@ -127,9 +133,14 @@ async function refreshTrackingForceClose() {
 }
 
 chrome.tabs.onActivated.addListener(() => refreshTracking());
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => { if (tab.active && changeInfo.url) refreshTracking(); });
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (tab.active && changeInfo.url) refreshTracking();
+});
 chrome.windows.onFocusChanged.addListener(() => refreshTracking());
-chrome.idle.onStateChanged.addListener(() => refreshTracking());
+chrome.idle.onStateChanged.addListener(() => {
+  refreshTracking();
+  sendHeartbeat();
+});
 chrome.idle.setDetectionInterval(IDLE_THRESHOLD_SECONDS);
 
 chrome.alarms.create('flush', { periodInMinutes: FLUSH_PERIOD_MINUTES });
@@ -137,10 +148,16 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'flush') flush();
 });
 
-chrome.alarms.create('session-status', { periodInMinutes: SESSION_POLL_PERIOD_MINUTES });
+chrome.alarms.create('heartbeat', { periodInMinutes: HEARTBEAT_PERIOD_MINUTES });
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'session-status') refreshSessionState();
+  if (alarm.name === 'heartbeat') sendHeartbeat();
 });
 
-chrome.runtime.onStartup.addListener(() => refreshTracking());
-chrome.runtime.onInstalled.addListener(() => refreshTracking());
+chrome.runtime.onStartup.addListener(() => {
+  refreshTracking();
+  sendHeartbeat();
+});
+chrome.runtime.onInstalled.addListener(() => {
+  refreshTracking();
+  sendHeartbeat();
+});
