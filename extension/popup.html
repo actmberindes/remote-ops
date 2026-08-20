@@ -10,7 +10,6 @@
     input { width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 16px; letter-spacing: 2px; text-align: center; border: 1px solid #e3e5e1; border-radius: 8px; margin-bottom: 8px; }
     button { width: 100%; padding: 9px; font-size: 12px; font-weight: 700; border: none; border-radius: 8px; cursor: pointer; }
     .primary { background: #4457e8; color: #fff; }
-    .secondary { background: #f5f6f4; color: #12181f; border: 1px solid #e3e5e1; }
     .status { display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid #e3e5e1; border-radius: 8px; margin-bottom: 12px; }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: #1f9d6b; flex-shrink: 0; }
     .name { font-size: 12px; font-weight: 700; }
@@ -22,10 +21,10 @@
   <h1>Remote Ops Activity Tracker</h1>
 
   <div id="pairView">
-    <p>Enter the pairing code from your Dashboard's "Pair This Device" card (valid 10 minutes).</p>
-    <input id="codeInput" maxlength="6" placeholder="000000" inputmode="numeric" />
+    <p>Enter the 8-digit enrollment code supplied by IT for this browser.</p>
+    <input id="codeInput" maxlength="8" placeholder="00000000" inputmode="numeric" />
     <div id="pairError" class="error" style="display:none;"></div>
-    <button id="pairBtn" class="primary">Pair This Browser</button>
+    <button id="pairBtn" class="primary">Enroll This Browser</button>
   </div>
 
   <div id="pairedView">
@@ -33,10 +32,12 @@
       <span class="dot"></span>
       <div>
         <div class="name" id="employeeName"></div>
-        <div style="font-size: 10px; color: #5c6670;">Web activity tracking active</div>
+        <div style="font-size: 10px; color: #5c6670;">Managed by IT · Automatic monitoring</div>
       </div>
     </div>
-    <button id="unpairBtn" class="secondary">Unpair This Browser</button>
+    <div style="font-size: 10px; color: #5c6670; line-height: 1.4;">
+      This browser is enrolled as a managed monitoring device. Device removal is controlled by IT.
+    </div>
   </div>
 
   <script src="popup.js" type="module"></script>
