@@ -1,13 +1,44 @@
-function startScheduler({ client, config, capture, log, onSessionStateChange } = {}) {
+const { getDeviceState } = require('./telemetry.js');
+
+const HEARTBEAT_PERIOD_MS = 30 * 1000;
+
+function startScheduler({ client, config, capture, log, onSessionStateChange, onDeviceStateChange } = {}) {
   let running = true;
   let currentIntervalMinutes = null;
   let currentLiveSeconds = null;
   let scheduledTimer = null;
   let liveTimer = null;
-  let sessionActive = false;
+
+  async function sendHeartbeat() {
+    if (!running || !config.deviceToken) return;
+
+    try {
+      const telemetry = getDeviceState();
+      await client.heartbeat(config.deviceToken, {
+        state: telemetry.state,
+        machineId: telemetry.machineId,
+        hostname: telemetry.hostname,
+        domain: telemetry.domain,
+        domainUser: telemetry.domainUser,
+        agentVersion: config.agentVersion,
+      });
+
+      onDeviceStateChange?.(telemetry.state, telemetry);
+      if (telemetry.state === 'active') {
+        log(`Heartbeat: Active — ${telemetry.domainUser || 'No user'}.`);
+      } else if (telemetry.state === 'idle') {
+        log(`Heartbeat: Idle — ${telemetry.domainUser || 'No user'} (5+ minutes).`);
+      } else {
+        log('Heartbeat: No logged-in Windows user.');
+      }
+    } catch (e) {
+      onDeviceStateChange?.('offline');
+      log(`Heartbeat failed: ${e.message}`);
+    }
+  }
 
   async function tickScheduled() {
-    if (!running || !sessionActive) return;
+    if (!running) return;
     try {
       const filePath = await capture.captureFull();
       const uploaded = await client.uploadFile(config.deviceToken, filePath);
@@ -20,7 +51,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange } =
   }
 
   async function tickLive() {
-    if (!running || !sessionActive) return;
+    if (!running) return;
     try {
       const filePath = await capture.captureLive();
       const uploaded = await client.uploadFile(config.deviceToken, filePath);
@@ -38,6 +69,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange } =
       scheduledTimer = setInterval(tickScheduled, currentIntervalMinutes * 60 * 1000);
       log(`Scheduled screenshot interval set to ${currentIntervalMinutes} minute(s).`);
     }
+
     if (cfg.liveViewFrameIntervalSeconds !== currentLiveSeconds) {
       currentLiveSeconds = cfg.liveViewFrameIntervalSeconds;
       if (liveTimer) clearInterval(liveTimer);
@@ -46,42 +78,37 @@ function startScheduler({ client, config, capture, log, onSessionStateChange } =
     }
   }
 
-  async function pollConfigAndStatus() {
+  async function pollConfig() {
     if (!running) return;
     try {
-      const [cfg, session] = await Promise.all([
-        client.getConfig(config.deviceToken),
-        client.getSessionStatus(config.deviceToken),
-      ]);
+      const cfg = await client.getConfig(config.deviceToken);
       applyConfig(cfg);
-      const wasActive = sessionActive;
-      sessionActive = session.status === 'active';
-
-      if (sessionActive !== wasActive) {
-        onSessionStateChange?.(sessionActive);
-      }
-
-      if (sessionActive && !wasActive) log('Session is now Active — monitoring started.');
-      if (!sessionActive && wasActive) log('Session is no longer Active — monitoring paused.');
     } catch (e) {
-      log(`Config/status poll failed: ${e.message}`);
+      log(`Config poll failed: ${e.message}`);
     }
   }
 
-  // Poll config + session status every 30s (cheap request; catches interval changes
-  // and Start/Stop Session clicks without needing the agent to restart).
-  const pollTimer = setInterval(pollConfigAndStatus, 30 * 1000);
-  pollConfigAndStatus();
+  async function initialSync() {
+    await pollConfig();
+    await sendHeartbeat();
+  }
+
+  // Monitoring is now automatic for an enrolled device. There is no employee
+  // Start/Stop session check in the scheduler.
+  const heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_PERIOD_MS);
+  const configTimer = setInterval(pollConfig, HEARTBEAT_PERIOD_MS);
+
+  initialSync();
 
   return {
     stop() {
       running = false;
-      clearInterval(pollTimer);
+      clearInterval(heartbeatTimer);
+      clearInterval(configTimer);
       if (scheduledTimer) clearInterval(scheduledTimer);
       if (liveTimer) clearInterval(liveTimer);
     },
-    // exposed for testing
-    _internal: { tickScheduled, tickLive, applyConfig, pollConfigAndStatus, getSessionActive: () => sessionActive },
+    _internal: { tickScheduled, tickLive, applyConfig, sendHeartbeat },
   };
 }
 
