@@ -1,13 +1,13 @@
 {
   "name": "remote-ops-agent",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Windows background agent for scheduled screenshots, near-live desktop view, and session-controlled monitoring",
+  "description": "Windows background agent for Admin-managed device enrollment, heartbeat telemetry, screenshots, near-live desktop view, and automatic monitoring",
   "main": "src/index.js",
   "bin": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "pair": "node src/pairing.js",
+    "enroll": "node src/pairing.js",
     "build:win": "pkg . --targets node18-win-x64 --output dist/remote-ops-agent.exe"
   },
   "dependencies": {
