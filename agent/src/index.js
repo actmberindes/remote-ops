@@ -1,4 +1,4 @@
-const { loadConfig, isPaired } = require('./config.js');
+const { loadConfig, isEnrolled } = require('./config.js');
 const { runConsentFlow } = require('./consent.js');
 const { createClient } = require('./api.js');
 const { runPairingFlow } = require('./pairing.js');
@@ -22,16 +22,16 @@ function log(message) {
 async function main() {
   let config = loadConfig();
 
-  // First run must be explicitly acknowledged before pairing or monitoring can begin.
+  // First run must be acknowledged before enrollment or monitoring can begin.
   config = await runConsentFlow({ log });
 
-  if (!isPaired(config)) {
-    log('No paired device found — starting pairing flow.');
+  if (!isEnrolled(config)) {
+    log('No enrolled device found — starting Admin enrollment flow.');
     config = await runPairingFlow({ log });
   }
 
   const client = createClient(config.apiUrl);
-  log(`Remote Ops Agent running for ${config.employeeName}.`);
+  log(`Remote Ops Agent running for assigned employee ${config.employeeName || 'Unknown'}.`);
 
   let scheduler = null;
   const tray = startTray({
@@ -47,11 +47,11 @@ async function main() {
     config,
     capture,
     log,
-    onSessionStateChange: active => tray.setStatus(active),
+    onDeviceStateChange: state => tray.setStatus(state),
   });
 
   await tray.ready.catch(err => log(`Tray startup failed: ${err.message}`));
-  tray.setStatus(false);
+  tray.setStatus('offline');
 
   process.on('SIGINT', () => {
     scheduler.stop();
