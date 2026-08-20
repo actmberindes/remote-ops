@@ -28,21 +28,39 @@ function getMachineId() {
   return match ? match[1].trim() : os.hostname();
 }
 
+function getInteractiveUser() {
+  if (process.platform !== 'win32') {
+    try { return os.userInfo().username || ''; } catch (_) { return ''; }
+  }
+
+  // Do not rely on process.env.USERNAME because a Windows background service
+  // may run as LocalSystem or another service account. Ask Windows which
+  // interactive user is actually logged on to the machine.
+  const output = run('powershell.exe', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    '$cs = Get-CimInstance Win32_ComputerSystem; if ($cs.UserName) { $cs.UserName }',
+  ]);
+
+  return output || '';
+}
+
 function getIdentity() {
   const hostname = process.env.COMPUTERNAME || os.hostname();
-  const username = process.env.USERNAME || (() => {
-    try { return os.userInfo().username; } catch (_) { return ''; }
-  })();
-  const domain = process.env.USERDOMAIN || process.env.USERDNSDOMAIN || '';
-  const domainUser = username
-    ? (domain ? `${domain}\\${username}` : username)
-    : null;
+  const interactiveUser = getInteractiveUser();
+
+  const match = interactiveUser.match(/^([^\\]+)\\(.+)$/);
+  const domain = match ? match[1] : null;
+  const username = match ? match[2] : (interactiveUser || null);
+  const domainUser = interactiveUser || null;
 
   return {
     machineId: getMachineId(),
     hostname,
-    domain: domain || null,
+    domain,
     domainUser,
+    username,
   };
 }
 
