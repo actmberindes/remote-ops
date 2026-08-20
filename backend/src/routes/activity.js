@@ -4,6 +4,8 @@ import { requireAuth, requireRole, requireDevice } from '../auth.js';
 
 export const activityRouter = Router();
 
+const DEVICE_OFFLINE_MS = 90 * 1000;
+
 function teamIdsOf(managerId) {
   return new Set(db.data.users.filter(u => u.managerId === managerId).map(u => u.id));
 }
@@ -19,6 +21,19 @@ function retentionCutoff(days) {
 
 function retentionCutoffDate(days) {
   return new Date(retentionCutoff(days)).toISOString().slice(0, 10);
+}
+
+function deviceIsOnline(device) {
+  if (!device || device.revoked || !device.enrolled || !device.lastSeenAt) return false;
+  const ts = new Date(device.lastSeenAt).getTime();
+  return !Number.isNaN(ts) && Date.now() - ts <= DEVICE_OFFLINE_MS;
+}
+
+function deviceState(device) {
+  if (!device || device.revoked) return 'revoked';
+  if (!device.enrolled) return 'pending';
+  if (!deviceIsOnline(device)) return 'offline';
+  return device.state || 'active';
 }
 
 function purgeOldActivity() {
@@ -41,17 +56,22 @@ function purgeOldActivity() {
   });
 }
 
+// Monitoring uploads are controlled by device enrollment/authorization.
+// Employee Start/Stop Session is no longer a prerequisite.
 activityRouter.post('/screenshots', requireDevice(db), async (req, res) => {
-  if (req.employee.status !== 'active') {
-    return res.status(409).json({ error: 'Monitoring is not active. Start an employee session before sending screenshots.' });
-  }
-
   const { url, filename, capturedAt } = req.body || {};
   if (!url) return res.status(400).json({ error: 'url is required (upload the file to /api/uploads first).' });
+
   const entry = {
-    id: nextId(), employeeId: req.employee.id, deviceId: req.device.id,
-    url, filename: filename || '', capturedAt: capturedAt || new Date().toISOString(), type: 'scheduled',
+    id: nextId(),
+    employeeId: req.device.employeeId,
+    deviceId: req.device.id,
+    url,
+    filename: filename || '',
+    capturedAt: capturedAt || new Date().toISOString(),
+    type: 'scheduled',
   };
+
   db.data.screenshots.push(entry);
   purgeOldActivity();
   await db.write();
@@ -59,33 +79,41 @@ activityRouter.post('/screenshots', requireDevice(db), async (req, res) => {
 });
 
 activityRouter.post('/live-frame', requireDevice(db), async (req, res) => {
-  if (req.employee.status !== 'active') {
-    return res.status(409).json({ error: 'Monitoring is not active. Start an employee session before sending Live View frames.' });
-  }
-
   const { url, capturedAt } = req.body || {};
   if (!url) return res.status(400).json({ error: 'url is required.' });
+
   const ts = capturedAt || new Date().toISOString();
-  const existing = db.data.liveFrames.find(f => f.employeeId === req.employee.id);
+  const employeeId = req.device.employeeId;
+  const existing = db.data.liveFrames.find(f => f.deviceId === req.device.id);
+
   if (existing) {
+    existing.employeeId = employeeId;
     existing.url = url;
     existing.capturedAt = ts;
-    existing.deviceId = req.device.id;
   } else {
-    db.data.liveFrames.push({ employeeId: req.employee.id, deviceId: req.device.id, url, capturedAt: ts });
+    db.data.liveFrames.push({
+      employeeId,
+      deviceId: req.device.id,
+      url,
+      capturedAt: ts,
+    });
   }
+
   db.data.liveFrameHistory = db.data.liveFrameHistory || [];
-  db.data.liveFrameHistory.push({ id: nextId(), employeeId: req.employee.id, deviceId: req.device.id, url, capturedAt: ts });
+  db.data.liveFrameHistory.push({
+    id: nextId(),
+    employeeId,
+    deviceId: req.device.id,
+    url,
+    capturedAt: ts,
+  });
+
   purgeOldActivity();
   await db.write();
   res.status(201).json({ ok: true });
 });
 
 activityRouter.post('/web-usage', requireDevice(db), async (req, res) => {
-  if (req.employee.status !== 'active') {
-    return res.status(409).json({ error: 'Monitoring is not active. Start an employee session before sending Web Usage activity.' });
-  }
-
   const { entries } = req.body || {};
   if (!Array.isArray(entries) || entries.length === 0) return res.status(400).json({ error: 'entries array is required.' });
 
@@ -93,29 +121,31 @@ activityRouter.post('/web-usage', requireDevice(db), async (req, res) => {
     if (!e.domain || !e.seconds || !e.date) continue;
 
     if (e.url) {
-      const row = {
+      db.data.webUsageLogs.push({
         id: nextId(),
-        employeeId: req.employee.id,
+        employeeId: req.device.employeeId,
+        deviceId: req.device.id,
         date: e.date,
         domain: e.domain,
         url: e.url,
         seconds: Number(e.seconds) || 0,
         startedAt: e.startedAt || null,
         endedAt: e.endedAt || null,
-      };
-      db.data.webUsageLogs.push(row);
+      });
     } else {
       let row = db.data.webUsageLogs.find(
-        r => r.employeeId === req.employee.id &&
+        r => r.employeeId === req.device.employeeId &&
              r.date === e.date &&
              !r.url &&
-             r.domain === e.domain
+             r.domain === e.domain &&
+             (r.deviceId || null) === (req.device.id || null)
       );
 
       if (!row) {
         row = {
           id: nextId(),
-          employeeId: req.employee.id,
+          employeeId: req.device.employeeId,
+          deviceId: req.device.id,
           date: e.date,
           domain: e.domain,
           url: null,
@@ -143,16 +173,38 @@ function scopedEmployeeIds(user) {
 
 activityRouter.get('/live-view', requireAuth(db), requireRole('Admin', 'Manager'), (req, res) => {
   const allowed = scopedEmployeeIds(req.user);
-  const activeEmployees = db.data.users.filter(u =>
-    u.role === 'Employee' && u.status === 'active' && (!allowed || allowed.has(u.id))
-  );
-  const result = activeEmployees.map(emp => {
-    const frame = db.data.liveFrames.find(f => f.employeeId === emp.id);
+  const eligible = db.data.devices
+    .filter(device => device.employeeId && deviceIsOnline(device) && deviceState(device) === 'active')
+    .filter(device => !allowed || allowed.has(device.employeeId));
+
+  // Preserve the existing one-tile-per-employee UX by choosing the most recently
+  // seen active device for each employee.
+  const chosen = new Map();
+  for (const device of eligible) {
+    const existing = chosen.get(device.employeeId);
+    if (!existing || new Date(device.lastSeenAt).getTime() > new Date(existing.lastSeenAt).getTime()) {
+      chosen.set(device.employeeId, device);
+    }
+  }
+
+  const result = [...chosen.values()].map(device => {
+    const frame = db.data.liveFrames.find(f => f.deviceId === device.id);
+    const emp = db.data.users.find(u => u.id === device.employeeId);
     return {
-      employeeId: emp.id, employeeName: emp.name, department: emp.department,
-      frameUrl: frame ? frame.url : null, capturedAt: frame ? frame.capturedAt : null,
+      employeeId: device.employeeId,
+      employeeName: emp?.name || userName(device.employeeId),
+      department: emp?.department || '',
+      deviceId: device.id,
+      deviceName: device.deviceName,
+      hostname: device.hostname,
+      domainUser: device.domainUser,
+      deviceStatus: deviceState(device),
+      frameUrl: frame ? frame.url : null,
+      capturedAt: frame ? frame.capturedAt : null,
+      lastSeenAt: device.lastSeenAt,
     };
   });
+
   res.json(result);
 });
 
