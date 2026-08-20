@@ -5,7 +5,7 @@ const { spawnSync } = require('node:child_process');
 const SysTrayModule = require('systray2');
 const SysTray = SysTrayModule.default || SysTrayModule;
 
-const ICON_BASE64 = 'AAABAAEAEBAAAAAAIAB6AAAAFgAAAIlQTkcNChoKAAAADUlIRFIAAAAQAAAAEAgGAAAAH/P/YQAAAEFJREFUeJxjtG769p+BAsBEiWaqGMCCzDlSy0mUJpvm7zRyATYbkAE2Fw58IA4DA7DGArHpgfouwBX/NHUBxQYAAHcIC9qF63yCAAAAAElFTkSuQmCC';
+const ICON_BASE64 = 'AAABAAEAEBAAAAAAIAB6AAAAFgAAAIlQTkcNChoKAAAADUlIRIAAAAQAAAAEAgGAAAAH/P/YQAAAEFJREFUeJxjtG769p+BAsBEiWaqGMCCzDlSy0mUJpvm7zRyATYbkAE2Fw58IA4DA7DGArHpgfouwBX/NHUBxQYAAHcIC9qF63yCAAAAAElFTkSuQmCC';
 
 function ensureTrayIcon() {
   const dir = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'RemoteOpsAgent');
@@ -49,14 +49,14 @@ function startTray({ employeeName, onQuit } = {}) {
   }
 
   const itemEmployee = {
-    title: `Employee: ${employeeName || 'Unknown'}`,
-    tooltip: 'Paired employee account',
+    title: `Assigned: ${employeeName || 'Unassigned'}`,
+    tooltip: 'Managed employee assignment',
     enabled: false,
   };
 
   const itemStatus = {
-    title: 'Monitoring Inactive',
-    tooltip: 'Remote Ops monitoring session state',
+    title: 'Device Offline',
+    tooltip: 'Remote Ops device heartbeat state',
     enabled: false,
   };
 
@@ -77,7 +77,7 @@ function startTray({ employeeName, onQuit } = {}) {
     menu: {
       icon: ensureTrayIcon(),
       title: 'Remote Ops',
-      tooltip: 'Remote Ops Monitoring Agent',
+      tooltip: 'Remote Ops Device Agent',
       items: [itemEmployee, itemStatus, SysTray.separator, itemQuit],
     },
     debug: false,
@@ -90,11 +90,16 @@ function startTray({ employeeName, onQuit } = {}) {
 
   const ready = systray.ready();
 
-  function updateStatus(active) {
-    itemStatus.title = active ? 'Monitoring Active' : 'Monitoring Inactive';
-    itemStatus.tooltip = active
-      ? 'Remote Ops is monitoring this computer for the active work session.'
-      : 'Remote Ops monitoring is paused until the employee starts a work session.';
+  function updateStatus(state) {
+    const labels = {
+      active: 'Device Active',
+      idle: 'Device Idle',
+      'logged-out': 'No User Logged In',
+      offline: 'Device Offline',
+    };
+
+    itemStatus.title = labels[state] || 'Device Offline';
+    itemStatus.tooltip = `Remote Ops device state: ${labels[state] || state}`;
     systray.sendAction({ type: 'update-item', item: itemStatus });
   }
 
