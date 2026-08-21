@@ -24,20 +24,17 @@ function enrichAsset(asset) {
   const hasQuantity = asset.quantity !== null && asset.quantity !== undefined;
   return {
     ...asset,
-    currentAssignment: assignees[0] || null, // backward-compatible single-assignee view
+    currentAssignment: assignees[0] || null,
     assignees,
     assignedCount: assignees.length,
     quantityAvailable: hasQuantity ? Math.max(0, asset.quantity - assignees.length) : null,
   };
 }
 
-// Every asset action gets a friendly, human-readable message so the audit trail reads like an activity feed.
 function logAction(assetId, action, performedBy, message) {
   db.data.assetLogs.push({ id: nextId(), assetId, action, performedBy, message, timestamp: new Date().toLocaleString('en-US') });
 }
 
-// Keeps status in sync with stock level for quantity-tracked consumables (Mouse/Keyboard/Headset etc.),
-// and fires an admin notification the moment stock actually hits zero (not on every check).
 function recomputeStockStatus(asset) {
   if (asset.quantity === null || asset.quantity === undefined) return;
   const activeCount = activeAssignmentsFor(asset.id).length;
@@ -66,9 +63,6 @@ function notifyAssigned(asset, employeeId) {
   });
 }
 
-// Exported so the tickets route can perform the "Borrow Request -> one-click assignment" integration.
-// Single-employee assignment path: for quantity-tracked consumables, decrements stock; for standard
-// (single-instance) assets, enforces the usual one-owner-at-a-time exclusivity.
 export function assignAssetToEmployee(assetId, employeeId, assignedBy) {
   const asset = db.data.assets.find(a => a.id === assetId);
   if (!asset) throw Object.assign(new Error('Asset not found.'), { status: 404 });
@@ -88,11 +82,8 @@ export function assignAssetToEmployee(assetId, employeeId, assignedBy) {
   const assignment = { id: nextId(), assetId, employeeId, assignedBy, assignedDate: new Date().toISOString().slice(0, 10), returnedDate: null, status: 'Active' };
   db.data.assetAssignments.push(assignment);
 
-  if (hasQuantity) {
-    recomputeStockStatus(asset);
-  } else {
-    asset.status = 'In Use';
-  }
+  if (hasQuantity) recomputeStockStatus(asset);
+  else asset.status = 'In Use';
   logAction(assetId, 'Assigned', assignedBy, `Assigned to ${employee.name} by ${userName(assignedBy)}.`);
   notifyAssigned(asset, employeeId);
 
@@ -105,14 +96,10 @@ assetsRouter.get('/', (req, res) => {
     return res.json(db.data.assets.filter(a => mineIds.has(a.id)).map(enrichAsset));
   }
   if (req.user.role === 'Manager') {
-    // Managers only see assets currently assigned to their own direct reports.
     const teamIds = teamIdsOf(req.user.id);
-    const teamAssetIds = new Set(
-      db.data.assetAssignments.filter(a => a.status === 'Active' && teamIds.has(a.employeeId)).map(a => a.assetId)
-    );
+    const teamAssetIds = new Set(db.data.assetAssignments.filter(a => a.status === 'Active' && teamIds.has(a.employeeId)).map(a => a.assetId));
     return res.json(db.data.assets.filter(a => teamAssetIds.has(a.id)).map(enrichAsset));
   }
-  // Admin: full list + management.
   res.json(db.data.assets.map(enrichAsset));
 });
 
@@ -126,7 +113,7 @@ assetsRouter.post('/', requireRole('Admin'), async (req, res) => {
   }
 
   const asset = {
-    id: nextId(), name, type, assetTag: nextAssetTag(), brand: brand || '', model: model || '',
+    id: nextId(), name, type, assetTag: nextAssetTag(type), brand: brand || '', model: model || '',
     serialNumber: serialNumber || '', purchaseDate: purchaseDate || '', warrantyExpiry: warrantyExpiry || '',
     status: 'Available', remarks: remarks || '', specs: (specs && typeof specs === 'object') ? specs : {}, imageUrl: imageUrl || null,
     quantity: hasQuantity ? Number(quantity) : null,
@@ -137,6 +124,28 @@ assetsRouter.post('/', requireRole('Admin'), async (req, res) => {
   logAction(asset.id, 'Created', req.user.id, `${asset.name} (${asset.assetTag}) was added to inventory by ${req.user.name}.`);
   await db.write();
   res.status(201).json(enrichAsset(asset));
+});
+
+// Clone an existing asset into a new unassigned inventory record. A new asset tag is generated;
+// serial number is intentionally cleared because it should identify the physical unit uniquely.
+assetsRouter.post('/:id/clone', requireRole('Admin'), async (req, res) => {
+  const id = Number(req.params.id);
+  const source = db.data.assets.find(a => a.id === id);
+  if (!source) return res.status(404).json({ error: 'Asset not found.' });
+
+  const clone = {
+    ...source,
+    id: nextId(),
+    assetTag: nextAssetTag(source.type),
+    serialNumber: '',
+    status: source.quantity !== null && source.quantity !== undefined && Number(source.quantity) === 0 ? 'Out of Stock' : 'Available',
+    remarks: source.remarks || '',
+  };
+
+  db.data.assets.push(clone);
+  logAction(clone.id, 'Cloned', req.user.id, `${clone.name} (${clone.assetTag}) was cloned from ${source.assetTag} by ${req.user.name}.`);
+  await db.write();
+  res.status(201).json(enrichAsset(clone));
 });
 
 assetsRouter.put('/:id', requireRole('Admin'), async (req, res) => {
@@ -194,9 +203,6 @@ assetsRouter.post('/:id/assign', requireRole('Admin'), async (req, res) => {
   }
 });
 
-// Bulk assignment for standard (non-quantity) assets: assign the SAME asset record to several
-// employees at once (e.g. a shared workstation, a meeting-room device). Quantity-tracked
-// consumables should use repeated single /assign calls instead, since each unit has its own stock count.
 assetsRouter.post('/:id/bulk-assign', requireRole('Admin'), async (req, res) => {
   const id = Number(req.params.id);
   const { employeeIds } = req.body || {};
@@ -253,11 +259,8 @@ assetsRouter.post('/:id/return', requireRole('Admin'), async (req, res) => {
   assignment.status = 'Returned';
 
   const hasQuantity = asset.quantity !== null && asset.quantity !== undefined;
-  if (hasQuantity) {
-    recomputeStockStatus(asset);
-  } else if (activeAssignmentsFor(id).length === 0) {
-    asset.status = 'Available';
-  }
+  if (hasQuantity) recomputeStockStatus(asset);
+  else if (activeAssignmentsFor(id).length === 0) asset.status = 'Available';
 
   logAction(id, 'Returned', req.user.id, `${asset.name} (${asset.assetTag}) was returned by ${employeeName}.`);
   await db.write();
@@ -279,7 +282,6 @@ assetsRouter.post('/:id/retire', requireRole('Admin'), async (req, res) => {
 assetsRouter.get('/:id/history', requireRole('Admin', 'Manager'), (req, res) => {
   const id = Number(req.params.id);
 
-  // Managers may only audit assets assigned to their own team.
   if (req.user.role === 'Manager') {
     const teamIds = teamIdsOf(req.user.id);
     const everAssignedToTeam = db.data.assetAssignments.some(a => a.assetId === id && teamIds.has(a.employeeId));
