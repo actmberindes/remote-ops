@@ -87,6 +87,7 @@ export const api = {
   assets: {
     list: () => request('/assets'),
     create: (body) => request('/assets', { method: 'POST', body }),
+    clone: (id) => request(`/assets/${id}/clone`, { method: 'POST' }),
     update: (id, body) => request(`/assets/${id}`, { method: 'PUT', body }),
     remove: (id) => request(`/assets/${id}`, { method: 'DELETE' }),
     assign: (id, employeeId) => request(`/assets/${id}/assign`, { method: 'POST', body: { employeeId } }),
