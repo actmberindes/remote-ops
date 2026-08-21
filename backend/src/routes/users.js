@@ -6,14 +6,39 @@ import { requireAuth, requireRole, publicUser } from '../auth.js';
 export const usersRouter = Router();
 usersRouter.use(requireAuth(db));
 
-// Any signed-in user can see the directory (needed for manager names, team lists, etc.)
+const DEVICE_OFFLINE_MS = 90 * 1000;
+
+function deviceStatus(device) {
+  if (!device || device.revoked || device.enrolled === false) return 'inactive';
+  if (!device.lastSeenAt) return 'offline';
+  const lastSeen = new Date(device.lastSeenAt).getTime();
+  if (Number.isNaN(lastSeen) || Date.now() - lastSeen > DEVICE_OFFLINE_MS) return 'offline';
+  return device.state || 'active';
+}
+
+function publicUserWithDeviceStatus(user) {
+  if (user.role !== 'Employee') return publicUser(user);
+
+  const devices = db.data.devices.filter(d => d.employeeId === user.id && !d.revoked);
+  if (devices.length === 0) return publicUser(user);
+
+  const statuses = devices.map(deviceStatus);
+  let status = 'offline';
+
+  if (statuses.includes('active')) status = 'active';
+  else if (statuses.includes('idle')) status = 'idle';
+  else if (statuses.includes('logged-out')) status = 'logged-out';
+
+  return { ...publicUser(user), status };
+}
+
+// Any signed-in user can see the directory. Employee live status is derived from
+// managed-device heartbeats rather than the retired employee Start/Stop session control.
 usersRouter.get('/', (req, res) => {
-  res.json(db.data.users.map(publicUser));
+  res.json(db.data.users.map(publicUserWithDeviceStatus));
 });
 
-// Self-service: the time tracker flips the caller's own live status (active/idle/inactive).
-// Session timestamps are persisted so the UI and monitoring agents can recover the same
-// session state after navigation, refresh, or process restarts.
+// Legacy compatibility endpoint. Employee Start/Stop is no longer used to control monitoring.
 usersRouter.patch('/me/status', async (req, res) => {
   const { status } = req.body || {};
   if (!['active', 'idle', 'inactive'].includes(status)) {
@@ -26,22 +51,16 @@ usersRouter.patch('/me/status', async (req, res) => {
   const now = new Date().toISOString();
 
   if (status === 'active') {
-    if (user.status !== 'active' || !user.sessionStartedAt) {
-      user.sessionStartedAt = now;
-    }
+    if (user.status !== 'active' || !user.sessionStartedAt) user.sessionStartedAt = now;
     user.sessionEndedAt = null;
   } else if (status === 'inactive') {
-    if (user.status === 'active' && user.sessionStartedAt) {
-      user.sessionEndedAt = now;
-    } else if (!user.sessionEndedAt) {
-      user.sessionEndedAt = now;
-    }
+    if (user.status === 'active' && user.sessionStartedAt) user.sessionEndedAt = now;
+    else if (!user.sessionEndedAt) user.sessionEndedAt = now;
   }
 
   user.status = status;
   await db.write();
-
-  res.json(publicUser(user));
+  res.json(publicUserWithDeviceStatus(user));
 });
 
 usersRouter.post('/', requireRole('Admin'), async (req, res) => {
@@ -60,7 +79,7 @@ usersRouter.post('/', requireRole('Admin'), async (req, res) => {
   };
   db.data.users.push(user);
   await db.write();
-  res.status(201).json(publicUser(user));
+  res.status(201).json(publicUserWithDeviceStatus(user));
 });
 
 usersRouter.put('/:id', requireRole('Admin'), async (req, res) => {
@@ -77,7 +96,7 @@ usersRouter.put('/:id', requireRole('Admin'), async (req, res) => {
   if (status) user.status = status;
   if (password) user.passwordHash = bcrypt.hashSync(password, 10);
   await db.write();
-  res.json(publicUser(user));
+  res.json(publicUserWithDeviceStatus(user));
 });
 
 usersRouter.delete('/:id', requireRole('Admin'), async (req, res) => {
