@@ -88,6 +88,14 @@ export const api = {
     list: () => request('/assets'),
     create: (body) => request('/assets', { method: 'POST', body }),
     clone: (id) => request(`/assets/${id}/clone`, { method: 'POST' }),
+    upsOptions: () =>
+      request('/assets/ups-options'),
+
+    assignBattery: (id, upsAssetId) =>
+      request(`/assets/${id}/assign-battery`, {
+        method: 'POST',
+        body: { upsAssetId }
+    }),
     update: (id, body) => request(`/assets/${id}`, { method: 'PUT', body }),
     remove: (id) => request(`/assets/${id}`, { method: 'DELETE' }),
     assign: (id, employeeId) => request(`/assets/${id}/assign`, { method: 'POST', body: { employeeId } }),

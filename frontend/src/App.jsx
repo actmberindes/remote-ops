@@ -3097,9 +3097,9 @@ function AdminTickets() {
 
 /* ============================== ASSET MANAGEMENT & LIFECYCLE ENGINE ============================== */
 
-const ASSET_TYPES = ['Desktop', 'Laptop', 'Printer', 'Monitor', 'Server', 'UPS', 'Mouse', 'Keyboard', 'Headset', 'Software License', 'Others'];
-const CONSUMABLE_TYPES = ['Mouse', 'Keyboard', 'Headset'];
-const emptyAssetForm = { name: '', type: ASSET_TYPES[0], brand: '', model: '', serialNumber: '', purchaseDate: '', warrantyExpiry: '', remarks: '', specs: {}, imageUrl: '', quantity: '' };
+const ASSET_TYPES = ['Desktop', 'Laptop', 'Printer', 'Monitor', 'Server', 'UPS', 'UPS Battery', 'SSD', 'RAM','Mouse', 'Keyboard', 'Headset', 'Software License', 'Others'];
+const CONSUMABLE_TYPES = ['Mouse', 'Keyboard', 'UPS Battery', 'Headset'];
+const emptyAssetForm = { name: '', type: ASSET_TYPES[0], brand: '', model: '', serialNumber: '', purchaseDate: '', cost: '', warrantyExpiry: '', remarks: '', specs: {}, imageUrl: '', quantity: '' };
 
 // Drives the dynamic "Specifications" section of the Add/Edit Asset form — different fields per asset type.
 const TYPE_SPEC_FIELDS = {
@@ -3109,6 +3109,9 @@ const TYPE_SPEC_FIELDS = {
   Printer: ['Print Type', 'Connectivity', 'Duty Cycle', 'Paper Size'],
   Server: ['CPU', 'RAM', 'Storage Size', 'RAID Configuration', 'OS'],
   UPS: ['Capacity (VA)', 'Battery Type', 'Runtime', 'Outlets'],
+  'UPS Battery': ['Battery Type', 'Voltage', 'Capacity (Ah)', 'Compatibility'],
+  SSD: ['Capacity', 'Interface', 'Form Factor', 'Read Speed', 'Write Speed'],
+  RAM: ['Capacity', 'Memory Type', 'Speed', 'Module Type'],
   Mouse: ['Connectivity', 'DPI', 'Buttons'],
   Keyboard: ['Connectivity', 'Layout', 'Switch Type'],
   Headset: ['Connectivity', 'Microphone', 'Noise Cancelling'],
@@ -3202,6 +3205,7 @@ function AssetFormModal({ isOpen, onClose, asset, onSaved }) {
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Purchase Date"><input type="date" className={inputCls} value={form.purchaseDate} onChange={e => set('purchaseDate', e.target.value)} /></Field>
+          <Field label="Cost"><input type="number" min="0" step="0.01" className={inputCls} value={form.cost ?? ''} onChange={e => set('cost', e.target.value)} placeholder="0.00" /></Field>
           <Field label="Warranty Expiry"><input type="date" className={inputCls} value={form.warrantyExpiry} onChange={e => set('warrantyExpiry', e.target.value)} /></Field>
         </div>
 
@@ -3230,18 +3234,79 @@ function AssetFormModal({ isOpen, onClose, asset, onSaved }) {
 }
 
 function AssignAssetModal({ isOpen, onClose, asset, onAssigned }) {
-  const { users, addToast } = useApp();
-  const employees = users.filter(u => u.role === 'Employee');
+  const { users, assets, addToast } = useApp();
+
+  const employees = users.filter(
+    u => u.role === 'Employee'
+  );
+
   const [employeeId, setEmployeeId] = useState('');
+  const [upsAssetId, setUpsAssetId] = useState('');
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    if (!isOpen) {
+      setEmployeeId('');
+      setUpsAssetId('');
+    }
+  }, [isOpen, asset]);
+
+  const isUpsBattery =
+    asset?.type === 'UPS Battery';
+
+  const availableUps = assets.filter(
+    a =>
+      a.type === 'UPS' &&
+      a.currentAssignment
+  );
+
   const submit = async () => {
-    if (!employeeId) return;
     setSaving(true);
+
     try {
-      const updated = await api.assets.assign(asset.id, Number(employeeId));
+      let updated;
+
+      if (isUpsBattery) {
+        if (!upsAssetId) {
+          addToast(
+            'Please select the UPS asset.',
+            'error'
+          );
+          return;
+        }
+
+        updated =
+          await api.assets.assignBattery(
+            asset.id,
+            Number(upsAssetId)
+          );
+
+        addToast(
+          'UPS Battery assigned to the UPS.',
+          'success'
+        );
+      } else {
+        if (!employeeId) {
+          addToast(
+            'Please select an employee.',
+            'error'
+          );
+          return;
+        }
+
+        updated =
+          await api.assets.assign(
+            asset.id,
+            Number(employeeId)
+          );
+
+        addToast(
+          'Asset assigned.',
+          'success'
+        );
+      }
+
       onAssigned(updated);
-      addToast('Asset assigned.', 'success');
       onClose();
     } catch (err) {
       addToast(err.message, 'error');
@@ -3251,14 +3316,88 @@ function AssignAssetModal({ isOpen, onClose, asset, onAssigned }) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Assign ${asset?.name || ''}`}>
-      <Field label="Assign to Employee">
-        <select className={inputCls} value={employeeId} onChange={e => setEmployeeId(e.target.value)}>
-          <option value="">Select an employee…</option>
-          {employees.map(e => <option key={e.id} value={e.id}>{e.name} — {e.department}</option>)}
-        </select>
-      </Field>
-      <button onClick={submit} disabled={!employeeId || saving} className="w-full py-2.5 rounded-lg font-bold text-xs accent-bg-solid shadow-sm mt-2">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={`Assign ${asset?.name || ''}`}
+    >
+      {isUpsBattery ? (
+        <>
+          <Field label="Assign to UPS">
+            <select
+              className={inputCls}
+              value={upsAssetId}
+              onChange={e =>
+                setUpsAssetId(e.target.value)
+              }
+            >
+              <option value="">
+                Select UPS — assigned employee…
+              </option>
+
+              {availableUps.map(ups => (
+                <option
+                  key={ups.id}
+                  value={ups.id}
+                >
+                  {ups.serialNumber ||
+                    ups.assetTag}{' '}
+                  -{' '}
+                  {ups.currentAssignment.employeeName}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          {availableUps.length === 0 && (
+            <div className="p-3 rounded-lg border border-[var(--border)] text-xs text-muted mb-3">
+              No assigned UPS assets are currently
+              available for battery assignment.
+            </div>
+          )}
+
+          <p className="text-[10px] text-muted mb-3">
+            The battery will be linked to the selected
+            UPS. The battery will follow the UPS
+            assignment rather than being assigned
+            directly to an employee.
+          </p>
+        </>
+      ) : (
+        <Field label="Assign to Employee">
+          <select
+            className={inputCls}
+            value={employeeId}
+            onChange={e =>
+              setEmployeeId(e.target.value)
+            }
+          >
+            <option value="">
+              Select an employee…
+            </option>
+
+            {employees.map(e => (
+              <option
+                key={e.id}
+                value={e.id}
+              >
+                {e.name} — {e.department}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+
+      <button
+        onClick={submit}
+        disabled={
+          saving ||
+          (isUpsBattery
+            ? !upsAssetId
+            : !employeeId)
+        }
+        className="w-full py-2.5 rounded-lg font-bold text-xs accent-bg-solid shadow-sm mt-2"
+      >
         {saving ? 'Assigning…' : 'Assign Asset'}
       </button>
     </Modal>
@@ -3401,7 +3540,11 @@ function AssetHistoryModal({ isOpen, onClose, asset }) {
 }
 
 function AssetDetailModal({ isOpen, onClose, asset }) {
+  const { assets } = useApp();
+
   if (!asset) return null;
+
+  const assignedAssets = asset.assignees || [];
   const specFields = TYPE_SPEC_FIELDS[asset.type] || [];
   const specs = asset.specs || {};
   const hasAnySpec = specFields.some(f => specs[f]);
@@ -3424,9 +3567,69 @@ function AssetDetailModal({ isOpen, onClose, asset }) {
       <div className="grid grid-cols-2 gap-2 text-xs mb-3">
         <div><span className="text-muted">Type:</span> {asset.type}</div>
         <div><span className="text-muted">Serial #:</span> {asset.serialNumber || '—'}</div>
-        <div><span className="text-muted">Purchased:</span> {asset.purchaseDate || '—'}</div>
-        <div><span className="text-muted">Warranty:</span> {asset.warrantyExpiry || '—'}</div>
-        {asset.currentAssignment && <div className="col-span-2"><span className="text-muted">Assigned to:</span> {asset.currentAssignment.employeeName}</div>}
+        <div>
+  <span className="text-muted">Purchased:</span>{' '}
+  {asset.purchaseDate || '—'}
+</div>
+
+<div>
+  <span className="text-muted">Cost:</span>{' '}
+  {asset.cost !== null &&
+  asset.cost !== undefined &&
+  asset.cost !== ''
+    ? `₱${Number(asset.cost).toLocaleString('en-PH', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      })}`
+    : '—'}
+</div>
+
+<div>
+  <span className="text-muted">Warranty:</span>{' '}
+  {asset.warrantyExpiry || '—'}
+</div>
+        {assignedAssets.length > 0 && (
+  <div className="col-span-2">
+    <div className="text-muted mb-1">
+      Assigned To:
+    </div>
+
+    <div className="flex flex-col gap-1.5">
+      {assignedAssets.map((assignment, index) => {
+        const linkedUps =
+          asset.type === 'UPS Battery' &&
+          assignment.upsAssetId
+            ? assets.find(
+                a => a.id === assignment.upsAssetId
+              )
+            : null;
+
+        return (
+          <div
+            key={`${assignment.employeeId}-${assignment.upsAssetId || index}`}
+            className="px-2.5 py-2 rounded-lg border border-[var(--border)]"
+          >
+            <div className="font-semibold">
+              {assignment.employeeName}
+            </div>
+
+            <div className="text-[10px] text-muted">
+              Assigned {assignment.assignedDate}
+            </div>
+
+            {linkedUps && (
+              <div className="text-[10px] accent-text mt-1">
+                UPS:{' '}
+                {linkedUps.serialNumber ||
+                  linkedUps.assetTag}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  </div>
+)}
       </div>
       {hasAnySpec && (
         <div className="mb-3">
@@ -3481,6 +3684,7 @@ function AssetsGrid({ assetList, mode, onEdit, onAssign, onBulkAssign, onReturn,
             <th className="py-2 pr-3">Tag</th>
             <th className="py-2 pr-3">Name</th>
             <th className="py-2 pr-3">Type</th>
+            <th className="py-2 pr-3">Purchased / Cost</th>
             <th className="py-2 pr-3">Status</th>
             <th className="py-2 pr-3">Assigned To</th>
             <th className="py-2 pr-3">Actions</th>
@@ -3509,11 +3713,46 @@ function AssetsGrid({ assetList, mode, onEdit, onAssign, onBulkAssign, onReturn,
               </td>
               <td className="py-2.5 pr-3">{a.type}</td>
               <td className="py-2.5 pr-3">
+                <div className="font-medium">
+                  {a.purchaseDate || '—'}
+                </div>
+
+                <div className="text-[10px] text-muted mt-0.5">
+                  {a.cost !== null && a.cost !== undefined && a.cost !== ''
+                    ? `₱${Number(a.cost).toLocaleString('en-PH', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                      })}`
+                    : 'No cost'}
+                </div>
+              </td>
+              <td className="py-2.5 pr-3">
                 <Badge tone={assetStatusTone(a.status)}>{a.status}</Badge>
                 {hasQuantity && <div className="text-[10px] text-muted mt-1">{a.quantityAvailable} of {a.quantity} in stock</div>}
               </td>
               <td className="py-2.5 pr-3">
-                {a.assignedCount === 0 ? '—' : a.assignedCount === 1 ? a.currentAssignment.employeeName : `${a.assignedCount} employees`}
+                {a.assignedCount === 0 ? (
+                  '—'
+                ) : a.assignedCount === 1 ? (
+                  <div>
+                    {a.currentAssignment.employeeName}
+
+                    {a.type === 'UPS Battery' && a.currentAssignment.upsAssetId && (
+                      <div className="text-[10px] text-muted mt-0.5">
+                        UPS linked
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div
+                    className="inline-flex items-center px-2 py-1 rounded-md cursor-help border border-[var(--border)] hover-surface"
+                    title={(a.assignees || [])
+                      .map(x => x.employeeName)
+                      .join('\n')}
+                  >
+                    {a.assignedCount} employees
+                  </div>
+                )}
               </td>
               <td className="py-2.5 pr-3">
                 <div className="flex items-center gap-1">
