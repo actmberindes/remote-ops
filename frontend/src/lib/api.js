@@ -71,7 +71,7 @@ export const api = {
       if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
       return data;
     },
-    fileUrl: (path) => (path && path.startsWith('/uploads/') ? `${API_URL.replace(/\/api$/, '')}${path}` : path),
+    fileUrl: (path) => (path && path.startsWith('/uploads/') ? `${API_URL.replace(/\\/api$/, '')}${path}` : path),
   },
 
   tickets: {
@@ -91,8 +91,10 @@ export const api = {
     update: (id, body) => request(`/assets/${id}`, { method: 'PUT', body }),
     remove: (id) => request(`/assets/${id}`, { method: 'DELETE' }),
     assign: (id, employeeId) => request(`/assets/${id}/assign`, { method: 'POST', body: { employeeId } }),
+    assignBattery: (id, upsAssetId) => request(`/assets/${id}/assign-battery`, { method: 'POST', body: { upsAssetId } }),
+    batteryUpsOptions: () => request('/assets/ups-options'),
     bulkAssign: (id, employeeIds) => request(`/assets/${id}/bulk-assign`, { method: 'POST', body: { employeeIds } }),
-    return: (id, employeeId) => request(`/assets/${id}/return`, { method: 'POST', body: employeeId !== undefined ? { employeeId } : undefined }),
+    return: (id, employeeId, extra = {}) => request(`/assets/${id}/return`, { method: 'POST', body: { ...(employeeId !== undefined ? { employeeId } : {}), ...extra } }),
     retire: (id) => request(`/assets/${id}/retire`, { method: 'POST' }),
     history: (id) => request(`/assets/${id}/history`),
     printTag: async (id) => {
