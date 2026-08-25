@@ -3974,91 +3974,302 @@ function LiveViewPage({ title, subtitle, employeeOptions = [] }) {
   );
 }
 
-function ScreenshotsSection({ title, subtitle, limit, employeeOptions, showFilters, onViewAll }) {
+function ScreenshotsSection({
+  title,
+  subtitle,
+  limit,
+  employeeOptions,
+  showFilters,
+  onViewAll
+}) {
+  const { addToast } = useApp();
+
   const [shots, setShots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [employeeFilter, setEmployeeFilter] = useState('');
   const [dateFilter, setDateFilter] = useState('');
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [deleting, setDeleting] = useState(false);
 
   const load = async () => {
     setLoading(true);
+
     try {
-      const data = await api.activity.screenshots({ employeeId: employeeFilter || undefined, date: dateFilter || undefined, limit: limit || 60 });
+      const data = await api.activity.screenshots({
+        employeeId: employeeFilter || undefined,
+        date: dateFilter || undefined,
+        limit: limit || 60
+      });
+
       setShots(data);
-    } catch (e) { /* ignore */ }
-    finally { setLoading(false); }
+      setSelectedIds([]);
+    } catch (e) {
+      addToast(e.message, 'error');
+    } finally {
+      setLoading(false);
+    }
   };
-  useEffect(() => { load(); }, [employeeFilter, dateFilter]);
+
+  useEffect(() => {
+    load();
+  }, [employeeFilter, dateFilter]);
+
+  const allVisibleSelected =
+    shots.length > 0 &&
+    shots.every(s => selectedIds.includes(s.id));
+
+  const toggleSelected = (id) => {
+    setSelectedIds(prev =>
+      prev.includes(id)
+        ? prev.filter(x => x !== id)
+        : [...prev, id]
+    );
+  };
+
+  const toggleAll = () => {
+    if (allVisibleSelected) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(shots.map(s => s.id));
+    }
+  };
+
+  const deleteSingle = async (shot) => {
+    const confirmed = window.confirm(
+      `Delete this screenshot captured at ${new Date(
+        shot.capturedAt
+      ).toLocaleString()}?`
+    );
+
+    if (!confirmed) return;
+
+    setDeleting(true);
+
+    try {
+      await api.activity.deleteScreenshot(shot.id);
+
+      setShots(prev =>
+        prev.filter(s => s.id !== shot.id)
+      );
+
+      setSelectedIds(prev =>
+        prev.filter(id => id !== shot.id)
+      );
+
+      addToast('Screenshot deleted.', 'success');
+    } catch (e) {
+      addToast(e.message, 'error');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const deleteSelected = async () => {
+    if (selectedIds.length === 0) return;
+
+    const confirmed = window.confirm(
+      `Delete ${selectedIds.length} selected screenshot${
+        selectedIds.length === 1 ? '' : 's'
+      }? This cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    setDeleting(true);
+
+    try {
+      const result =
+        await api.activity.deleteScreenshotsBulk(
+          selectedIds
+        );
+
+      setShots(prev =>
+        prev.filter(s => !selectedIds.includes(s.id))
+      );
+
+      setSelectedIds([]);
+
+      addToast(
+        `${result.deleted} screenshot${
+          result.deleted === 1 ? '' : 's'
+        } deleted.`,
+        'success'
+      );
+    } catch (e) {
+      addToast(e.message, 'error');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <Card>
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="font-display font-bold text-base flex items-center gap-2">
-            <Camera size={16} className="accent-text" /> {title}
+            <Camera size={16} className="accent-text" />
+            {title}
           </h3>
-          {subtitle && <p className="text-xs text-muted mt-0.5">{subtitle}</p>}
+
+          {subtitle && (
+            <p className="text-xs text-muted mt-0.5">
+              {subtitle}
+            </p>
+          )}
         </div>
-        {onViewAll && <button onClick={onViewAll} className="text-xs font-bold accent-text shrink-0">View All</button>}
+
+        {onViewAll && (
+          <button
+            onClick={onViewAll}
+            className="text-xs font-bold accent-text shrink-0"
+          >
+            View All
+          </button>
+        )}
       </div>
+
       {showFilters && (
-  <div className="flex flex-wrap items-end gap-2 mb-4 w-full">
-    <div className="flex-1 min-w-[220px]">
-      <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">
-        Employee
-      </label>
+        <>
+          <div className="flex flex-wrap items-end gap-2 mb-4 w-full">
+            <div className="flex-1 min-w-[220px]">
+              <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">
+                Employee
+              </label>
 
-      <select
-        className={`${inputCls} h-9`}
-        value={employeeFilter}
-        onChange={e => setEmployeeFilter(e.target.value)}
-      >
-        <option value="">All Employees</option>
+              <select
+                className={`${inputCls} h-9`}
+                value={employeeFilter}
+                onChange={e =>
+                  setEmployeeFilter(e.target.value)
+                }
+              >
+                <option value="">All Employees</option>
 
-        {employeeOptions.map(e => (
-          <option key={e.id} value={e.id}>
-            {e.name}
-          </option>
-        ))}
-      </select>
-    </div>
+                {employeeOptions.map(e => (
+                  <option key={e.id} value={e.id}>
+                    {e.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-    <div className="w-[180px]">
-      <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">
-        Capture Date
-      </label>
+            <div className="w-[180px]">
+              <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">
+                Capture Date
+              </label>
 
-      <input
-        type="date"
-        className={`${inputCls} h-9`}
-        value={dateFilter}
-        onChange={e => setDateFilter(e.target.value)}
-      />
-    </div>
+              <input
+                type="date"
+                className={`${inputCls} h-9`}
+                value={dateFilter}
+                onChange={e =>
+                  setDateFilter(e.target.value)
+                }
+              />
+            </div>
 
-    {(employeeFilter || dateFilter) && (
-      <button
-        onClick={() => {
-          setEmployeeFilter('');
-          setDateFilter('');
-        }}
-        className="h-9 px-3 rounded-lg text-xs font-bold border border-[var(--border)] hover-surface"
-      >
-        Clear
-      </button>
-    )}
-  </div>
-)}
+            {(employeeFilter || dateFilter) && (
+              <button
+                onClick={() => {
+                  setEmployeeFilter('');
+                  setDateFilter('');
+                }}
+                className="h-9 px-3 rounded-lg text-xs font-bold border border-[var(--border)] hover-surface"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          {shots.length > 0 && (
+            <div className="flex items-center justify-between mb-3 px-1">
+              <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  onChange={toggleAll}
+                />
+                Select All
+              </label>
+
+              {selectedIds.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-muted">
+                    {selectedIds.length} selected
+                  </span>
+
+                  <button
+                    onClick={deleteSelected}
+                    disabled={deleting}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold"
+                    style={{
+                      background: 'var(--danger)',
+                      color: '#fff',
+                      opacity: deleting ? 0.6 : 1
+                    }}
+                  >
+                    <Trash2 size={13} />
+                    {deleting ? 'Deleting…' : 'Delete Selected'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
       {loading ? (
-        <div className="py-10 text-center text-sm text-muted">Loading…</div>
+        <div className="py-10 text-center text-sm text-muted">
+          Loading…
+        </div>
       ) : shots.length === 0 ? (
-        <div className="py-10 text-center text-sm text-muted">No screenshots match this filter.</div>
+        <div className="py-10 text-center text-sm text-muted">
+          No screenshots match this filter.
+        </div>
       ) : (
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {shots.map(s => (
-            <ScreenshotEvidence key={s.id} url={s.url} variant="tile"
-              filename={`${s.employeeName} — ${new Date(s.capturedAt).toLocaleString()}`}
-              caption={`${s.employeeName} · ${new Date(s.capturedAt).toLocaleTimeString()}`} />
+            <div
+              key={s.id}
+              className={`relative rounded-lg border transition-all ${
+                selectedIds.includes(s.id)
+                  ? 'border-[var(--accent)] ring-1 ring-[var(--accent)]'
+                  : 'border-[var(--border)]'
+              }`}
+            >
+              <div className="absolute top-2 left-2 z-10">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(s.id)}
+                  onChange={() =>
+                    toggleSelected(s.id)
+                  }
+                  className="w-4 h-4"
+                />
+              </div>
+
+              <ScreenshotEvidence
+                url={s.url}
+                variant="tile"
+                filename={`${s.employeeName} — ${new Date(
+                  s.capturedAt
+                ).toLocaleString()}`}
+                caption={`${s.employeeName} · ${new Date(
+                  s.capturedAt
+                ).toLocaleTimeString()}`}
+              />
+
+              <div className="absolute top-2 right-2 z-10">
+                <button
+                  onClick={() => deleteSingle(s)}
+                  disabled={deleting}
+                  className="p-1.5 rounded-lg bg-black/60 text-white hover:bg-[var(--danger)] transition-colors"
+                  title="Delete Screenshot"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            </div>
           ))}
         </div>
       )}
