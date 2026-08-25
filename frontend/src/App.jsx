@@ -1410,6 +1410,24 @@ function AdminUserManagement() {
       }
     }
   };
+  const handleClone = async (asset) => {
+    if (!window.confirm(`Clone asset "${asset.name}"? A new asset tag and ID will be generated.`)) {
+      return;
+    }
+
+    try {
+      const cloned = await api.assets.clone(asset.id);
+
+      setAssets(prev => [...prev, cloned]);
+
+      addToast(
+        `Asset cloned successfully as ${cloned.assetTag}.`,
+        'success'
+      );
+    } catch (e) {
+      addToast(e.message, 'error');
+    }
+  };
 
   return (
     <div className="flex flex-col gap-5 w-full">
@@ -3469,7 +3487,7 @@ function AssetImageLightbox({ url, name, onClose }) {
   );
 }
 
-function AssetsGrid({ assetList, mode, onEdit, onAssign, onBulkAssign, onReturn, onRetire, onDelete, onHistory, onView }) {
+function AssetsGrid({ assetList, mode, onEdit, onAssign, onBulkAssign, onReturn, onRetire, onDelete, onClone, onHistory, onView }) {
   const { addToast } = useApp();
   const [lightbox, setLightbox] = useState(null);
   return (
@@ -3521,6 +3539,7 @@ function AssetsGrid({ assetList, mode, onEdit, onAssign, onBulkAssign, onReturn,
                   {mode === 'admin' && (
                     <>
                       <button onClick={() => onEdit(a)} className="p-1.5 rounded-lg hover-surface" title="Edit"><Pencil size={13} /></button>
+                      <button onClick={() => onClone(a)} className="p-1.5 rounded-lg hover-surface" title="Clone Asset"> <Copy size={13} /> </button>
                       <button
                         onClick={async () => {
                           try {
@@ -3759,6 +3778,7 @@ function AdminAssets() {
         onReturn={(a) => setReturning(a)}
         onRetire={handleRetire}
         onDelete={handleDelete}
+        onClone={handleClone}
         onHistory={(a) => setHistoryAsset(a)}
         onView={(a) => setViewingAsset(a)}
       />
