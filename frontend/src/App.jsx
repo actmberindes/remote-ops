@@ -3577,7 +3577,7 @@ function AssetsGrid({ assetList, mode, onEdit, onAssign, onBulkAssign, onReturn,
   );
 }
 
-function AssetSearchFilterBar({ query, setQuery, typeFilter, setTypeFilter, statusFilter, setStatusFilter, statusOptions }) {
+function AssetSearchFilterBar({ query, setQuery, typeFilter, setTypeFilter, statusFilter, setStatusFilter, statusOptions, sortOrder, setSortOrder }) {
   return (
   <div className="flex flex-wrap items-end gap-2 mb-4 w-full">
     <div className="flex-1 min-w-[220px]">
@@ -3639,6 +3639,21 @@ function AssetSearchFilterBar({ query, setQuery, typeFilter, setTypeFilter, stat
         ))}
       </select>
     </div>
+    <div className="w-[180px]">
+      <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">
+        Purchase Date
+      </label>
+
+      <select
+        className={`${inputCls} h-9`}
+        value={sortOrder}
+        onChange={e => setSortOrder(e.target.value)}
+      >
+        <option value="newest">Newest First</option>
+        <option value="oldest">Oldest First</option>
+      </select>
+    </div>
+
   </div>
 );
 }
@@ -3647,17 +3662,49 @@ function useAssetFilters(assets) {
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const filtered = assets.filter(a => {
-    if (typeFilter && a.type !== typeFilter) return false;
-    if (statusFilter && a.status !== statusFilter) return false;
-    if (query) {
-      const q = query.toLowerCase();
-      const haystack = `${a.name} ${a.assetTag} ${a.brand} ${a.model} ${a.serialNumber}`.toLowerCase();
-      if (!haystack.includes(q)) return false;
-    }
-    return true;
-  });
-  return { query, setQuery, typeFilter, setTypeFilter, statusFilter, setStatusFilter, filtered };
+  const [sortOrder, setSortOrder] = useState('newest');
+
+  const filtered = assets
+    .filter(a => {
+      if (typeFilter && a.type !== typeFilter) return false;
+      if (statusFilter && a.status !== statusFilter) return false;
+
+      if (query) {
+        const q = query.toLowerCase();
+        const haystack =
+          `${a.name} ${a.assetTag} ${a.brand} ${a.model} ${a.serialNumber}`
+            .toLowerCase();
+
+        if (!haystack.includes(q)) return false;
+      }
+
+      return true;
+    })
+    .sort((a, b) => {
+      const dateA = a.purchaseDate
+        ? new Date(a.purchaseDate).getTime()
+        : 0;
+
+      const dateB = b.purchaseDate
+        ? new Date(b.purchaseDate).getTime()
+        : 0;
+
+      return sortOrder === 'newest'
+        ? dateB - dateA
+        : dateA - dateB;
+    });
+
+  return {
+    query,
+    setQuery,
+    typeFilter,
+    setTypeFilter,
+    statusFilter,
+    setStatusFilter,
+    sortOrder,
+    setSortOrder,
+    filtered
+  };
 }
 
 function AdminAssets() {
@@ -3669,7 +3716,7 @@ function AdminAssets() {
   const [returning, setReturning] = useState(null);
   const [historyAsset, setHistoryAsset] = useState(null);
   const [viewingAsset, setViewingAsset] = useState(null);
-  const { query, setQuery, typeFilter, setTypeFilter, statusFilter, setStatusFilter, filtered } = useAssetFilters(assets);
+  const { query, setQuery, typeFilter, setTypeFilter, statusFilter, setStatusFilter, sortOrder, setSortOrder, filtered } = useAssetFilters(assets);
 
   const upsert = (saved, isNew) => {
     setAssets(prev => isNew ? [...prev, saved] : prev.map(a => a.id === saved.id ? saved : a));
@@ -3704,7 +3751,7 @@ function AdminAssets() {
         </button>
       </div>
       <AssetSearchFilterBar query={query} setQuery={setQuery} typeFilter={typeFilter} setTypeFilter={setTypeFilter}
-        statusFilter={statusFilter} setStatusFilter={setStatusFilter} statusOptions={['Available', 'In Use', 'Out of Stock', 'Maintenance', 'Retired']} />
+        statusFilter={statusFilter} setStatusFilter={setStatusFilter} statusOptions={['Available', 'In Use', 'Out of Stock', 'Maintenance', 'Retired']} sortOrder={sortOrder} setSortOrder={setSortOrder}/>
       <AssetsGrid assetList={filtered} mode="admin"
         onEdit={(a) => { setEditingAsset(a); setFormOpen(true); }}
         onAssign={(a) => setAssigning(a)}
@@ -3729,7 +3776,7 @@ function ManagerAssetsReadOnly() {
   const { assets } = useApp();
   const [historyAsset, setHistoryAsset] = useState(null);
   const [viewingAsset, setViewingAsset] = useState(null);
-  const { query, setQuery, typeFilter, setTypeFilter, statusFilter, setStatusFilter, filtered } = useAssetFilters(assets);
+  const { query, setQuery, typeFilter, setTypeFilter, statusFilter, setStatusFilter, sortOrder, setSortOrder, filtered } = useAssetFilters(assets);
 
   return (
     <Card>
@@ -3741,7 +3788,7 @@ function ManagerAssetsReadOnly() {
         <Badge tone="neutral">Read Only</Badge>
       </div>
       <AssetSearchFilterBar query={query} setQuery={setQuery} typeFilter={typeFilter} setTypeFilter={setTypeFilter}
-        statusFilter={statusFilter} setStatusFilter={setStatusFilter} statusOptions={['Available', 'In Use', 'Out of Stock', 'Maintenance', 'Retired']} />
+        statusFilter={statusFilter} setStatusFilter={setStatusFilter} statusOptions={['Available', 'In Use', 'Out of Stock', 'Maintenance', 'Retired']} sortOrder={sortOrder} setSortOrder={setSortOrder}/>
       <AssetsGrid assetList={filtered} mode="manager-readonly" onView={(a) => setViewingAsset(a)} onHistory={(a) => setHistoryAsset(a)} />
       <AssetHistoryModal isOpen={!!historyAsset} onClose={() => setHistoryAsset(null)} asset={historyAsset} />
       <AssetDetailModal isOpen={!!viewingAsset} onClose={() => setViewingAsset(null)} asset={viewingAsset} />
