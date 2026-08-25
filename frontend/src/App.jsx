@@ -1410,25 +1410,7 @@ function AdminUserManagement() {
       }
     }
   };
-  const handleClone = async (asset) => {
-    if (!window.confirm(`Clone asset "${asset.name}"? A new asset tag and ID will be generated.`)) {
-      return;
-    }
-
-    try {
-      const cloned = await api.assets.clone(asset.id);
-
-      setAssets(prev => [...prev, cloned]);
-
-      addToast(
-        `Asset cloned successfully as ${cloned.assetTag}.`,
-        'success'
-      );
-    } catch (e) {
-      addToast(e.message, 'error');
-    }
-  };
-
+  
   return (
     <div className="flex flex-col gap-5 w-full">
     <Card className="w-full">
@@ -3539,7 +3521,7 @@ function AssetsGrid({ assetList, mode, onEdit, onAssign, onBulkAssign, onReturn,
                   {mode === 'admin' && (
                     <>
                       <button onClick={() => onEdit(a)} className="p-1.5 rounded-lg hover-surface" title="Edit"><Pencil size={13} /></button>
-                      <button onClick={() => onClone(a)} className="p-1.5 rounded-lg hover-surface" title="Clone Asset"> <Copy size={13} /> </button>
+                      <button onClick={() => onClone(a)} className="p-1.5 rounded-lg hover-surface" title="Clone Asset"> <Copy size={13} /></button>
                       <button
                         onClick={async () => {
                           try {
@@ -3756,6 +3738,24 @@ function AdminAssets() {
       setAssets(prev => prev.filter(a => a.id !== asset.id));
       addToast('Asset deleted.', 'info');
     } catch (e) { addToast(e.message, 'error'); }
+  };
+  const handleClone = async (asset) => {
+    if (!window.confirm(`Clone asset "${asset.name}"? A new asset tag and ID will be generated.`)) {
+      return;
+    }
+
+    try {
+      const cloned = await api.assets.clone(asset.id);
+
+      setAssets(prev => [...prev, cloned]);
+
+      addToast(
+        `Asset cloned successfully as ${cloned.assetTag}.`,
+        'success'
+      );
+    } catch (e) {
+      addToast(e.message, 'error');
+    }
   };
 
   return (
