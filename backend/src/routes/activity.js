@@ -1,10 +1,15 @@
 import { Router } from 'express';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { db, nextId } from '../db.js';
 import { requireAuth, requireRole, requireDevice } from '../auth.js';
 
 export const activityRouter = Router();
 
 const DEVICE_OFFLINE_MS = 90 * 1000;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const uploadsDir = path.join(__dirname, '..', 'uploads');
 
 function teamIdsOf(managerId) {
   return new Set(db.data.users.filter(u => u.managerId === managerId).map(u => u.id));
@@ -54,6 +59,19 @@ function purgeOldActivity() {
   db.data.webUsageLogs = (db.data.webUsageLogs || []).filter(r => {
     return !r.date || r.date >= webUsageCutoffDate;
   });
+}
+
+function deleteStoredFile(url) {
+  if (!url || typeof url !== 'string' || !url.startsWith('/uploads/')) return;
+  const filename = path.basename(url);
+  if (!filename || filename === '.' || filename === '..') return;
+
+  const filePath = path.join(uploadsDir, filename);
+  try {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch (e) {
+    console.warn(`Unable to delete screenshot file ${filename}: ${e.message}`);
+  }
 }
 
 // Monitoring uploads are controlled by device enrollment/authorization.
@@ -218,6 +236,46 @@ activityRouter.get('/screenshots', requireAuth(db), requireRole('Admin', 'Manage
   list = list.sort((a, b) => (a.capturedAt < b.capturedAt ? 1 : -1));
   const cap = Math.min(Number(limit) || 30, 200);
   res.json(list.slice(0, cap).map(s => ({ ...s, employeeName: userName(s.employeeId) })));
+});
+
+activityRouter.delete('/screenshots/:id', requireAuth(db), requireRole('Admin', 'Manager'), async (req, res) => {
+  const id = Number(req.params.id);
+  const allowed = scopedEmployeeIds(req.user);
+  const screenshot = db.data.screenshots.find(s => s.id === id);
+
+  if (!screenshot) return res.status(404).json({ error: 'Screenshot not found.' });
+  if (allowed && !allowed.has(screenshot.employeeId)) {
+    return res.status(403).json({ error: 'You can only delete screenshots within your monitoring scope.' });
+  }
+
+  deleteStoredFile(screenshot.url);
+  db.data.screenshots = db.data.screenshots.filter(s => s.id !== id);
+  await db.write();
+
+  res.json({ ok: true, deleted: 1 });
+});
+
+activityRouter.post('/screenshots/delete-bulk', requireAuth(db), requireRole('Admin', 'Manager'), async (req, res) => {
+  const ids = Array.isArray(req.body?.ids)
+    ? [...new Set(req.body.ids.map(Number).filter(Number.isFinite))]
+    : [];
+
+  if (ids.length === 0) return res.status(400).json({ error: 'ids must be a non-empty array.' });
+
+  const allowed = scopedEmployeeIds(req.user);
+  const targets = db.data.screenshots.filter(s => ids.includes(Number(s.id)));
+
+  if (allowed && targets.some(s => !allowed.has(s.employeeId))) {
+    return res.status(403).json({ error: 'You can only delete screenshots within your monitoring scope.' });
+  }
+
+  for (const screenshot of targets) deleteStoredFile(screenshot.url);
+
+  const targetSet = new Set(ids);
+  db.data.screenshots = db.data.screenshots.filter(s => !targetSet.has(Number(s.id)));
+  await db.write();
+
+  res.json({ ok: true, deleted: targets.length });
 });
 
 activityRouter.get('/live-history', requireAuth(db), requireRole('Admin', 'Manager'), (req, res) => {
