@@ -142,6 +142,8 @@ export const api = {
       const qs = params.toString();
       return request(`/activity/screenshots${qs ? `?${qs}` : ''}`);
     },
+    deleteScreenshot: (id) => request(`/activity/screenshots/${id}`, { method: 'DELETE' }),
+    deleteScreenshotsBulk: (ids) => request('/activity/screenshots/delete-bulk', { method: 'POST', body: { ids } }),
     webUsage: ({ employeeId, date } = {}) => {
       const params = new URLSearchParams();
       if (employeeId) params.set('employeeId', employeeId);
