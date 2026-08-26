@@ -104,7 +104,7 @@ assetsRouter.get('/', (req, res) => {
 });
 
 assetsRouter.post('/', requireRole('Admin'), async (req, res) => {
-  const { name, type, brand, model, serialNumber, purchaseDate, warrantyExpiry, remarks, specs, imageUrl, quantity } = req.body || {};
+  const { name, type, brand, model, serialNumber, purchaseDate, cost, warrantyExpiry, remarks, specs, imageUrl, quantity } = req.body || {};
   if (!name || !type) return res.status(400).json({ error: 'Asset name and type are required.' });
 
   const hasQuantity = quantity !== undefined && quantity !== null && quantity !== '';
@@ -112,10 +112,16 @@ assetsRouter.post('/', requireRole('Admin'), async (req, res) => {
     return res.status(400).json({ error: 'Quantity must be a whole number 0 or greater.' });
   }
 
+  const numericCost = cost === undefined || cost === null || cost === '' ? null : Number(cost);
+  if (numericCost !== null && (!Number.isFinite(numericCost) || numericCost < 0)) {
+    return res.status(400).json({ error: 'Cost must be a valid number 0 or greater.' });
+  }
+
   const asset = {
     id: nextId(), name, type, assetTag: nextAssetTag(type), brand: brand || '', model: model || '',
-    serialNumber: serialNumber || '', purchaseDate: purchaseDate || '', warrantyExpiry: warrantyExpiry || '',
-    status: 'Available', remarks: remarks || '', specs: (specs && typeof specs === 'object') ? specs : {}, imageUrl: imageUrl || null,
+    serialNumber: serialNumber || '', purchaseDate: purchaseDate || '', cost: numericCost,
+    warrantyExpiry: warrantyExpiry || '', status: 'Available', remarks: remarks || '',
+    specs: (specs && typeof specs === 'object') ? specs : {}, imageUrl: imageUrl || null,
     quantity: hasQuantity ? Number(quantity) : null,
   };
   if (hasQuantity && asset.quantity === 0) asset.status = 'Out of Stock';
@@ -153,13 +159,20 @@ assetsRouter.put('/:id', requireRole('Admin'), async (req, res) => {
   const asset = db.data.assets.find(a => a.id === id);
   if (!asset) return res.status(404).json({ error: 'Asset not found.' });
 
-  const { name, type, brand, model, serialNumber, purchaseDate, warrantyExpiry, remarks, specs, imageUrl, quantity } = req.body || {};
+  const { name, type, brand, model, serialNumber, purchaseDate, cost, warrantyExpiry, remarks, specs, imageUrl, quantity } = req.body || {};
   if (name !== undefined) asset.name = name;
   if (type !== undefined) asset.type = type;
   if (brand !== undefined) asset.brand = brand;
   if (model !== undefined) asset.model = model;
   if (serialNumber !== undefined) asset.serialNumber = serialNumber;
   if (purchaseDate !== undefined) asset.purchaseDate = purchaseDate;
+  if (cost !== undefined) {
+    const numericCost = cost === null || cost === '' ? null : Number(cost);
+    if (numericCost !== null && (!Number.isFinite(numericCost) || numericCost < 0)) {
+      return res.status(400).json({ error: 'Cost must be a valid number 0 or greater.' });
+    }
+    asset.cost = numericCost;
+  }
   if (warrantyExpiry !== undefined) asset.warrantyExpiry = warrantyExpiry;
   if (remarks !== undefined) asset.remarks = remarks;
   if (specs !== undefined && typeof specs === 'object') asset.specs = specs;
