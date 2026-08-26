@@ -3588,48 +3588,12 @@ function AssetDetailModal({ isOpen, onClose, asset }) {
   <span className="text-muted">Warranty:</span>{' '}
   {asset.warrantyExpiry || '—'}
 </div>
-        {asset.type !== 'UPS' && assignedAssets.length > 0 && (
-  <div className="col-span-2">
-    <div className="text-muted mb-1">
-      Assigned To:
-    </div>
-
-    <div className="flex flex-col gap-1.5">
-      {assignedAssets.map((assignment, index) => {
-        const linkedUps =
-          asset.type === 'UPS Battery' &&
-          assignment.upsAssetId
-            ? assets.find(
-                a => a.id === assignment.upsAssetId
-              )
-            : null;
-
-        return (
-          <div
-            key={`${assignment.employeeId}-${assignment.upsAssetId || index}`}
-            className="px-2.5 py-2 rounded-lg border border-[var(--border)]"
-          >
-            <div className="font-semibold">
-              {assignment.employeeName}
-            </div>
-
-            <div className="text-[10px] text-muted">
-              Assigned {assignment.assignedDate}
-            </div>
-
-            {linkedUps && (
-              <div className="text-[10px] accent-text mt-1">
-                UPS:{' '}
-                {linkedUps.serialNumber ||
-                  linkedUps.assetTag}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  </div>
-)}
+    {asset.currentAssignment && (
+      <div className="col-span-2">
+        <span className="text-muted">Assigned to:</span>{' '}
+        {asset.currentAssignment.employeeName}
+      </div>
+    )}
       </div>
       {hasAnySpec && (
         <div className="mb-3">
@@ -3684,7 +3648,7 @@ function AssetsGrid({ assetList, mode, onEdit, onAssign, onBulkAssign, onReturn,
             <th className="py-2 pr-3">Tag</th>
             <th className="py-2 pr-3">Name</th>
             <th className="py-2 pr-3">Type</th>
-            <th className="py-2 pr-3">Purchased / Cost</th>
+            <th className="py-2 pr-3">Purchased Date</th>
             <th className="py-2 pr-3">Status</th>
             <th className="py-2 pr-3">Assigned To</th>
             <th className="py-2 pr-3">Actions</th>
@@ -3715,15 +3679,6 @@ function AssetsGrid({ assetList, mode, onEdit, onAssign, onBulkAssign, onReturn,
               <td className="py-2.5 pr-3">
                 <div className="font-medium">
                   {a.purchaseDate || '—'}
-                </div>
-
-                <div className="text-[10px] text-muted mt-0.5">
-                  {a.cost !== null && a.cost !== undefined && a.cost !== ''
-                    ? `₱${Number(a.cost).toLocaleString('en-PH', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2
-                      })}`
-                    : 'No cost'}
                 </div>
               </td>
               <td className="py-2.5 pr-3">
