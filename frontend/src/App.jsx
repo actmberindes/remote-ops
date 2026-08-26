@@ -3684,7 +3684,7 @@ function AssetsGrid({ assetList, mode, onEdit, onAssign, onBulkAssign, onReturn,
             <th className="py-2 pr-3">Tag</th>
             <th className="py-2 pr-3">Name</th>
             <th className="py-2 pr-3">Type</th>
-            <th className="py-2 pr-3">Purchased Date</th>
+            <th className="py-2 pr-3">Purchased / Cost</th>
             <th className="py-2 pr-3">Status</th>
             <th className="py-2 pr-3">Assigned To</th>
             <th className="py-2 pr-3">Actions</th>
@@ -3715,6 +3715,14 @@ function AssetsGrid({ assetList, mode, onEdit, onAssign, onBulkAssign, onReturn,
               <td className="py-2.5 pr-3">
                 <div className="font-medium">
                   {a.purchaseDate || '—'}
+                </div>
+                <div className="text-[10px] text-muted mt-0.5">
+                  {a.cost !== null && a.cost !== undefined && a.cost !== ''
+                    ? `₱${Number(a.cost).toLocaleString('en-PH', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                      })}`
+                    : 'No cost'}
                 </div>
               </td>
               <td className="py-2.5 pr-3">
