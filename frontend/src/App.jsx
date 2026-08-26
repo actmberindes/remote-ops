@@ -3588,12 +3588,48 @@ function AssetDetailModal({ isOpen, onClose, asset }) {
   <span className="text-muted">Warranty:</span>{' '}
   {asset.warrantyExpiry || '—'}
 </div>
-    {asset.currentAssignment && (
-      <div className="col-span-2">
-        <span className="text-muted">Assigned to:</span>{' '}
-        {asset.currentAssignment.employeeName}
-      </div>
-    )}
+        {asset.type !== 'UPS' && assignedAssets.length > 0 && (
+  <div className="col-span-2">
+    <div className="text-muted mb-1">
+      Assigned To:
+    </div>
+
+    <div className="flex flex-col gap-1.5">
+      {assignedAssets.map((assignment, index) => {
+        const linkedUps =
+          asset.type === 'UPS Battery' &&
+          assignment.upsAssetId
+            ? assets.find(
+                a => a.id === assignment.upsAssetId
+              )
+            : null;
+
+        return (
+          <div
+            key={`${assignment.employeeId}-${assignment.upsAssetId || index}`}
+            className="px-2.5 py-2 rounded-lg border border-[var(--border)]"
+          >
+            <div className="font-semibold">
+              {assignment.employeeName}
+            </div>
+
+            <div className="text-[10px] text-muted">
+              Assigned {assignment.assignedDate}
+            </div>
+
+            {linkedUps && (
+              <div className="text-[10px] accent-text mt-1">
+                UPS:{' '}
+                {linkedUps.serialNumber ||
+                  linkedUps.assetTag}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  </div>
+)}
       </div>
       {hasAnySpec && (
         <div className="mb-3">
