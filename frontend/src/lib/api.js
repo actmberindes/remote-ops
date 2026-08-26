@@ -88,23 +88,11 @@ export const api = {
     list: () => request('/assets'),
     create: (body) => request('/assets', { method: 'POST', body }),
     clone: (id) => request(`/assets/${id}/clone`, { method: 'POST' }),
-    upsOptions: () => request('/assets/ups-options'),
-    assignBattery: (id, upsAssetId) => request(`/assets/${id}/assign-battery`, {
-      method: 'POST',
-      body: { upsAssetId },
-    }),
     update: (id, body) => request(`/assets/${id}`, { method: 'PUT', body }),
     remove: (id) => request(`/assets/${id}`, { method: 'DELETE' }),
     assign: (id, employeeId) => request(`/assets/${id}/assign`, { method: 'POST', body: { employeeId } }),
     bulkAssign: (id, employeeIds) => request(`/assets/${id}/bulk-assign`, { method: 'POST', body: { employeeIds } }),
-    return: (id, employeeId, extra = {}) => request(`/assets/${id}/return`, {
-      method: 'POST',
-      body: { ...(employeeId !== undefined ? { employeeId } : {}), ...extra },
-    }),
-    returnBattery: (id, upsAssetId) => request(`/assets/${id}/return`, {
-      method: 'POST',
-      body: { upsAssetId },
-    }),
+    return: (id, employeeId) => request(`/assets/${id}/return`, { method: 'POST', body: employeeId !== undefined ? { employeeId } : undefined }),
     retire: (id) => request(`/assets/${id}/retire`, { method: 'POST' }),
     history: (id) => request(`/assets/${id}/history`),
     printTag: async (id) => {
