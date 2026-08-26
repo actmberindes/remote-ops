@@ -3099,7 +3099,7 @@ function AdminTickets() {
 
 const ASSET_TYPES = ['Desktop', 'Laptop', 'Printer', 'Monitor', 'Server', 'UPS', 'Mouse', 'Keyboard', 'Headset', 'Software License', 'Others'];
 const CONSUMABLE_TYPES = ['Mouse', 'Keyboard', 'Headset'];
-const emptyAssetForm = { name: '', type: ASSET_TYPES[0], brand: '', model: '', serialNumber: '', purchaseDate: '', warrantyExpiry: '', remarks: '', specs: {}, imageUrl: '', quantity: '' };
+const emptyAssetForm = { name: '', type: ASSET_TYPES[0], brand: '', model: '', serialNumber: '', purchaseDate: '',  cost: '', warrantyExpiry: '', remarks: '', specs: {}, imageUrl: '', quantity: '' };
 
 // Drives the dynamic "Specifications" section of the Add/Edit Asset form — different fields per asset type.
 const TYPE_SPEC_FIELDS = {
@@ -3202,6 +3202,7 @@ function AssetFormModal({ isOpen, onClose, asset, onSaved }) {
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Purchase Date"><input type="date" className={inputCls} value={form.purchaseDate} onChange={e => set('purchaseDate', e.target.value)} /></Field>
+          <Field label="Cost"><input type="number" min="0" step="0.01" className={inputCls} value={form.cost ?? ''} onChange={e => set('cost', e.target.value)} placeholder="0.00"/></Field>
           <Field label="Warranty Expiry"><input type="date" className={inputCls} value={form.warrantyExpiry} onChange={e => set('warrantyExpiry', e.target.value)} /></Field>
         </div>
 
@@ -3422,10 +3423,37 @@ function AssetDetailModal({ isOpen, onClose, asset }) {
         </div>
       </div>
       <div className="grid grid-cols-2 gap-2 text-xs mb-3">
-        <div><span className="text-muted">Type:</span> {asset.type}</div>
-        <div><span className="text-muted">Serial #:</span> {asset.serialNumber || '—'}</div>
-        <div><span className="text-muted">Purchased:</span> {asset.purchaseDate || '—'}</div>
-        <div><span className="text-muted">Warranty:</span> {asset.warrantyExpiry || '—'}</div>
+        <div>
+          <span className="text-muted">Type:</span>{' '}
+          {asset.type}
+        </div>
+
+        <div>
+          <span className="text-muted">Serial #:</span>{' '}
+          {asset.serialNumber || '—'}
+        </div>
+
+        <div>
+          <span className="text-muted">Purchased:</span>{' '}
+          {asset.purchaseDate || '—'}
+        </div>
+
+        <div>
+          <span className="text-muted">Cost:</span>{' '}
+          {asset.cost !== null &&
+          asset.cost !== undefined &&
+          asset.cost !== ''
+            ? `₱${Number(asset.cost).toLocaleString('en-PH', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            })}`
+          : '—'}
+        </div>
+
+        <div>
+          <span className="text-muted">Warranty:</span>{' '}
+          {asset.warrantyExpiry || '—'}
+        </div>
         {asset.currentAssignment && <div className="col-span-2"><span className="text-muted">Assigned to:</span> {asset.currentAssignment.employeeName}</div>}
       </div>
       {hasAnySpec && (
@@ -3481,6 +3509,7 @@ function AssetsGrid({ assetList, mode, onEdit, onAssign, onBulkAssign, onReturn,
             <th className="py-2 pr-3">Tag</th>
             <th className="py-2 pr-3">Name</th>
             <th className="py-2 pr-3">Type</th>
+            <th className="py-2 pr-3">Purchased Date/ Cost</th>
             <th className="py-2 pr-3">Status</th>
             <th className="py-2 pr-3">Assigned To</th>
             <th className="py-2 pr-3">Actions</th>
@@ -3508,6 +3537,22 @@ function AssetsGrid({ assetList, mode, onEdit, onAssign, onBulkAssign, onReturn,
                 <div className="text-muted text-[10px]">{a.brand} {a.model}</div>
               </td>
               <td className="py-2.5 pr-3">{a.type}</td>
+              <td className="py-2.5 pr-3">
+                <div className="font-medium">
+                  {a.purchaseDate || '—'}
+                </div>
+
+                <div className="text-[10px] text-muted mt-0.5">
+                  {a.cost !== null &&
+                  a.cost !== undefined &&
+                  a.cost !== ''
+                    ? `₱${Number(a.cost).toLocaleString('en-PH', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                    })}`
+                  : '—'}
+                </div>
+              </td>
               <td className="py-2.5 pr-3">
                 <Badge tone={assetStatusTone(a.status)}>{a.status}</Badge>
                 {hasQuantity && <div className="text-[10px] text-muted mt-1">{a.quantityAvailable} of {a.quantity} in stock</div>}
@@ -3570,7 +3615,7 @@ function AssetsGrid({ assetList, mode, onEdit, onAssign, onBulkAssign, onReturn,
               </td>
             </tr>
           );})}
-          {assetList.length === 0 && <tr><td colSpan={7} className="py-8 text-center text-muted">No assets match your filters.</td></tr>}
+          {assetList.length === 0 && <tr><td colSpan={8} className="py-8 text-center text-muted">No assets match your filters.</td></tr>}
         </tbody>
       </table>
       {lightbox && <AssetImageLightbox url={lightbox.imageUrl} name={lightbox.name} onClose={() => setLightbox(null)} />}
