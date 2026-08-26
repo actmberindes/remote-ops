@@ -32,6 +32,10 @@ function componentParentType(assetType) {
   return COMPONENT_PARENT_TYPES[assetType] || null;
 }
 
+function isQuantityTrackedComponent(asset) {
+  return asset?.type === 'UPS Battery';
+}
+
 function activeParentAssignment(parentAssetId) {
   return activeAssignmentsFor(parentAssetId)[0] || null;
 }
@@ -336,15 +340,17 @@ assetsRouter.get('/component-options/:type', requireRole('Admin'), (req, res) =>
   const componentType = req.params.type;
   const parentType = componentParentType(componentType);
 
-  if (!parentType) {
-    return res.status(400).json({ error: 'Unsupported component asset type.' });
-  }
+  if (!parentType) return res.status(400).json({ error: 'Unsupported component asset type.' });
 
   const options = db.data.assets
     .filter(parent => parent.type === parentType)
     .map(parent => {
       const parentAssignment = activeParentAssignment(parent.id);
       const existingComponentAssignment = activeComponentAssignmentToParent(parent.id, componentType);
+      const assignedEmployeeName = parentAssignment ? userName(parentAssignment.employeeId) : null;
+      const label = componentType === 'UPS Battery'
+        ? `${parent.serialNumber || parent.assetTag} - ${assignedEmployeeName || 'Unassigned'}`
+        : `${parent.brand || parent.name || parent.assetTag} - ${assignedEmployeeName || 'Unassigned'}`;
 
       return {
         id: parent.id,
@@ -353,8 +359,8 @@ assetsRouter.get('/component-options/:type', requireRole('Admin'), (req, res) =>
         serialNumber: parent.serialNumber || '',
         assetTag: parent.assetTag,
         assignedEmployeeId: parentAssignment?.employeeId || null,
-        assignedEmployeeName: parentAssignment ? userName(parentAssignment.employeeId) : null,
-        display: `${parent.serialNumber || parent.assetTag} - ${parentAssignment ? userName(parentAssignment.employeeId) : 'Unassigned'}`,
+        assignedEmployeeName,
+        display: label,
         available: !!parentAssignment && !existingComponentAssignment,
       };
     })
@@ -385,13 +391,8 @@ assetsRouter.post('/:id/assign-component', requireRole('Admin'), async (req, res
   if (!asset) return res.status(404).json({ error: 'Asset not found.' });
 
   const expectedParentType = componentParentType(asset.type);
-  if (!expectedParentType) {
-    return res.status(400).json({ error: 'This asset is not a supported component.' });
-  }
-
-  if (!parentAssetId) {
-    return res.status(400).json({ error: 'parentAssetId is required.' });
-  }
+  if (!expectedParentType) return res.status(400).json({ error: 'This asset is not a supported component.' });
+  if (!parentAssetId) return res.status(400).json({ error: 'parentAssetId is required.' });
 
   const parent = db.data.assets.find(a => a.id === Number(parentAssetId));
   if (!parent || parent.type !== expectedParentType) {
@@ -404,16 +405,20 @@ assetsRouter.post('/:id/assign-component', requireRole('Admin'), async (req, res
   }
 
   const activeComponentAssignments = activeAssignmentsFor(asset.id);
-  if (asset.quantity === null || asset.quantity === undefined) {
-    return res.status(400).json({ error: `${asset.type} must have a quantity configured before assignment.` });
-  }
-
-  if (Number(asset.quantity) - activeComponentAssignments.length <= 0) {
-    return res.status(409).json({ error: 'This component is out of stock.' });
-  }
-
   if (activeComponentAssignmentToParent(parent.id, asset.type)) {
     return res.status(409).json({ error: `This ${expectedParentType} already has a ${asset.type} assigned.` });
+  }
+
+  if (isQuantityTrackedComponent(asset)) {
+    if (asset.quantity === null || asset.quantity === undefined) {
+      return res.status(400).json({ error: `${asset.type} must have a quantity configured before assignment.` });
+    }
+
+    if (Number(asset.quantity) - activeComponentAssignments.length <= 0) {
+      return res.status(409).json({ error: 'This component is out of stock.' });
+    }
+  } else if (activeComponentAssignments.length > 0) {
+    return res.status(409).json({ error: `${asset.type} is already assigned. Return it before assigning it again.` });
   }
 
   const assignment = {
@@ -428,7 +433,9 @@ assetsRouter.post('/:id/assign-component', requireRole('Admin'), async (req, res
   };
 
   db.data.assetAssignments.push(assignment);
-  recomputeStockStatus(asset);
+
+  if (isQuantityTrackedComponent(asset)) recomputeStockStatus(asset);
+  else asset.status = 'In Use';
 
   logAction(
     asset.id,
@@ -521,9 +528,11 @@ assetsRouter.post('/:id/return', requireRole('Admin'), async (req, res) => {
   assignment.returnedDate = new Date().toISOString().slice(0, 10);
   assignment.status = 'Returned';
 
-  const hasQuantity = asset.quantity !== null && asset.quantity !== undefined;
-  if (hasQuantity) recomputeStockStatus(asset);
-  else if (activeAssignmentsFor(id).length === 0) asset.status = 'Available';
+  if (isQuantityTrackedComponent(asset)) {
+    recomputeStockStatus(asset);
+  } else if (activeAssignmentsFor(id).length === 0) {
+    asset.status = 'Available';
+  }
 
   const locationLabel = parent ? ` from ${parent.serialNumber || parent.assetTag}` : ` by ${employeeName}`;
   logAction(id, 'Returned', req.user.id, `${asset.name} (${asset.assetTag}) was returned${locationLabel}.`);
