@@ -3097,10 +3097,14 @@ function AdminTickets() {
 
 /* ============================== ASSET MANAGEMENT & LIFECYCLE ENGINE ============================== */
 
-const ASSET_TYPES = ['Desktop', 'Laptop', 'Printer', 'Monitor', 'Server', 'UPS', 'Mouse', 'Keyboard', 'Headset', 'Software License', 'Others'];
-const CONSUMABLE_TYPES = ['Mouse', 'Keyboard', 'Headset'];
+const ASSET_TYPES = ['Desktop', 'Laptop', 'Printer', 'Monitor', 'Server', 'UPS', 'UPS Battery', 'SSD', 'RAM', 'Mouse', 'Keyboard', 'Headset', 'Software License', 'Others'];
+const CONSUMABLE_TYPES = ['Mouse', 'Keyboard', 'UPS Battery', 'Headset'];
 const emptyAssetForm = { name: '', type: ASSET_TYPES[0], brand: '', model: '', serialNumber: '', purchaseDate: '',  cost: '', warrantyExpiry: '', remarks: '', specs: {}, imageUrl: '', quantity: '' };
-
+const COMPONENT_PARENT_TYPES = {
+  'UPS Battery': 'UPS',
+  SSD: 'Desktop',
+  RAM: 'Desktop'
+};
 // Drives the dynamic "Specifications" section of the Add/Edit Asset form — different fields per asset type.
 const TYPE_SPEC_FIELDS = {
   Desktop: ['Motherboard', 'CPU', 'RAM', 'Storage Size', 'Video Card', 'OS'],
@@ -3109,6 +3113,26 @@ const TYPE_SPEC_FIELDS = {
   Printer: ['Print Type', 'Connectivity', 'Duty Cycle', 'Paper Size'],
   Server: ['CPU', 'RAM', 'Storage Size', 'RAID Configuration', 'OS'],
   UPS: ['Capacity (VA)', 'Battery Type', 'Runtime', 'Outlets'],
+  'UPS Battery': [
+  'Battery Type',
+  'Voltage',
+  'Capacity (Ah)',
+  'Compatibility'
+],
+SSD: [
+  'Capacity',
+  'Interface',
+  'Form Factor',
+  'Read Speed',
+  'Write Speed'
+],
+
+RAM: [
+  'Capacity',
+  'Memory Type',
+  'Speed',
+  'Module Type'
+],
   Mouse: ['Connectivity', 'DPI', 'Buttons'],
   Keyboard: ['Connectivity', 'Layout', 'Switch Type'],
   Headset: ['Connectivity', 'Microphone', 'Noise Cancelling'],
@@ -3232,17 +3256,111 @@ function AssetFormModal({ isOpen, onClose, asset, onSaved }) {
 
 function AssignAssetModal({ isOpen, onClose, asset, onAssigned }) {
   const { users, addToast } = useApp();
-  const employees = users.filter(u => u.role === 'Employee');
+
+  const employees = users.filter(
+    u => u.role === 'Employee'
+  );
+
+  const isComponent =
+    !!asset?.type &&
+    !!COMPONENT_PARENT_TYPES[asset.type];
+
+  const parentType =
+    asset?.type
+      ? COMPONENT_PARENT_TYPES[asset.type]
+      : null;
+
   const [employeeId, setEmployeeId] = useState('');
+  const [parentAssetId, setParentAssetId] = useState('');
+  const [parentOptions, setParentOptions] = useState([]);
+  const [loadingParents, setLoadingParents] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    let alive = true;
+
+    setEmployeeId('');
+    setParentAssetId('');
+    setParentOptions([]);
+
+    if (!isOpen || !isComponent || !asset) {
+      return () => {
+        alive = false;
+      };
+    }
+
+    setLoadingParents(true);
+
+    api.assets
+      .componentOptions(asset.type)
+      .then(data => {
+        if (alive) {
+          setParentOptions(data);
+        }
+      })
+      .catch(err => {
+        if (alive) {
+          addToast(err.message, 'error');
+        }
+      })
+      .finally(() => {
+        if (alive) {
+          setLoadingParents(false);
+        }
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [isOpen, isComponent, asset, addToast]);
+
   const submit = async () => {
-    if (!employeeId) return;
     setSaving(true);
+
     try {
-      const updated = await api.assets.assign(asset.id, Number(employeeId));
+      let updated;
+
+      if (isComponent) {
+        if (!parentAssetId) {
+          addToast(
+            `Please select a ${parentType}.`,
+            'error'
+          );
+          return;
+        }
+
+        updated =
+          await api.assets.assignComponent(
+            asset.id,
+            Number(parentAssetId)
+          );
+
+        addToast(
+          `${asset.type} assigned to the ${parentType}.`,
+          'success'
+        );
+      } else {
+        if (!employeeId) {
+          addToast(
+            'Please select an employee.',
+            'error'
+          );
+          return;
+        }
+
+        updated =
+          await api.assets.assign(
+            asset.id,
+            Number(employeeId)
+          );
+
+        addToast(
+          'Asset assigned.',
+          'success'
+        );
+      }
+
       onAssigned(updated);
-      addToast('Asset assigned.', 'success');
       onClose();
     } catch (err) {
       addToast(err.message, 'error');
@@ -3252,15 +3370,91 @@ function AssignAssetModal({ isOpen, onClose, asset, onAssigned }) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Assign ${asset?.name || ''}`}>
-      <Field label="Assign to Employee">
-        <select className={inputCls} value={employeeId} onChange={e => setEmployeeId(e.target.value)}>
-          <option value="">Select an employee…</option>
-          {employees.map(e => <option key={e.id} value={e.id}>{e.name} — {e.department}</option>)}
-        </select>
-      </Field>
-      <button onClick={submit} disabled={!employeeId || saving} className="w-full py-2.5 rounded-lg font-bold text-xs accent-bg-solid shadow-sm mt-2">
-        {saving ? 'Assigning…' : 'Assign Asset'}
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={`Assign ${asset?.name || ''}`}
+    >
+      {isComponent ? (
+        <>
+          <Field
+            label={`Assign to ${parentType}`}
+          >
+            <select
+              className={inputCls}
+              value={parentAssetId}
+              onChange={e =>
+                setParentAssetId(e.target.value)
+              }
+            >
+              <option value="">
+                {loadingParents
+                  ? 'Loading eligible assets…'
+                  : `Select ${parentType} — assigned employee…`}
+              </option>
+
+              {parentOptions.map(option => (
+                <option
+                  key={option.id}
+                  value={option.id}
+                >
+                  {option.display}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          {!loadingParents &&
+            parentOptions.length === 0 && (
+              <div className="p-3 rounded-lg border border-[var(--border)] text-xs text-muted mb-3">
+                No eligible {parentType} assets are
+                currently available for this component.
+              </div>
+            )}
+
+          <p className="text-[10px] text-muted mb-3">
+            {asset.type} is assigned to the selected{' '}
+            {parentType}, not directly to the employee.
+          </p>
+        </>
+      ) : (
+        <Field label="Assign to Employee">
+          <select
+            className={inputCls}
+            value={employeeId}
+            onChange={e =>
+              setEmployeeId(e.target.value)
+            }
+          >
+            <option value="">
+              Select an employee…
+            </option>
+
+            {employees.map(e => (
+              <option
+                key={e.id}
+                value={e.id}
+              >
+                {e.name} — {e.department}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+
+      <button
+        onClick={submit}
+        disabled={
+          saving ||
+          (isComponent
+            ? !parentAssetId
+            : !employeeId)
+        }
+        className="w-full py-2.5 rounded-lg font-bold text-xs accent-bg-solid shadow-sm mt-2"
+      >
+        {saving
+          ? 'Assigning…'
+          : 'Assign Asset'}
       </button>
     </Modal>
   );
@@ -3312,17 +3506,53 @@ function BulkAssignModal({ isOpen, onClose, asset, onAssigned }) {
   );
 }
 
-function ReturnAssetModal({ isOpen, onClose, asset, onReturned }) {
-  const { addToast } = useApp();
-  const [returningId, setReturningId] = useState(null);
+function ReturnAssetModal({
+  isOpen,
+  onClose,
+  asset,
+  onReturned
+}) {
+  const { assets, addToast } = useApp();
 
-  const doReturn = async (employeeId) => {
-    setReturningId(employeeId);
+  const [returningId, setReturningId] =
+    useState(null);
+
+  const isComponent =
+    !!asset?.type &&
+    !!COMPONENT_PARENT_TYPES[asset.type];
+
+  const doReturn = async (assignment) => {
+    const returnKey =
+      assignment.parentAssetId ||
+      assignment.employeeId;
+
+    setReturningId(returnKey);
+
     try {
-      const updated = await api.assets.return(asset.id, employeeId);
+      const updated = isComponent
+        ? await api.assets.return(
+            asset.id,
+            undefined,
+            {
+              parentAssetId:
+                assignment.parentAssetId
+            }
+          )
+        : await api.assets.return(
+            asset.id,
+            assignment.employeeId
+          );
+
       onReturned(updated);
-      addToast('Asset marked as returned.', 'success');
-      if (updated.assignedCount === 0) onClose();
+
+      addToast(
+        'Asset marked as returned.',
+        'success'
+      );
+
+      if (updated.assignedCount === 0) {
+        onClose();
+      }
     } catch (err) {
       addToast(err.message, 'error');
     } finally {
@@ -3331,24 +3561,76 @@ function ReturnAssetModal({ isOpen, onClose, asset, onReturned }) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Return ${asset?.name || ''}`}>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={`Return ${asset?.name || ''}`}
+    >
       <div className="flex flex-col gap-2">
-        {(asset?.assignees || []).map(a => (
-          <div key={a.employeeId} className="flex items-center justify-between p-2.5 rounded-lg border border-[var(--border)]">
-            <div className="flex items-center gap-2">
-              <Avatar name={a.employeeName} size={26} />
-              <div>
-                <div className="text-xs font-semibold">{a.employeeName}</div>
-                <div className="text-[10px] text-muted">Assigned {a.assignedDate}</div>
+        {(asset?.assignees || []).map(a => {
+          const parent = a.parentAssetId
+            ? assets.find(
+                x => x.id === a.parentAssetId
+              )
+            : null;
+
+          const returnKey =
+            a.parentAssetId || a.employeeId;
+
+          return (
+            <div
+              key={returnKey}
+              className="p-2.5 rounded-lg border border-[var(--border)]"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-semibold">
+                    {a.employeeName}
+                  </div>
+
+                  <div className="text-[10px] text-muted">
+                    Assigned {a.assignedDate}
+                  </div>
+
+                  {parent && (
+                    <div className="text-[10px] accent-text mt-1">
+                      Attached to:{' '}
+                      {parent.serialNumber ||
+                        parent.assetTag}
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={() =>
+                    doReturn(a)
+                  }
+                  disabled={
+                    returningId === returnKey
+                  }
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold"
+                  style={{
+                    background:
+                      'var(--warning-tint)',
+                    color:
+                      'var(--warning)'
+                  }}
+                >
+                  {returningId === returnKey
+                    ? 'Returning…'
+                    : 'Mark Returned'}
+                </button>
               </div>
             </div>
-            <button onClick={() => doReturn(a.employeeId)} disabled={returningId === a.employeeId}
-              className="px-3 py-1.5 rounded-lg text-xs font-bold" style={{ background: 'var(--warning-tint)', color: 'var(--warning)' }}>
-              {returningId === a.employeeId ? 'Returning…' : 'Mark Returned'}
-            </button>
-          </div>
-        ))}
-        {(!asset?.assignees || asset.assignees.length === 0) && <p className="text-xs text-muted">No active assignments.</p>}
+          );
+        })}
+
+        {(!asset?.assignees ||
+          asset.assignees.length === 0) && (
+          <p className="text-xs text-muted">
+            No active assignments.
+          </p>
+        )}
       </div>
     </Modal>
   );
@@ -3454,7 +3736,23 @@ function AssetDetailModal({ isOpen, onClose, asset }) {
           <span className="text-muted">Warranty:</span>{' '}
           {asset.warrantyExpiry || '—'}
         </div>
-        {asset.currentAssignment && <div className="col-span-2"><span className="text-muted">Assigned to:</span> {asset.currentAssignment.employeeName}</div>}
+        {asset.currentAssignment && (
+          <div className="col-span-2">
+            <div>
+              <span className="text-muted">
+                Assigned to:
+              </span>{' '}
+              {asset.currentAssignment.employeeName}
+            </div>
+
+            {asset.currentAssignment.parentAssetId && (
+              <div className="text-[10px] text-muted mt-1">
+                Attached to:{' '}
+                {asset.currentAssignment.parentAssetId}
+              </div>
+            )}
+          </div>
+        )}
       </div>
       {hasAnySpec && (
         <div className="mb-3">
@@ -3594,8 +3892,16 @@ function AssetsGrid({ assetList, mode, onEdit, onAssign, onBulkAssign, onReturn,
                       {(a.status === 'Available') && (
                         <button onClick={() => onAssign(a)} className="p-1.5 rounded-lg hover-surface" title="Assign"><UserPlus size={13} /></button>
                       )}
-                      {!hasQuantity && a.status === 'Available' && (
-                        <button onClick={() => onBulkAssign(a)} className="p-1.5 rounded-lg hover-surface" title="Bulk Assign to Multiple Employees"><Users size={13} /></button>
+                      {!hasQuantity &&
+                       !COMPONENT_PARENT_TYPES[a.type] &&
+                       a.status === 'Available' && (
+                        <button
+                          onClick={() => onBulkAssign(a)}
+                          className="p-1.5 rounded-lg hover-surface"
+                          title="Bulk Assign to Multiple Employees"
+                        >
+                          <Users size={13} />
+                        </button>
                       )}
                       {a.assignedCount > 0 && (
                         <button onClick={() => onReturn(a)} className="p-1.5 rounded-lg hover-surface" title="Return"><RotateCcw size={13} /></button>
