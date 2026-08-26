@@ -3736,23 +3736,30 @@ function AssetDetailModal({ isOpen, onClose, asset }) {
           <span className="text-muted">Warranty:</span>{' '}
           {asset.warrantyExpiry || '—'}
         </div>
-        {asset.currentAssignment && (
+        {asset.assignedCount > 0 && (
           <div className="col-span-2">
-            <div>
-              <span className="text-muted">
-                Assigned to:
-              </span>{' '}
-              {asset.currentAssignment.employeeName}
+            <div className="text-muted mb-2">
+              Assigned To:
             </div>
 
-            {asset.currentAssignment.parentAssetId && (
-              <div className="text-[10px] text-muted mt-1">
-                Attached to:{' '}
-                {asset.currentAssignment.parentAssetId}
-              </div>
-            )}
+            <div className="flex flex-col gap-2">
+              {(asset.assignees || []).map((assignment, index) => (
+                <div
+                  key={`${assignment.employeeId}-${index}`}
+                  className="p-2.5 rounded-lg border border-[var(--border)]"
+                >
+                <div className="font-semibold">
+                  {assignment.employeeName}
+                </div>
+
+            <div className="text-[10px] text-muted mt-0.5">
+              Assigned {assignment.assignedDate}
+            </div>
           </div>
-        )}
+        ))}
+      </div>
+    </div>
+  )}
       </div>
       {hasAnySpec && (
         <div className="mb-3">
