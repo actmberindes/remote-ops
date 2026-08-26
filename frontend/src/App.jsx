@@ -3099,7 +3099,7 @@ function AdminTickets() {
 
 const ASSET_TYPES = ['Desktop', 'Laptop', 'Printer', 'Monitor', 'Server', 'UPS', 'UPS Battery', 'SSD', 'RAM','Mouse', 'Keyboard', 'Headset', 'Software License', 'Others'];
 const CONSUMABLE_TYPES = ['Mouse', 'Keyboard', 'UPS Battery', 'Headset'];
-const emptyAssetForm = { name: '', type: ASSET_TYPES[0], brand: '', model: '', serialNumber: '', purchaseDate: '', cost: '', warrantyExpiry: '', remarks: '', specs: {}, imageUrl: '', quantity: '' };
+const emptyAssetForm = { name: '', type: ASSET_TYPES[0], brand: '', model: '', serialNumber: '', purchaseDate: '', warrantyExpiry: '', remarks: '', specs: {}, imageUrl: '', quantity: '' };
 
 // Drives the dynamic "Specifications" section of the Add/Edit Asset form — different fields per asset type.
 const TYPE_SPEC_FIELDS = {
@@ -3205,7 +3205,6 @@ function AssetFormModal({ isOpen, onClose, asset, onSaved }) {
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Purchase Date"><input type="date" className={inputCls} value={form.purchaseDate} onChange={e => set('purchaseDate', e.target.value)} /></Field>
-          <Field label="Cost"><input type="number" min="0" step="0.01" className={inputCls} value={form.cost ?? ''} onChange={e => set('cost', e.target.value)} placeholder="0.00" /></Field>
           <Field label="Warranty Expiry"><input type="date" className={inputCls} value={form.warrantyExpiry} onChange={e => set('warrantyExpiry', e.target.value)} /></Field>
         </div>
 
