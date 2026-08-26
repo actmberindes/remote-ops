@@ -3808,7 +3808,7 @@ function AssetsGrid({ assetList, mode, onEdit, onAssign, onBulkAssign, onReturn,
               </td>
             </tr>
           );})}
-          {assetList.length === 0 && <tr><td colSpan={7} className="py-8 text-center text-muted">No assets match your filters.</td></tr>}
+          {assetList.length === 0 && <tr><td colSpan={8} className="py-8 text-center text-muted">No assets match your filters.</td></tr>}
         </tbody>
       </table>
       {lightbox && <AssetImageLightbox url={lightbox.imageUrl} name={lightbox.name} onClose={() => setLightbox(null)} />}
