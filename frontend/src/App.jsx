@@ -3588,7 +3588,7 @@ function AssetDetailModal({ isOpen, onClose, asset }) {
   <span className="text-muted">Warranty:</span>{' '}
   {asset.warrantyExpiry || '—'}
 </div>
-        {asset.type !== 'UPS' && assignedAssets.length > 0 && (
+        {assignedAssets.length > 0 && (
   <div className="col-span-2">
     <div className="text-muted mb-1">
       Assigned To:
