@@ -10,6 +10,7 @@ export const activityRouter = Router();
 const DEVICE_OFFLINE_MS = 90 * 1000;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadsDir = path.join(__dirname, '..', 'uploads');
+const monitoringUploadsDir = path.join(uploadsDir, 'monitoring');
 
 function teamIdsOf(managerId) {
   return new Set(db.data.users.filter(u => u.managerId === managerId).map(u => u.id));
@@ -41,19 +42,59 @@ function deviceState(device) {
   return device.state || 'active';
 }
 
+function monitoringFilePath(url) {
+  if (!url || typeof url !== 'string' || !url.startsWith('/uploads/monitoring/')) return null;
+  const relative = url.slice('/uploads/'.length).replace(/\\/g, '/');
+  const filePath = path.resolve(uploadsDir, relative);
+  const root = path.resolve(monitoringUploadsDir);
+  if (!filePath.startsWith(`${root}${path.sep}`)) return null;
+  return filePath;
+}
+
+function deleteStoredMonitoringFile(url) {
+  const filePath = monitoringFilePath(url);
+  if (!filePath) return;
+  try {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch (e) {
+    console.warn(`Unable to delete monitoring file ${filePath}: ${e.message}`);
+  }
+}
+
 function purgeOldActivity() {
   const screenshotCutoff = retentionCutoff(db.data.agentConfig.screenshotRetentionDays);
   const liveCutoff = retentionCutoff(db.data.agentConfig.liveViewRetentionDays);
   const webUsageCutoffDate = retentionCutoffDate(db.data.agentConfig.webUsageRetentionDays);
 
-  db.data.screenshots = db.data.screenshots.filter(s => {
-    const ts = new Date(s.capturedAt).getTime();
-    return Number.isNaN(ts) || ts > screenshotCutoff;
-  });
+  const retainedScreenshots = [];
+  for (const screenshot of db.data.screenshots) {
+    const ts = new Date(screenshot.capturedAt).getTime();
+    if (!Number.isNaN(ts) && ts <= screenshotCutoff) {
+      deleteStoredMonitoringFile(screenshot.url);
+      continue;
+    }
+    retainedScreenshots.push(screenshot);
+  }
+  db.data.screenshots = retainedScreenshots;
 
-  db.data.liveFrameHistory = (db.data.liveFrameHistory || []).filter(f => {
-    const ts = new Date(f.capturedAt).getTime();
-    return Number.isNaN(ts) || ts > liveCutoff;
+  const history = db.data.liveFrameHistory || [];
+  const retainedHistory = [];
+  for (const frame of history) {
+    const ts = new Date(frame.capturedAt).getTime();
+    if (!Number.isNaN(ts) && ts <= liveCutoff) {
+      deleteStoredMonitoringFile(frame.url);
+      continue;
+    }
+    retainedHistory.push(frame);
+  }
+  db.data.liveFrameHistory = retainedHistory;
+
+  // Keep the latest current Live View frame while it is still referenced by a device.
+  db.data.liveFrames = (db.data.liveFrames || []).filter(frame => {
+    const ts = new Date(frame.capturedAt).getTime();
+    if (Number.isNaN(ts) || ts > liveCutoff) return true;
+    deleteStoredMonitoringFile(frame.url);
+    return false;
   });
 
   db.data.webUsageLogs = (db.data.webUsageLogs || []).filter(r => {
@@ -61,24 +102,11 @@ function purgeOldActivity() {
   });
 }
 
-function deleteStoredFile(url) {
-  if (!url || typeof url !== 'string' || !url.startsWith('/uploads/')) return;
-  const filename = path.basename(url);
-  if (!filename || filename === '.' || filename === '..') return;
-
-  const filePath = path.join(uploadsDir, filename);
-  try {
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-  } catch (e) {
-    console.warn(`Unable to delete screenshot file ${filename}: ${e.message}`);
-  }
-}
-
 // Monitoring uploads are controlled by device enrollment/authorization.
 // Employee Start/Stop Session is no longer a prerequisite.
 activityRouter.post('/screenshots', requireDevice(db), async (req, res) => {
   const { url, filename, capturedAt } = req.body || {};
-  if (!url) return res.status(400).json({ error: 'url is required (upload the file to /api/uploads first).' });
+  if (!url) return res.status(400).json({ error: 'url is required (upload the file to /api/uploads/monitoring first).' });
 
   const entry = {
     id: nextId(),
@@ -105,9 +133,15 @@ activityRouter.post('/live-frame', requireDevice(db), async (req, res) => {
   const existing = db.data.liveFrames.find(f => f.deviceId === req.device.id);
 
   if (existing) {
+    const oldUrl = existing.url;
     existing.employeeId = employeeId;
     existing.url = url;
     existing.capturedAt = ts;
+    if (oldUrl && oldUrl !== url) {
+      const oldHistoryStillUsesIt = (db.data.liveFrameHistory || []).some(f => f.url === oldUrl);
+      const oldScreenshotStillUsesIt = db.data.screenshots.some(s => s.url === oldUrl);
+      if (!oldHistoryStillUsesIt && !oldScreenshotStillUsesIt) deleteStoredMonitoringFile(oldUrl);
+    }
   } else {
     db.data.liveFrames.push({
       employeeId,
@@ -248,7 +282,7 @@ activityRouter.delete('/screenshots/:id', requireAuth(db), requireRole('Admin', 
     return res.status(403).json({ error: 'You can only delete screenshots within your monitoring scope.' });
   }
 
-  deleteStoredFile(screenshot.url);
+  deleteStoredMonitoringFile(screenshot.url);
   db.data.screenshots = db.data.screenshots.filter(s => s.id !== id);
   await db.write();
 
@@ -269,7 +303,7 @@ activityRouter.post('/screenshots/delete-bulk', requireAuth(db), requireRole('Ad
     return res.status(403).json({ error: 'You can only delete screenshots within your monitoring scope.' });
   }
 
-  for (const screenshot of targets) deleteStoredFile(screenshot.url);
+  for (const screenshot of targets) deleteStoredMonitoringFile(screenshot.url);
 
   const targetSet = new Set(ids);
   db.data.screenshots = db.data.screenshots.filter(s => !targetSet.has(Number(s.id)));
