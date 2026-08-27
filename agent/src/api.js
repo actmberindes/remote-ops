@@ -37,7 +37,7 @@ function createClient(apiUrl) {
     getConfig: (deviceToken) => request(apiUrl, '/agent/config', { token: deviceToken }),
     heartbeat: (deviceToken, telemetry) =>
       request(apiUrl, '/agent/heartbeat', { method: 'POST', token: deviceToken, body: telemetry }),
-    uploadFile: (deviceToken, filePath) => request(apiUrl, '/uploads', { method: 'POST', token: deviceToken, isMultipart: true, filePath }),
+    uploadFile: (deviceToken, filePath) => request(apiUrl, '/uploads/monitoring', { method: 'POST', token: deviceToken, isMultipart: true, filePath }),
     postScheduledScreenshot: (deviceToken, url, filename) =>
       request(apiUrl, '/activity/screenshots', { method: 'POST', token: deviceToken, body: { url, filename, capturedAt: new Date().toISOString() } }),
     postLiveFrame: (deviceToken, url) =>
