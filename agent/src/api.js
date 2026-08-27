@@ -29,21 +29,14 @@ async function request(apiUrl, path, { method = 'GET', body, token, isMultipart,
 
 function createClient(apiUrl) {
   return {
-    enroll: (code, telemetry) =>
-      request(apiUrl, '/agent/enroll', {
-        method: 'POST',
-        body: { code, ...telemetry },
-      }),
+    enroll: (code, telemetry) => request(apiUrl, '/agent/enroll', { method: 'POST', body: { code, ...telemetry } }),
     getConfig: (deviceToken) => request(apiUrl, '/agent/config', { token: deviceToken }),
-    heartbeat: (deviceToken, telemetry) =>
-      request(apiUrl, '/agent/heartbeat', { method: 'POST', token: deviceToken, body: telemetry }),
+    heartbeat: (deviceToken, telemetry) => request(apiUrl, '/agent/heartbeat', { method: 'POST', token: deviceToken, body: telemetry }),
+    authorizeQuit: (deviceToken, code) => request(apiUrl, '/agent/quit-authorize', { method: 'POST', token: deviceToken, body: { code } }),
     uploadFile: (deviceToken, filePath) => request(apiUrl, '/uploads/monitoring', { method: 'POST', token: deviceToken, isMultipart: true, filePath }),
-    postScheduledScreenshot: (deviceToken, url, filename) =>
-      request(apiUrl, '/activity/screenshots', { method: 'POST', token: deviceToken, body: { url, filename, capturedAt: new Date().toISOString() } }),
-    postLiveFrame: (deviceToken, url) =>
-      request(apiUrl, '/activity/live-frame', { method: 'POST', token: deviceToken, body: { url, capturedAt: new Date().toISOString() } }),
-    postWebUsage: (deviceToken, entries) =>
-      request(apiUrl, '/activity/web-usage', { method: 'POST', token: deviceToken, body: { entries } }),
+    postScheduledScreenshot: (deviceToken, url, filename) => request(apiUrl, '/activity/screenshots', { method: 'POST', token: deviceToken, body: { url, filename, capturedAt: new Date().toISOString() } }),
+    postLiveFrame: (deviceToken, url) => request(apiUrl, '/activity/live-frame', { method: 'POST', token: deviceToken, body: { url, capturedAt: new Date().toISOString() } }),
+    postWebUsage: (deviceToken, entries) => request(apiUrl, '/activity/web-usage', { method: 'POST', token: deviceToken, body: { entries } }),
   };
 }
 
