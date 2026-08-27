@@ -16,7 +16,7 @@ const defaultData = {
     screenshotIntervalMinutes: 10,
     liveViewFrameIntervalSeconds: 5,
     screenshotRetentionDays: 7,
-    liveViewRetentionDays: 1,
+    liveViewRetentionDays: 3,
     webUsageRetentionDays: 7,
   },
   idSeq: 1000, ticketSeq: 0, assetTagSeq: 0,
@@ -42,7 +42,7 @@ if (db.data.agentConfig && db.data.agentConfig.screenshotRetentionDays === 30 &&
   db.data.agentConfig.screenshotRetentionDays = 7;
 }
 if (db.data.agentConfig && db.data.agentConfig.liveViewRetentionDays === undefined) {
-  db.data.agentConfig.liveViewRetentionDays = 1;
+  db.data.agentConfig.liveViewRetentionDays = 3;
 }
 if (db.data.agentConfig && db.data.agentConfig.webUsageRetentionDays === undefined) {
   db.data.agentConfig.webUsageRetentionDays = 7;
