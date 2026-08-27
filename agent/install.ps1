@@ -1,6 +1,9 @@
 # Remote Ops Agent — Windows per-user installer
 # Run this from PowerShell (no admin rights required).
-# Installs the agent for the current Windows user and registers a silent startup launcher.
+#
+# This installer performs the one-time, visible device enrollment first.
+# After successful enrollment it creates a silent Startup launcher and
+# starts the normal background/tray agent through start-agent.vbs.
 #
 #   powershell -ExecutionPolicy Bypass -File .\install.ps1
 
@@ -24,12 +27,36 @@ if (-not (Test-Path -LiteralPath $SourceVbs -PathType Leaf)) {
 
 Write-Host "Installing Remote Ops Agent to $InstallDir ..."
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-
 Copy-Item -Path $SourceExe -Destination $TargetExe -Force
 Copy-Item -Path $SourceVbs -Destination $TargetVbs -Force
 
-# Register a Startup-folder shortcut that launches wscript.exe against the VBS launcher.
-# This avoids exposing the Node/pkg console window at user logon.
+$configPath = Join-Path $env:APPDATA "RemoteOpsAgent\config.json"
+$isAlreadyEnrolled = Test-Path -LiteralPath $configPath -PathType Leaf
+
+if (-not $isAlreadyEnrolled) {
+    Write-Host ""
+    Write-Host "==========================================="
+    Write-Host "  Remote Ops — Device Enrollment"
+    Write-Host "==========================================="
+    Write-Host ""
+    Write-Host "Have the Admin enrollment code ready."
+    Write-Host "The enrollment window will remain visible while the code is entered."
+    Write-Host ""
+
+    $process = Start-Process -FilePath $TargetExe -ArgumentList "--enroll" -WorkingDirectory $InstallDir -Wait -PassThru
+
+    if ($process.ExitCode -ne 0) {
+        throw "Device enrollment did not complete successfully (exit code $($process.ExitCode))."
+    }
+
+    Write-Host ""
+    Write-Host "Device enrollment completed successfully."
+} else {
+    Write-Host "An existing enrollment was found. Skipping the enrollment prompt."
+}
+
+# Register a Startup-folder shortcut that launches the silent VBS launcher.
+# The VBS starts the agent without displaying the Node/pkg console window.
 $StartupDir = [Environment]::GetFolderPath("Startup")
 $ShortcutPath = Join-Path $StartupDir "RemoteOpsAgent.lnk"
 $WScriptShell = New-Object -ComObject WScript.Shell
@@ -41,13 +68,13 @@ $Shortcut.WindowStyle = 1
 $Shortcut.Description = "Remote Ops desktop monitoring agent"
 $Shortcut.Save()
 
-Write-Host "Installed successfully."
-Write-Host "Agent executable: $TargetExe"
-Write-Host "Silent launcher:   $TargetVbs"
-Write-Host "Startup shortcut:  $ShortcutPath"
+Write-Host ""
+Write-Host "Startup shortcut registered: $ShortcutPath"
 Write-Host "The agent will start silently at the next Windows sign-in."
 Write-Host ""
-$runNow = Read-Host "Start the agent now? (y/n)"
+
+$runNow = Read-Host "Start the background agent now? (y/n)"
 if ($runNow -eq "y") {
     Start-Process -FilePath (Join-Path $env:WINDIR "System32\wscript.exe") -ArgumentList ('"' + $TargetVbs + '"') -WorkingDirectory $InstallDir -WindowStyle Hidden
+    Write-Host "Background agent started. Check the Windows system tray for Remote Ops."
 }
