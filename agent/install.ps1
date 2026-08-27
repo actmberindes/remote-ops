@@ -74,7 +74,13 @@ Write-Host "The agent will start silently at the next Windows sign-in."
 Write-Host ""
 
 $runNow = Read-Host "Start the background agent now? (y/n)"
+
 if ($runNow -eq "y") {
-    Start-Process -FilePath (Join-Path $env:WINDIR "System32\wscript.exe") -ArgumentList ('"' + $TargetVbs + '"') -WorkingDirectory $InstallDir -WindowStyle Hidden
+    Start-Process `
+        -FilePath (Join-Path $env:WINDIR "System32\wscript.exe") `
+        -ArgumentList ('"' + $TargetVbs + '"') `
+        -WorkingDirectory $InstallDir `
+        -WindowStyle Hidden
+
     Write-Host "Background agent started. Check the Windows system tray for Remote Ops."
 }
