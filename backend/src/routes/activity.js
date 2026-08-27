@@ -61,7 +61,7 @@ function deleteStoredMonitoringFile(url) {
   }
 }
 
-function purgeOldActivity() {
+export function purgeOldActivity() {
   const screenshotCutoff = retentionCutoff(db.data.agentConfig.screenshotRetentionDays);
   const liveCutoff = retentionCutoff(db.data.agentConfig.liveViewRetentionDays);
   const webUsageCutoffDate = retentionCutoffDate(db.data.agentConfig.webUsageRetentionDays);
@@ -89,7 +89,6 @@ function purgeOldActivity() {
   }
   db.data.liveFrameHistory = retainedHistory;
 
-  // Keep the latest current Live View frame while it is still referenced by a device.
   db.data.liveFrames = (db.data.liveFrames || []).filter(frame => {
     const ts = new Date(frame.capturedAt).getTime();
     if (Number.isNaN(ts) || ts > liveCutoff) return true;
@@ -102,20 +101,13 @@ function purgeOldActivity() {
   });
 }
 
-// Monitoring uploads are controlled by device enrollment/authorization.
-// Employee Start/Stop Session is no longer a prerequisite.
 activityRouter.post('/screenshots', requireDevice(db), async (req, res) => {
   const { url, filename, capturedAt } = req.body || {};
   if (!url) return res.status(400).json({ error: 'url is required (upload the file to /api/uploads/monitoring first).' });
 
   const entry = {
-    id: nextId(),
-    employeeId: req.device.employeeId,
-    deviceId: req.device.id,
-    url,
-    filename: filename || '',
-    capturedAt: capturedAt || new Date().toISOString(),
-    type: 'scheduled',
+    id: nextId(), employeeId: req.device.employeeId, deviceId: req.device.id,
+    url, filename: filename || '', capturedAt: capturedAt || new Date().toISOString(), type: 'scheduled',
   };
 
   db.data.screenshots.push(entry);
@@ -143,23 +135,11 @@ activityRouter.post('/live-frame', requireDevice(db), async (req, res) => {
       if (!oldHistoryStillUsesIt && !oldScreenshotStillUsesIt) deleteStoredMonitoringFile(oldUrl);
     }
   } else {
-    db.data.liveFrames.push({
-      employeeId,
-      deviceId: req.device.id,
-      url,
-      capturedAt: ts,
-    });
+    db.data.liveFrames.push({ employeeId, deviceId: req.device.id, url, capturedAt: ts });
   }
 
   db.data.liveFrameHistory = db.data.liveFrameHistory || [];
-  db.data.liveFrameHistory.push({
-    id: nextId(),
-    employeeId,
-    deviceId: req.device.id,
-    url,
-    capturedAt: ts,
-  });
-
+  db.data.liveFrameHistory.push({ id: nextId(), employeeId, deviceId: req.device.id, url, capturedAt: ts });
   purgeOldActivity();
   await db.write();
   res.status(201).json({ ok: true });
@@ -171,43 +151,24 @@ activityRouter.post('/web-usage', requireDevice(db), async (req, res) => {
 
   for (const e of entries) {
     if (!e.domain || !e.seconds || !e.date) continue;
-
     if (e.url) {
       db.data.webUsageLogs.push({
-        id: nextId(),
-        employeeId: req.device.employeeId,
-        deviceId: req.device.id,
-        date: e.date,
-        domain: e.domain,
-        url: e.url,
-        seconds: Number(e.seconds) || 0,
-        startedAt: e.startedAt || null,
-        endedAt: e.endedAt || null,
+        id: nextId(), employeeId: req.device.employeeId, deviceId: req.device.id, date: e.date,
+        domain: e.domain, url: e.url, seconds: Number(e.seconds) || 0,
+        startedAt: e.startedAt || null, endedAt: e.endedAt || null,
       });
     } else {
       let row = db.data.webUsageLogs.find(
-        r => r.employeeId === req.device.employeeId &&
-             r.date === e.date &&
-             !r.url &&
-             r.domain === e.domain &&
-             (r.deviceId || null) === (req.device.id || null)
+        r => r.employeeId === req.device.employeeId && r.date === e.date && !r.url &&
+          r.domain === e.domain && (r.deviceId || null) === (req.device.id || null)
       );
-
       if (!row) {
         row = {
-          id: nextId(),
-          employeeId: req.device.employeeId,
-          deviceId: req.device.id,
-          date: e.date,
-          domain: e.domain,
-          url: null,
-          seconds: 0,
-          startedAt: null,
-          endedAt: null,
+          id: nextId(), employeeId: req.device.employeeId, deviceId: req.device.id, date: e.date,
+          domain: e.domain, url: null, seconds: 0, startedAt: null, endedAt: null,
         };
         db.data.webUsageLogs.push(row);
       }
-
       row.seconds += Number(e.seconds) || 0;
     }
   }
@@ -232,25 +193,16 @@ activityRouter.get('/live-view', requireAuth(db), requireRole('Admin', 'Manager'
   const chosen = new Map();
   for (const device of eligible) {
     const existing = chosen.get(device.employeeId);
-    if (!existing || new Date(device.lastSeenAt).getTime() > new Date(existing.lastSeenAt).getTime()) {
-      chosen.set(device.employeeId, device);
-    }
+    if (!existing || new Date(device.lastSeenAt).getTime() > new Date(existing.lastSeenAt).getTime()) chosen.set(device.employeeId, device);
   }
 
   const result = [...chosen.values()].map(device => {
     const frame = db.data.liveFrames.find(f => f.deviceId === device.id);
     const emp = db.data.users.find(u => u.id === device.employeeId);
     return {
-      employeeId: device.employeeId,
-      employeeName: emp?.name || userName(device.employeeId),
-      department: emp?.department || '',
-      deviceId: device.id,
-      deviceName: device.deviceName,
-      hostname: device.hostname,
-      domainUser: device.domainUser,
-      deviceStatus: deviceState(device),
-      frameUrl: frame ? frame.url : null,
-      capturedAt: frame ? frame.capturedAt : null,
+      employeeId: device.employeeId, employeeName: emp?.name || userName(device.employeeId), department: emp?.department || '',
+      deviceId: device.id, deviceName: device.deviceName, hostname: device.hostname, domainUser: device.domainUser,
+      deviceStatus: deviceState(device), frameUrl: frame ? frame.url : null, capturedAt: frame ? frame.capturedAt : null,
       lastSeenAt: device.lastSeenAt,
     };
   });
@@ -262,12 +214,10 @@ activityRouter.get('/screenshots', requireAuth(db), requireRole('Admin', 'Manage
   purgeOldActivity();
   const allowed = scopedEmployeeIds(req.user);
   const { employeeId, date, limit } = req.query;
-
   let list = db.data.screenshots.filter(s => !allowed || allowed.has(s.employeeId));
   if (employeeId) list = list.filter(s => s.employeeId === Number(employeeId));
   if (date) list = list.filter(s => s.capturedAt.slice(0, 10) === date);
-
-  list = list.sort((a, b) => (a.capturedAt < b.capturedAt ? 1 : -1));
+  list.sort((a, b) => (a.capturedAt < b.capturedAt ? 1 : -1));
   const cap = Math.min(Number(limit) || 30, 200);
   res.json(list.slice(0, cap).map(s => ({ ...s, employeeName: userName(s.employeeId) })));
 });
@@ -276,39 +226,24 @@ activityRouter.delete('/screenshots/:id', requireAuth(db), requireRole('Admin', 
   const id = Number(req.params.id);
   const allowed = scopedEmployeeIds(req.user);
   const screenshot = db.data.screenshots.find(s => s.id === id);
-
   if (!screenshot) return res.status(404).json({ error: 'Screenshot not found.' });
-  if (allowed && !allowed.has(screenshot.employeeId)) {
-    return res.status(403).json({ error: 'You can only delete screenshots within your monitoring scope.' });
-  }
-
+  if (allowed && !allowed.has(screenshot.employeeId)) return res.status(403).json({ error: 'You can only delete screenshots within your monitoring scope.' });
   deleteStoredMonitoringFile(screenshot.url);
   db.data.screenshots = db.data.screenshots.filter(s => s.id !== id);
   await db.write();
-
   res.json({ ok: true, deleted: 1 });
 });
 
 activityRouter.post('/screenshots/delete-bulk', requireAuth(db), requireRole('Admin', 'Manager'), async (req, res) => {
-  const ids = Array.isArray(req.body?.ids)
-    ? [...new Set(req.body.ids.map(Number).filter(Number.isFinite))]
-    : [];
-
+  const ids = Array.isArray(req.body?.ids) ? [...new Set(req.body.ids.map(Number).filter(Number.isFinite))] : [];
   if (ids.length === 0) return res.status(400).json({ error: 'ids must be a non-empty array.' });
-
   const allowed = scopedEmployeeIds(req.user);
   const targets = db.data.screenshots.filter(s => ids.includes(Number(s.id)));
-
-  if (allowed && targets.some(s => !allowed.has(s.employeeId))) {
-    return res.status(403).json({ error: 'You can only delete screenshots within your monitoring scope.' });
-  }
-
+  if (allowed && targets.some(s => !allowed.has(s.employeeId))) return res.status(403).json({ error: 'You can only delete screenshots within your monitoring scope.' });
   for (const screenshot of targets) deleteStoredMonitoringFile(screenshot.url);
-
   const targetSet = new Set(ids);
   db.data.screenshots = db.data.screenshots.filter(s => !targetSet.has(Number(s.id)));
   await db.write();
-
   res.json({ ok: true, deleted: targets.length });
 });
 
@@ -324,26 +259,17 @@ activityRouter.get('/live-history', requireAuth(db), requireRole('Admin', 'Manag
   res.json(list.slice(0, cap).map(f => ({ ...f, employeeName: userName(f.employeeId) })));
 });
 
-// Web Usage is an administrator/manager monitoring function. Employees no longer
-// have a portal or API access to their monitoring history.
 activityRouter.get('/web-usage', requireAuth(db), requireRole('Admin', 'Manager'), (req, res) => {
   purgeOldActivity();
   const { employeeId, date } = req.query;
   const allowed = scopedEmployeeIds(req.user);
-
   let list = db.data.webUsageLogs.filter(r => !allowed || allowed.has(r.employeeId));
   if (employeeId) list = list.filter(r => r.employeeId === Number(employeeId));
   if (date) list = list.filter(r => r.date === date);
-
   list.sort((a, b) => {
     const aTime = new Date(a.startedAt || `${a.date}T00:00:00Z`).getTime();
     const bTime = new Date(b.startedAt || `${b.date}T00:00:00Z`).getTime();
     return bTime - aTime;
   });
-
-  res.json(list.map(r => ({
-    ...r,
-    minutes: Math.round((r.seconds / 60) * 10) / 10,
-    employeeName: userName(r.employeeId),
-  })));
+  res.json(list.map(r => ({ ...r, minutes: Math.round((r.seconds / 60) * 10) / 10, employeeName: userName(r.employeeId) })));
 });
