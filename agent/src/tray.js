@@ -11,26 +11,45 @@ function ensureTrayIcon() {
   const dir = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'RemoteOpsAgent');
   const iconPath = path.join(dir, 'remote-ops.ico');
   fs.mkdirSync(dir, { recursive: true });
-  if (!fs.existsSync(iconPath)) {
-    fs.writeFileSync(iconPath, Buffer.from(ICON_BASE64, 'base64'));
-  }
+  if (!fs.existsSync(iconPath)) fs.writeFileSync(iconPath, Buffer.from(ICON_BASE64, 'base64'));
   return iconPath;
 }
 
 function promptAdminCode() {
-  const expected = process.env.REMOTE_OPS_AGENT_ADMIN_CODE;
-  if (!expected) return false;
-
   const script = `
 Add-Type -AssemblyName Microsoft.VisualBasic
 $value = [Microsoft.VisualBasic.Interaction]::InputBox('Enter the Remote Ops administrator code to quit the monitoring agent.', 'Remote Ops Administrator', '')
-if ($value -eq '${String(expected).replace(/'/g, "''")}') { exit 0 }
-exit 1
+if ([string]::IsNullOrWhiteSpace($value)) { exit 2 }
+[Environment]::SetEnvironmentVariable('REMOTE_OPS_QUIT_CODE_RESULT', $value, 'Process')
+exit 0
 `;
 
   const result = spawnSync('powershell.exe', [
     '-NoProfile',
-    '-NonInteractive',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-Command',
+    script,
+  ], {
+    windowsHide: true,
+    encoding: 'utf8',
+    env: process.env,
+  });
+
+  if (result.status !== 0) return null;
+  return String(result.stdout || '').trim() || null;
+}
+
+// Use a temporary PowerShell process to collect the code without exposing a
+// visible console window. The caller supplies the resulting code to the server.
+function promptAdminCodeInteractive() {
+  const script = `
+Add-Type -AssemblyName Microsoft.VisualBasic
+$value = [Microsoft.VisualBasic.Interaction]::InputBox('Enter the Remote Ops administrator code to quit the monitoring agent.', 'Remote Ops Administrator', '')
+Write-Output $value
+`;
+  const result = spawnSync('powershell.exe', [
+    '-NoProfile',
     '-ExecutionPolicy',
     'Bypass',
     '-Command',
@@ -39,14 +58,13 @@ exit 1
     windowsHide: true,
     encoding: 'utf8',
   });
-
-  return result.status === 0;
+  if (result.status !== 0) return null;
+  const value = String(result.stdout || '').trim();
+  return value || null;
 }
 
-function startTray({ employeeName, onQuit } = {}) {
-  if (process.platform !== 'win32') {
-    return { ready: Promise.resolve(), setStatus() {}, kill() {} };
-  }
+function startTray({ employeeName, deviceToken, client, onQuit } = {}) {
+  if (process.platform !== 'win32') return { ready: Promise.resolve(), setStatus() {}, kill() {} };
 
   const itemEmployee = {
     title: `Assigned: ${employeeName || 'Unassigned'}`,
@@ -60,16 +78,23 @@ function startTray({ employeeName, onQuit } = {}) {
     enabled: false,
   };
 
-  const hasAdminCode = !!process.env.REMOTE_OPS_AGENT_ADMIN_CODE;
   const itemQuit = {
     title: 'Quit (Admin)',
-    tooltip: hasAdminCode ? 'Requires the administrator code' : 'Administrator quit code is not configured',
-    enabled: hasAdminCode,
-    click: () => {
-      if (!promptAdminCode()) return;
-      onQuit?.();
-      systray.kill(false);
-      process.exit(0);
+    tooltip: 'Requires the Remote Ops administrator code',
+    enabled: true,
+    click: async () => {
+      try {
+        const code = promptAdminCodeInteractive();
+        if (!code) return;
+        if (!client || !deviceToken) return;
+        await client.authorizeQuit(deviceToken, code);
+        onQuit?.();
+        systray.kill(false);
+        process.exit(0);
+      } catch (err) {
+        // Keep the monitoring agent running on failed authorization.
+        console.error(`Admin quit authorization failed: ${err.message}`);
+      }
     },
   };
 
@@ -97,7 +122,6 @@ function startTray({ employeeName, onQuit } = {}) {
       'logged-out': 'No User Logged In',
       offline: 'Device Offline',
     };
-
     itemStatus.title = labels[state] || 'Device Offline';
     itemStatus.tooltip = `Remote Ops device state: ${labels[state] || state}`;
     systray.sendAction({ type: 'update-item', item: itemStatus });
