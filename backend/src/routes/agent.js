@@ -54,10 +54,6 @@ function recordStateChange(device, nextState, timestamp = new Date().toISOString
   device.lastStateChangedAt = timestamp;
 }
 
-// ------------------------------------------------------------
-// Admin-managed device enrollment
-// ------------------------------------------------------------
-
 agentRouter.post('/devices/register', requireAuth(db), requireRole('Admin'), async (req, res) => {
   const { employeeId, deviceName, deviceType = 'desktop-agent' } = req.body || {};
   const employee = db.data.users.find(u => u.id === Number(employeeId) && u.role === 'Employee');
@@ -69,96 +65,45 @@ agentRouter.post('/devices/register', requireAuth(db), requireRole('Admin'), asy
   }
 
   const device = {
-    id: nextId(),
-    employeeId: employee.id,
-    type: deviceType,
-    deviceName: String(deviceName).trim(),
-    pairedAt: null,
-    registeredAt: new Date().toISOString(),
-    enrolledAt: null,
-    enrollmentCode: generateEnrollmentCode(),
-    enrollmentExpiresAt: Date.now() + ENROLLMENT_TTL_MS,
-    machineId: null,
-    hostname: null,
-    domain: null,
-    domainUser: null,
-    agentVersion: null,
-    lastSeenAt: null,
-    lastStateChangedAt: null,
-    state: 'pending',
-    enrolled: false,
-    revoked: false,
+    id: nextId(), employeeId: employee.id, type: deviceType, deviceName: String(deviceName).trim(),
+    pairedAt: null, registeredAt: new Date().toISOString(), enrolledAt: null,
+    enrollmentCode: generateEnrollmentCode(), enrollmentExpiresAt: Date.now() + ENROLLMENT_TTL_MS,
+    machineId: null, hostname: null, domain: null, domainUser: null, agentVersion: null,
+    lastSeenAt: null, lastStateChangedAt: null, state: 'pending', enrolled: false, revoked: false,
   };
 
   db.data.devices.push(device);
   await db.write();
-
-  res.status(201).json({
-    ...publicDevice(device),
-    enrollmentCode: device.enrollmentCode,
-    enrollmentExpiresAt: new Date(device.enrollmentExpiresAt).toISOString(),
-  });
+  res.status(201).json({ ...publicDevice(device), enrollmentCode: device.enrollmentCode, enrollmentExpiresAt: new Date(device.enrollmentExpiresAt).toISOString() });
 });
 
 agentRouter.post('/enroll', async (req, res) => {
-  const {
-    code,
-    machineId,
-    hostname,
-    domain,
-    domainUser,
-    deviceType = 'desktop-agent',
-    agentVersion = null,
-  } = req.body || {};
-
+  const { code, machineId, hostname, domain, domainUser, deviceType = 'desktop-agent', agentVersion = null } = req.body || {};
   if (!code) return res.status(400).json({ error: 'Enrollment code is required.' });
   if (!machineId) return res.status(400).json({ error: 'machineId is required.' });
   if (!hostname) return res.status(400).json({ error: 'hostname is required.' });
 
-  const device = db.data.devices.find(
-    d => String(d.enrollmentCode || '') === String(code).trim() && !d.revoked && d.enrolled !== true
-  );
-
+  const device = db.data.devices.find(d => String(d.enrollmentCode || '') === String(code).trim() && !d.revoked && d.enrolled !== true);
   if (!device) return res.status(404).json({ error: 'Invalid or already-used enrollment code.' });
-  if (!device.enrollmentExpiresAt || device.enrollmentExpiresAt < Date.now()) {
-    return res.status(410).json({ error: 'This enrollment code has expired. Ask an Admin to register the device again.' });
-  }
-  if (device.type !== deviceType) {
-    return res.status(400).json({ error: `This enrollment code is for a ${device.type} device.` });
-  }
+  if (!device.enrollmentExpiresAt || device.enrollmentExpiresAt < Date.now()) return res.status(410).json({ error: 'This enrollment code has expired. Ask an Admin to register the device again.' });
+  if (device.type !== deviceType) return res.status(400).json({ error: `This enrollment code is for a ${device.type} device.` });
 
-  const existing = db.data.devices.find(
-    d => d.id !== device.id && d.machineId && d.machineId === machineId && !d.revoked
-  );
+  const existing = db.data.devices.find(d => d.id !== device.id && d.machineId && d.machineId === machineId && !d.revoked);
   if (existing) return res.status(409).json({ error: 'This computer is already enrolled as another managed device.' });
 
   const now = new Date().toISOString();
-  device.enrolled = true;
-  device.enrolledAt = now;
-  device.pairedAt = now;
-  device.enrollmentCode = null;
-  device.enrollmentExpiresAt = null;
-  device.machineId = String(machineId);
-  device.hostname = String(hostname);
-  device.domain = domain ? String(domain) : null;
-  device.domainUser = domainUser ? String(domainUser) : null;
-  device.agentVersion = agentVersion ? String(agentVersion) : null;
-  device.lastSeenAt = now;
+  device.enrolled = true; device.enrolledAt = now; device.pairedAt = now;
+  device.enrollmentCode = null; device.enrollmentExpiresAt = null;
+  device.machineId = String(machineId); device.hostname = String(hostname);
+  device.domain = domain ? String(domain) : null; device.domainUser = domainUser ? String(domainUser) : null;
+  device.agentVersion = agentVersion ? String(agentVersion) : null; device.lastSeenAt = now;
   recordStateChange(device, 'active', now);
 
   await db.write();
-
   const deviceToken = signDeviceToken(device);
-  res.status(201).json({
-    deviceToken,
-    deviceId: device.id,
-    employeeId: device.employeeId,
-    employeeName: userName(device.employeeId),
-  });
+  res.status(201).json({ deviceToken, deviceId: device.id, employeeId: device.employeeId, employeeName: userName(device.employeeId) });
 });
 
-// Legacy employee pairing endpoints are retired. They remain only long enough
-// to return a deterministic migration response to an old client.
 agentRouter.post('/pairing-code', requireAuth(db), requireRole('Admin'), async (req, res) => {
   return res.status(410).json({ error: 'Employee pairing has been retired. Admins must register devices from Device Management.' });
 });
@@ -172,24 +117,11 @@ agentRouter.get('/config', requireDevice(db), (req, res) => {
 });
 
 agentRouter.get('/session-status', requireDevice(db), (req, res) => {
-  // Compatibility endpoint for older agents. New agents use heartbeat/device state.
-  res.json({
-    status: resolveDeviceState(req.device),
-    employeeName: req.employee.name,
-    deviceName: req.device.deviceName,
-  });
+  res.json({ status: resolveDeviceState(req.device), employeeName: req.device.employeeName || userName(req.device.employeeId), deviceName: req.device.deviceName });
 });
 
 agentRouter.post('/heartbeat', requireDevice(db), async (req, res) => {
-  const {
-    state = 'active',
-    hostname,
-    machineId,
-    domain,
-    domainUser,
-    agentVersion,
-  } = req.body || {};
-
+  const { state = 'active', hostname, machineId, domain, domainUser, agentVersion } = req.body || {};
   const allowedStates = new Set(['active', 'idle', 'logged-out']);
   const nextState = allowedStates.has(state) ? state : 'active';
   const now = new Date().toISOString();
@@ -203,97 +135,72 @@ agentRouter.post('/heartbeat', requireDevice(db), async (req, res) => {
   req.device.lastSeenAt = now;
   recordStateChange(req.device, nextState, now);
   await db.write();
-
-  res.json({
-    ok: true,
-    status: resolveDeviceState(req.device),
-    serverTime: now,
-  });
+  res.json({ ok: true, status: resolveDeviceState(req.device), serverTime: now });
 });
 
-agentRouter.get('/config-admin', requireAuth(db), requireRole('Admin'), (req, res) => {
-  res.json(db.data.agentConfig);
+// The tray asks the backend to validate an administrator-provided code before
+// allowing a locally running agent to exit. The secret is kept server-side.
+agentRouter.post('/quit-authorize', requireDevice(db), async (req, res) => {
+  const configured = String(process.env.AGENT_ADMIN_QUIT_CODE || '').trim();
+  const supplied = String(req.body?.code || '').trim();
+
+  if (!configured) return res.status(503).json({ error: 'Administrator quit code is not configured on the server.' });
+  if (!supplied || supplied.length > 128) return res.status(400).json({ error: 'Administrator code is required.' });
+
+  const sameLength = configured.length === supplied.length;
+  const matches = sameLength && crypto.timingSafeEqual(Buffer.from(configured), Buffer.from(supplied));
+  if (!matches) return res.status(403).json({ error: 'Invalid administrator code.' });
+
+  res.json({ ok: true, authorized: true });
 });
+
+agentRouter.get('/config-admin', requireAuth(db), requireRole('Admin'), (req, res) => res.json(db.data.agentConfig));
 
 agentRouter.put('/config', requireAuth(db), requireRole('Admin'), async (req, res) => {
-  const {
-    screenshotIntervalMinutes,
-    liveViewFrameIntervalSeconds,
-    screenshotRetentionDays,
-    liveViewRetentionDays,
-    webUsageRetentionDays,
-  } = req.body || {};
-
+  const { screenshotIntervalMinutes, liveViewFrameIntervalSeconds, screenshotRetentionDays, liveViewRetentionDays, webUsageRetentionDays } = req.body || {};
   if (screenshotIntervalMinutes !== undefined) {
-    if (!VALID_INTERVALS.includes(Number(screenshotIntervalMinutes))) {
-      return res.status(400).json({ error: `screenshotIntervalMinutes must be one of ${VALID_INTERVALS.join(', ')}.` });
-    }
+    if (!VALID_INTERVALS.includes(Number(screenshotIntervalMinutes))) return res.status(400).json({ error: `screenshotIntervalMinutes must be one of ${VALID_INTERVALS.join(', ')}.` });
     db.data.agentConfig.screenshotIntervalMinutes = Number(screenshotIntervalMinutes);
   }
   if (liveViewFrameIntervalSeconds !== undefined) {
-    const v = Number(liveViewFrameIntervalSeconds);
-    if (!(v >= 2 && v <= 60)) return res.status(400).json({ error: 'liveViewFrameIntervalSeconds must be between 2 and 60.' });
+    const v = Number(liveViewFrameIntervalSeconds); if (!(v >= 2 && v <= 60)) return res.status(400).json({ error: 'liveViewFrameIntervalSeconds must be between 2 and 60.' });
     db.data.agentConfig.liveViewFrameIntervalSeconds = v;
   }
   if (screenshotRetentionDays !== undefined) {
-    const v = Number(screenshotRetentionDays);
-    if (!(v >= 1 && v <= 365)) return res.status(400).json({ error: 'screenshotRetentionDays must be between 1 and 365.' });
+    const v = Number(screenshotRetentionDays); if (!(v >= 1 && v <= 365)) return res.status(400).json({ error: 'screenshotRetentionDays must be between 1 and 365.' });
     db.data.agentConfig.screenshotRetentionDays = v;
   }
   if (liveViewRetentionDays !== undefined) {
-    const v = Number(liveViewRetentionDays);
-    if (!(v >= 1 && v <= 365)) return res.status(400).json({ error: 'liveViewRetentionDays must be between 1 and 365.' });
+    const v = Number(liveViewRetentionDays); if (!(v >= 1 && v <= 365)) return res.status(400).json({ error: 'liveViewRetentionDays must be between 1 and 365.' });
     db.data.agentConfig.liveViewRetentionDays = v;
   }
   if (webUsageRetentionDays !== undefined) {
-    const v = Number(webUsageRetentionDays);
-    if (!(v >= 1 && v <= 365)) return res.status(400).json({ error: 'webUsageRetentionDays must be between 1 and 365.' });
+    const v = Number(webUsageRetentionDays); if (!(v >= 1 && v <= 365)) return res.status(400).json({ error: 'webUsageRetentionDays must be between 1 and 365.' });
     db.data.agentConfig.webUsageRetentionDays = v;
   }
-  await db.write();
-  res.json(db.data.agentConfig);
+  await db.write(); res.json(db.data.agentConfig);
 });
 
-agentRouter.get('/my-devices', requireAuth(db), async (req, res) => {
-  const devices = db.data.devices
-    .filter(d => d.employeeId === req.user.id)
-    .map(publicDevice);
-  res.json(devices);
-});
-
-agentRouter.get('/devices', requireAuth(db), requireRole('Admin'), (req, res) => {
-  res.json(db.data.devices.map(publicDevice));
-});
+agentRouter.get('/my-devices', requireAuth(db), async (req, res) => res.json(db.data.devices.filter(d => d.employeeId === req.user.id).map(publicDevice)));
+agentRouter.get('/devices', requireAuth(db), requireRole('Admin'), (req, res) => res.json(db.data.devices.map(publicDevice)));
 
 agentRouter.get('/devices/:id/history', requireAuth(db), requireRole('Admin'), (req, res) => {
-  const id = Number(req.params.id);
-  const device = db.data.devices.find(d => d.id === id);
+  const id = Number(req.params.id); const device = db.data.devices.find(d => d.id === id);
   if (!device) return res.status(404).json({ error: 'Device not found.' });
-  const history = (db.data.deviceStateHistory || [])
-    .filter(h => h.deviceId === id)
-    .sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1))
-    .slice(0, 500);
+  const history = (db.data.deviceStateHistory || []).filter(h => h.deviceId === id).sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1)).slice(0, 500);
   res.json({ device: publicDevice(device), history });
 });
 
 agentRouter.patch('/devices/:id/revoke', requireAuth(db), requireRole('Admin'), async (req, res) => {
-  const id = Number(req.params.id);
-  const device = db.data.devices.find(d => d.id === id);
+  const id = Number(req.params.id); const device = db.data.devices.find(d => d.id === id);
   if (!device) return res.status(404).json({ error: 'Device not found.' });
-  const now = new Date().toISOString();
-  device.revoked = true;
-  recordStateChange(device, 'revoked', now);
-  await db.write();
-  res.json(publicDevice(device));
+  const now = new Date().toISOString(); device.revoked = true; recordStateChange(device, 'revoked', now);
+  await db.write(); res.json(publicDevice(device));
 });
 
 agentRouter.delete('/devices/:id', requireAuth(db), requireRole('Admin'), async (req, res) => {
-  const id = Number(req.params.id);
-  const index = db.data.devices.findIndex(d => d.id === id);
+  const id = Number(req.params.id); const index = db.data.devices.findIndex(d => d.id === id);
   if (index === -1) return res.status(404).json({ error: 'Device not found.' });
-
   db.data.deviceStateHistory = (db.data.deviceStateHistory || []).filter(h => h.deviceId !== id);
-  db.data.devices.splice(index, 1);
-  await db.write();
-  res.json({ ok: true, deviceId: id });
+  db.data.devices.splice(index, 1); await db.write(); res.json({ ok: true, deviceId: id });
 });
