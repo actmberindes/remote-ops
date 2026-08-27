@@ -5,14 +5,7 @@ const { startScheduler } = require('./scheduler.js');
 const { startTray } = require('./tray.js');
 const capture = require('./capture.js');
 
-if (process.platform === 'win32') {
-  try {
-    const ConsoleWindow = require('node-hide-console-window');
-    ConsoleWindow.hideConsole();
-  } catch (_) {
-    // Console hiding is optional; continue if the native module is unavailable.
-  }
-}
+const enrollMode = process.argv.slice(2).includes('--enroll');
 
 function log(message) {
   console.log(`[${new Date().toLocaleTimeString()}] ${message}`);
@@ -21,11 +14,20 @@ function log(message) {
 async function main() {
   let config = loadConfig();
 
-  // Enrollment is Admin-controlled. There is no employee Start/Stop or
-  // blocking first-run consent step in the agent startup flow.
+  if (enrollMode) {
+    if (isEnrolled(config)) {
+      log(`Already enrolled as ${config.employeeName || 'Unknown'} on ${config.deviceName || config.hostname || config.deviceId}.`);
+      return;
+    }
+
+    log('Starting Remote Ops device enrollment...');
+    await runPairingFlow({ log });
+    return;
+  }
+
   if (!isEnrolled(config)) {
-    log('No enrolled device found — starting Admin enrollment flow.');
-    config = await runPairingFlow({ log });
+    log('No enrolled device found. Run this agent with --enroll to register it first.');
+    return;
   }
 
   const client = createClient(config.apiUrl);
@@ -40,6 +42,13 @@ async function main() {
     },
   });
 
+  try {
+    await tray.ready;
+    tray.setStatus('offline');
+  } catch (err) {
+    log(`Tray startup failed: ${err.message}`);
+  }
+
   scheduler = startScheduler({
     client,
     config,
@@ -48,17 +57,14 @@ async function main() {
     onDeviceStateChange: state => tray.setStatus(state),
   });
 
-  await tray.ready.catch(err => log(`Tray startup failed: ${err.message}`));
-  tray.setStatus('offline');
-
   process.on('SIGINT', () => {
-    scheduler.stop();
+    scheduler?.stop();
     tray.kill();
     process.exit(0);
   });
 
   process.on('SIGTERM', () => {
-    scheduler.stop();
+    scheduler?.stop();
     tray.kill();
     process.exit(0);
   });
