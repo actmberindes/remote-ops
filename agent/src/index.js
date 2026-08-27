@@ -36,9 +36,11 @@ async function main() {
   let scheduler = null;
   const tray = startTray({
     employeeName: config.employeeName,
+    deviceToken: config.deviceToken,
+    client,
     onQuit: () => {
       scheduler?.stop();
-      log('Agent quit from system tray by administrator.');
+      log('Agent quit from system tray after administrator authorization.');
     },
   });
 
