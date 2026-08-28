@@ -26,6 +26,27 @@ async function request(path, { method = 'GET', body, auth = true } = {}) {
   return data;
 }
 
+async function requestBlob(path, { method = 'GET', body } = {}) {
+  const headers = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+
+  const res = await fetch(`${API_URL}${path}`, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  if (!res.ok) {
+    let data = {};
+    try { data = await res.json(); } catch (e) { /* non-json error */ }
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
+
+  return res.blob();
+}
+
 export const api = {
   getToken, setToken,
 
@@ -136,6 +157,11 @@ export const api = {
       const qs = params.toString();
       return request(`/activity/live-history${qs ? `?${qs}` : ''}`);
     },
+    liveVideo: ({ employeeId, date, startAt, endAt }) =>
+      requestBlob('/activity/live-video', {
+        method: 'POST',
+        body: { employeeId, date, startAt, endAt },
+      }),
     screenshots: ({ employeeId, date, limit } = {}) => {
       const params = new URLSearchParams();
       if (employeeId) params.set('employeeId', employeeId);
