@@ -4385,6 +4385,13 @@ function LiveViewSection({
           ))}
         </div>
       )}
+      {!limit && (
+        <div className="mt-6">
+          <LiveViewVideoPlayer
+            employees={employeeOptions}
+          /> 
+        </div>
+      )}
     </Card>
   );
 }
