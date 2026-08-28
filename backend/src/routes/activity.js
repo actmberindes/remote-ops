@@ -1,9 +1,10 @@
-import { Router } from 'express';
+import { Router } from 'node:express';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { db, nextId } from '../db.js';
 import { requireAuth, requireRole, requireDevice } from '../auth.js';
+import { buildLiveVideo } from '../live-video.js';
 
 export const activityRouter = Router();
 
@@ -257,6 +258,60 @@ activityRouter.get('/live-history', requireAuth(db), requireRole('Admin', 'Manag
   list.sort((a, b) => (a.capturedAt < b.capturedAt ? 1 : -1));
   const cap = Math.min(Number(limit) || 100, 500);
   res.json(list.slice(0, cap).map(f => ({ ...f, employeeName: userName(f.employeeId) })));
+});
+
+activityRouter.post('/live-video', requireAuth(db), requireRole('Admin', 'Manager'), async (req, res) => {
+  purgeOldActivity();
+
+  const { employeeId, date, startAt, endAt } = req.body || {};
+  if (!employeeId || !date) {
+    return res.status(400).json({ error: 'employeeId and date are required.' });
+  }
+
+  const allowed = scopedEmployeeIds(req.user);
+  const numericEmployeeId = Number(employeeId);
+  if (allowed && !allowed.has(numericEmployeeId)) {
+    return res.status(403).json({ error: 'You can only generate Live View videos within your monitoring scope.' });
+  }
+
+  let frames = (db.data.liveFrameHistory || [])
+    .filter(f => f.employeeId === numericEmployeeId)
+    .filter(f => f.capturedAt.slice(0, 10) === String(date))
+    .filter(f => f.url && f.url.startsWith('/uploads/monitoring/'))
+    .sort((a, b) => new Date(a.capturedAt).getTime() - new Date(b.capturedAt).getTime());
+
+  if (startAt) frames = frames.filter(f => new Date(f.capturedAt).getTime() >= new Date(startAt).getTime());
+  if (endAt) frames = frames.filter(f => new Date(f.capturedAt).getTime() <= new Date(endAt).getTime());
+
+  if (frames.length < 2) {
+    return res.status(400).json({ error: 'At least 2 retained Live View frames are required for a video.' });
+  }
+
+  try {
+    const { outputPath, tempDir, frameCount } = await buildLiveVideo({
+      frames,
+      monitoringUploadsDir,
+    });
+
+    const employeeName = userName(numericEmployeeId);
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Content-Disposition', `inline; filename="${employeeName.replace(/[^a-z0-9-_]+/gi, '_')}-${String(date)}-live-view.mp4"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Live-View-Frame-Count', String(frameCount));
+
+    res.on('finish', () => {
+      fs.rm(tempDir, { recursive: true, force: true }, () => {});
+    });
+    res.on('close', () => {
+      fs.rm(tempDir, { recursive: true, force: true }, () => {});
+    });
+
+    res.sendFile(outputPath, err => {
+      if (err && !res.headersSent) res.status(500).json({ error: 'Unable to deliver generated Live View video.' });
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Unable to generate Live View video.' });
+  }
 });
 
 activityRouter.get('/web-usage', requireAuth(db), requireRole('Admin', 'Manager'), (req, res) => {
