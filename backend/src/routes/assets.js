@@ -10,7 +10,13 @@ const COMPONENT_PARENT_TYPES = {
   SSD: 'Desktop',
   RAM: 'Desktop',
 };
-
+const QUANTITY_TRACKED_TYPES = [
+  'Mouse',
+  'Keyboard',
+  'Headset',
+  'Webcam',
+  'UPS Battery'
+];
 function userName(id) {
   const u = db.data.users.find(x => x.id === id);
   return u ? u.name : 'Unknown';
@@ -92,8 +98,7 @@ function enrichAsset(asset) {
   const active = activeAssignmentsFor(asset.id);
   const assignees = active.map(a => assignmentEmployee(asset, a)).filter(Boolean);
   const hasQuantity = asset.quantity !== null && asset.quantity !== undefined;
-  const requiresUnitSerial =
-  QUANTITY_TRACKED_TYPES.includes(asset.type);
+  
 
   return {
     ...asset,
