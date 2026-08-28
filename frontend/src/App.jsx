@@ -11,6 +11,7 @@ import {
 import { api, getToken, setToken } from './lib/api.js';
 import WebUsageWidget from './components/WebUsageWidget.jsx';
 import AdminDeviceManagementPanel from './components/AdminDeviceManagementPanel.jsx';
+import LiveViewVideoPlayer from './components/LiveViewVideoPlayer.jsx';
 
 /* ============================== CONSTANTS ============================== */
 
