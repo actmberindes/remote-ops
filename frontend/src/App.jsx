@@ -3100,12 +3100,6 @@ function AdminTickets() {
 
 const ASSET_TYPES = ['Desktop', 'Laptop', 'Printer', 'Monitor', 'Server', 'UPS', 'UPS Battery', 'SSD', 'RAM', 'Mouse', 'Keyboard', 'Headset', 'Webcam', 'Software License', 'Others'];
 const CONSUMABLE_TYPES = ['Mouse', 'Keyboard', 'UPS Battery', 'Headset', 'Webcam'];
-const emptyAssetForm = { name: '', type: ASSET_TYPES[0], brand: '', model: '', serialNumber: '', purchaseDate: '',  cost: '', warrantyExpiry: '', remarks: '', specs: {}, imageUrl: '', quantity: '' };
-const COMPONENT_PARENT_TYPES = {
-  'UPS Battery': 'UPS',
-  SSD: 'Desktop',
-  RAM: 'Desktop'
-};
 const QUANTITY_TRACKED_TYPES = [
   'Mouse',
   'Keyboard',
@@ -3113,6 +3107,13 @@ const QUANTITY_TRACKED_TYPES = [
   'Webcam',
   'UPS Battery'
 ];
+const emptyAssetForm = { name: '', type: ASSET_TYPES[0], brand: '', model: '', serialNumber: '', purchaseDate: '',  cost: '', warrantyExpiry: '', remarks: '', specs: {}, imageUrl: '', quantity: '' };
+const COMPONENT_PARENT_TYPES = {
+  'UPS Battery': 'UPS',
+  SSD: 'Desktop',
+  RAM: 'Desktop'
+};
+
 // Drives the dynamic "Specifications" section of the Add/Edit Asset form — different fields per asset type.
 const TYPE_SPEC_FIELDS = {
   Desktop: ['Motherboard', 'CPU', 'RAM', 'Storage Size', 'Video Card', 'OS'],
