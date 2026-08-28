@@ -3098,14 +3098,21 @@ function AdminTickets() {
 
 /* ============================== ASSET MANAGEMENT & LIFECYCLE ENGINE ============================== */
 
-const ASSET_TYPES = ['Desktop', 'Laptop', 'Printer', 'Monitor', 'Server', 'UPS', 'UPS Battery', 'SSD', 'RAM', 'Mouse', 'Keyboard', 'Headset', 'Software License', 'Others'];
-const CONSUMABLE_TYPES = ['Mouse', 'Keyboard', 'UPS Battery', 'Headset'];
+const ASSET_TYPES = ['Desktop', 'Laptop', 'Printer', 'Monitor', 'Server', 'UPS', 'UPS Battery', 'SSD', 'RAM', 'Mouse', 'Keyboard', 'Headset', 'Webcam', 'Software License', 'Others'];
+const CONSUMABLE_TYPES = ['Mouse', 'Keyboard', 'UPS Battery', 'Headset', 'Webcam'];
 const emptyAssetForm = { name: '', type: ASSET_TYPES[0], brand: '', model: '', serialNumber: '', purchaseDate: '',  cost: '', warrantyExpiry: '', remarks: '', specs: {}, imageUrl: '', quantity: '' };
 const COMPONENT_PARENT_TYPES = {
   'UPS Battery': 'UPS',
   SSD: 'Desktop',
   RAM: 'Desktop'
 };
+const QUANTITY_TRACKED_TYPES = [
+  'Mouse',
+  'Keyboard',
+  'Headset',
+  'Webcam',
+  'UPS Battery'
+];
 // Drives the dynamic "Specifications" section of the Add/Edit Asset form — different fields per asset type.
 const TYPE_SPEC_FIELDS = {
   Desktop: ['Motherboard', 'CPU', 'RAM', 'Storage Size', 'Video Card', 'OS'],
@@ -3223,14 +3230,21 @@ function AssetFormModal({ isOpen, onClose, asset, onSaved }) {
         )}
         <div className="grid grid-cols-2 gap-3">
           <Field label="Model"><input className={inputCls} value={form.model} onChange={e => set('model', e.target.value)} /></Field>
-          <Field label="Serial Number"><input className={inputCls} value={form.serialNumber} onChange={e => set('serialNumber', e.target.value)} /></Field>
+          {!QUANTITY_TRACKED_TYPES.includes(form.type) && (
+            <Field label="Serial Number">
+              <input
+                  className={inputCls}
+                  value={form.serialNumber}
+                  onChange={e => set('serialNumber', e.target.value)}
+              />
+            </Field>    
+          )}
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Purchase Date"><input type="date" className={inputCls} value={form.purchaseDate} onChange={e => set('purchaseDate', e.target.value)} /></Field>
           <Field label="Cost"><input type="number" min="0" step="0.01" className={inputCls} value={form.cost ?? ''} onChange={e => set('cost', e.target.value)} placeholder="0.00"/></Field>
           <Field label="Warranty Expiry"><input type="date" className={inputCls} value={form.warrantyExpiry} onChange={e => set('warrantyExpiry', e.target.value)} /></Field>
         </div>
-
         {specFields.length > 0 && (
           <div className="mb-4">
             <div className="text-[10px] font-bold text-muted uppercase tracking-wider mb-2 pt-2 border-t border-[var(--border)]">
@@ -3272,6 +3286,7 @@ function AssignAssetModal({ isOpen, onClose, asset, onAssigned }) {
       : null;
 
   const [employeeId, setEmployeeId] = useState('');
+  const [serialNumber, setSerialNumber] = useState('');
   const [parentAssetId, setParentAssetId] = useState('');
   const [parentOptions, setParentOptions] = useState([]);
   const [loadingParents, setLoadingParents] = useState(false);
@@ -3281,6 +3296,7 @@ function AssignAssetModal({ isOpen, onClose, asset, onAssigned }) {
     let alive = true;
 
     setEmployeeId('');
+    setSerialNumber('');
     setParentAssetId('');
     setParentOptions([]);
 
@@ -3317,6 +3333,17 @@ function AssignAssetModal({ isOpen, onClose, asset, onAssigned }) {
 
   const submit = async () => {
     setSaving(true);
+    if (
+      requiresUnitSerial &&
+      !serialNumber.trim()
+    ) {
+      addToast(
+        'A serial number is required for this item.',
+        'error'
+    );
+  setSaving(false);
+  return;
+    }
 
     try {
       let updated;
@@ -3333,7 +3360,8 @@ function AssignAssetModal({ isOpen, onClose, asset, onAssigned }) {
         updated =
           await api.assets.assignComponent(
             asset.id,
-            Number(parentAssetId)
+            Number(parentAssetId),
+            serialNumber.trim()
           );
 
         addToast(
@@ -3352,7 +3380,10 @@ function AssignAssetModal({ isOpen, onClose, asset, onAssigned }) {
         updated =
           await api.assets.assign(
             asset.id,
-            Number(employeeId)
+            Number(employeeId),
+            requiresUnitSerial
+              ? serialNumber.trim()
+              : undefined
           );
 
         addToast(
@@ -3404,6 +3435,18 @@ function AssignAssetModal({ isOpen, onClose, asset, onAssigned }) {
               ))}
             </select>
           </Field>
+          {requiresUnitSerial && (
+            <Field label="Serial Number">
+              <input
+                className={inputCls}
+                value={serialNumber}
+                onChange={e =>
+                   setSerialNumber(e.target.value)
+              }
+              placeholder="Enter the battery serial number"
+              />
+            </Field>
+          )}
 
           {!loadingParents &&
             parentOptions.length === 0 && (
@@ -3419,28 +3462,42 @@ function AssignAssetModal({ isOpen, onClose, asset, onAssigned }) {
           </p>
         </>
       ) : (
-        <Field label="Assign to Employee">
-          <select
-            className={inputCls}
-            value={employeeId}
-            onChange={e =>
-              setEmployeeId(e.target.value)
-            }
-          >
-            <option value="">
-              Select an employee…
-            </option>
-
-            {employees.map(e => (
-              <option
-                key={e.id}
-                value={e.id}
-              >
-                {e.name} — {e.department}
+        <>
+          <Field label="Assign to Employee">
+            <select
+              className={inputCls}
+              value={employeeId}
+              onChange={e =>
+                setEmployeeId(e.target.value)
+              }
+            >
+              <option value="">
+                Select an employee…
               </option>
-            ))}
-          </select>
-        </Field>
+
+              {employees.map(e => (
+                <option
+                  key={e.id}
+                  value={e.id}
+                >
+                  {e.name} — {e.department}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {requiresUnitSerial && (
+            <Field label="Serial Number">
+              <input
+                className={inputCls}
+                value={serialNumber}
+                onChange={e =>
+                  setSerialNumber(e.target.value)
+                }
+                placeholder="Enter the physical unit serial number"
+              />
+            </Field>
+          )}
+        </>
       )}
 
       <button
@@ -3448,8 +3505,12 @@ function AssignAssetModal({ isOpen, onClose, asset, onAssigned }) {
         disabled={
           saving ||
           (isComponent
-            ? !parentAssetId
-            : !employeeId)
+            ? !parentAssetId ||
+            (requiresUnitSerial &&
+              !serialNumber.trim())
+            : !employeeId ||
+              (requiresUnitSerial &&
+              !serialNumber.trim()))
         }
         className="w-full py-2.5 rounded-lg font-bold text-xs accent-bg-solid shadow-sm mt-2"
       >
@@ -3521,6 +3582,10 @@ function ReturnAssetModal({
   const isComponent =
     !!asset?.type &&
     !!COMPONENT_PARENT_TYPES[asset.type];
+
+  const requiresUnitSerial =
+  !!asset?.type &&
+  QUANTITY_TRACKED_TYPES.includes(asset.type);
 
   const doReturn = async (assignment) => {
     const returnKey =
@@ -3752,10 +3817,19 @@ function AssetDetailModal({ isOpen, onClose, asset }) {
                 <div className="font-semibold">
                   {assignment.employeeName}
                 </div>
-
+                {assignment.serialNumber && (
+                  <div className="text-[10px] text-muted mt-0.5">
+                    S/N: {assignment.serialNumber}
+                </div>
+                )}
             <div className="text-[10px] text-muted mt-0.5">
               Assigned {assignment.assignedDate}
             </div>
+            {assignment.parentAssetId && (
+              <div className="text-[10px] accent-text mt-0.5">
+                Attached to parent asset
+              </div>
+            )}
           </div>
         ))}
       </div>

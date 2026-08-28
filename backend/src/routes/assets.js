@@ -24,6 +24,22 @@ function activeAssignmentsFor(assetId) {
   return db.data.assetAssignments.filter(a => a.assetId === assetId && a.status === 'Active');
 }
 
+function activeSerialInUse(assetId, serialNumber) {
+  const normalized = String(serialNumber || '')
+    .trim()
+    .toLowerCase();
+
+  if (!normalized) return false;
+
+  return db.data.assetAssignments.some(a =>
+    a.assetId === assetId &&
+    a.status === 'Active' &&
+    String(a.serialNumber || '')
+      .trim()
+      .toLowerCase() === normalized
+  );
+}
+
 function isComponentAsset(asset) {
   return !!COMPONENT_PARENT_TYPES[asset?.type];
 }
@@ -76,6 +92,8 @@ function enrichAsset(asset) {
   const active = activeAssignmentsFor(asset.id);
   const assignees = active.map(a => assignmentEmployee(asset, a)).filter(Boolean);
   const hasQuantity = asset.quantity !== null && asset.quantity !== undefined;
+  const requiresUnitSerial =
+  QUANTITY_TRACKED_TYPES.includes(asset.type);
 
   return {
     ...asset,
@@ -137,7 +155,7 @@ function notifyAssigned(asset, employeeId) {
   });
 }
 
-export function assignAssetToEmployee(assetId, employeeId, assignedBy) {
+export function assignAssetToEmployee(assetId, employeeId, assignedBy, serialNumber = '') {
   const asset = db.data.assets.find(a => a.id === assetId);
   if (!asset) throw Object.assign(new Error('Asset not found.'), { status: 404 });
 
@@ -170,6 +188,10 @@ export function assignAssetToEmployee(assetId, employeeId, assignedBy) {
     id: nextId(),
     assetId,
     employeeId,
+    serialNumber:
+    QUANTITY_TRACKED_TYPES.includes(asset.type)
+      ? String(serialNumber || '').trim()
+      : '',
     assignedBy,
     assignedDate: new Date().toISOString().slice(0, 10),
     returnedDate: null,
@@ -371,11 +393,14 @@ assetsRouter.get('/component-options/:type', requireRole('Admin'), (req, res) =>
 
 assetsRouter.post('/:id/assign', requireRole('Admin'), async (req, res) => {
   const id = Number(req.params.id);
-  const { employeeId } = req.body || {};
+  const {
+  employeeId,
+  serialNumber
+} = req.body || {};
   if (!employeeId) return res.status(400).json({ error: 'employeeId is required.' });
 
   try {
-    const { asset } = assignAssetToEmployee(id, Number(employeeId), req.user.id);
+    const { asset } = assignAssetToEmployee(id, Number(employeeId), req.user.id, serialNumber);
     await db.write();
     res.json(enrichAsset(asset));
   } catch (e) {
@@ -426,6 +451,10 @@ assetsRouter.post('/:id/assign-component', requireRole('Admin'), async (req, res
     assetId: asset.id,
     employeeId: parentAssignment.employeeId,
     parentAssetId: parent.id,
+    serialNumber:
+    isQuantityTrackedComponent(asset)
+      ? String(req.body.serialNumber || '').trim()
+      : '',
     assignedBy: req.user.id,
     assignedDate: new Date().toISOString().slice(0, 10),
     returnedDate: null,
