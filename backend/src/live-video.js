@@ -9,12 +9,12 @@ export function buildLiveVideo({ frames, monitoringUploadsDir }) {
     throw new Error('At least 2 retained Live View frames are required to generate a video.');
   }
 
+  const root = path.resolve(monitoringUploadsDir);
   const safeFrames = frames
     .map(frame => {
       if (!frame?.url || !frame.url.startsWith('/uploads/monitoring/')) return null;
-      const relative = frame.url.slice('/uploads/'.length).replace(/\\/g, '/');
-      const filePath = path.resolve(monitoringUploadsDir, relative.slice('monitoring/'.length));
-      const root = path.resolve(monitoringUploadsDir);
+      const relative = frame.url.slice('/uploads/monitoring/'.length).replace(/\\/g, '/');
+      const filePath = path.resolve(root, relative);
       if (!filePath.startsWith(`${root}${path.sep}`)) return null;
       if (!fs.existsSync(filePath)) return null;
       return { ...frame, filePath };
@@ -30,15 +30,14 @@ export function buildLiveVideo({ frames, monitoringUploadsDir }) {
   const concatPath = path.join(tempDir, 'frames.txt');
   const outputPath = path.join(tempDir, `live-view-${crypto.randomBytes(6).toString('hex')}.mp4`);
 
-  // FFmpeg concat demuxer: one frame per 200ms (5 fps playback), which turns
-  // a 5-second capture interval into a 25x timelapse while keeping the video smooth.
   const lines = [];
   for (const frame of safeFrames) {
     const escaped = frame.filePath.replace(/'/g, "'\\''");
     lines.push(`file '${escaped}'`);
     lines.push('duration 0.2');
   }
-  lines.push(`file '${safeFrames[safeFrames.length - 1].filePath.replace(/'/g, "'\\''")}'`);
+  const lastEscaped = safeFrames[safeFrames.length - 1].filePath.replace(/'/g, "'\\''");
+  lines.push(`file '${lastEscaped}'`);
   fs.writeFileSync(concatPath, `${lines.join('\n')}\n`, 'utf8');
 
   return new Promise((resolve, reject) => {
@@ -49,7 +48,7 @@ export function buildLiveVideo({ frames, monitoringUploadsDir }) {
       '-f', 'concat',
       '-safe', '0',
       '-i', concatPath,
-      '-vf', 'scale=1280:-2:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2',
+      '-vf', 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2',
       '-r', '5',
       '-c:v', 'libx264',
       '-preset', 'veryfast',
