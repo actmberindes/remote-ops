@@ -3285,6 +3285,10 @@ function AssignAssetModal({ isOpen, onClose, asset, onAssigned }) {
     asset?.type
       ? COMPONENT_PARENT_TYPES[asset.type]
       : null;
+      
+  const requiresUnitSerial =
+  !!asset?.type &&
+  QUANTITY_TRACKED_TYPES.includes(asset.type);    
 
   const [employeeId, setEmployeeId] = useState('');
   const [serialNumber, setSerialNumber] = useState('');
