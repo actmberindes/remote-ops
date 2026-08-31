@@ -6,68 +6,56 @@ export const assetsRouter = Router();
 assetsRouter.use(requireAuth(db));
 
 const COMPONENT_PARENT_TYPES = {
-  'UPS Battery': 'UPS',
-  SSD: 'Desktop',
-  RAM: 'Desktop',
-  'Video Card': 'Desktop',
-};
-const COMPONENT_PARENT_ALTERNATES = {
+  'UPS Battery': ['UPS'],
   SSD: ['Desktop', 'Laptop'],
   RAM: ['Desktop', 'Laptop'],
   'Video Card': ['Desktop', 'Laptop'],
 };
+
 const QUANTITY_TRACKED_TYPES = [
   'Mouse',
   'Keyboard',
   'Headset',
   'Webcam',
-  'UPS Battery'
+  'UPS Battery',
 ];
+
 function userName(id) {
   const u = db.data.users.find(x => x.id === id);
   return u ? u.name : 'Unknown';
 }
 
 function teamIdsOf(managerId) {
-  return new Set(db.data.users.filter(u => u.managerId === managerId).map(u => u.id));
+  return new Set(
+    db.data.users
+      .filter(u => u.managerId === managerId)
+      .map(u => u.id)
+  );
 }
 
 function activeAssignmentsFor(assetId) {
-  return db.data.assetAssignments.filter(a => a.assetId === assetId && a.status === 'Active');
+  return db.data.assetAssignments.filter(
+    a => a.assetId === assetId && a.status === 'Active'
+  );
 }
 
 function activeSerialInUse(assetId, serialNumber) {
-  const normalized = String(serialNumber || '')
-    .trim()
-    .toLowerCase();
-
+  const normalized = String(serialNumber || '').trim().toLowerCase();
   if (!normalized) return false;
 
   return db.data.assetAssignments.some(a =>
     a.assetId === assetId &&
     a.status === 'Active' &&
-    String(a.serialNumber || '')
-      .trim()
-      .toLowerCase() === normalized
+    String(a.serialNumber || '').trim().toLowerCase() === normalized
   );
 }
 
 function isComponentAsset(asset) {
-  return !!COMPONENT_PARENT_TYPES[asset?.type];
+  return Array.isArray(COMPONENT_PARENT_TYPES[asset?.type]);
 }
 
 function componentParentTypes(assetType) {
-  if (COMPONENT_PARENT_ALTERNATES[assetType]) {
-    return COMPONENT_PARENT_ALTERNATES[assetType];
-  }
-
-  const parentType = COMPONENT_PARENT_TYPES[assetType];
-
-  return parentType ? [parentType] : [];
-}
-
-function componentParentType(assetType) {
-  return COMPONENT_PARENT_TYPES[assetType] || null;
+  return COMPONENT_PARENT_TYPES[assetType] || [];
 }
 
 function isQuantityTrackedComponent(asset) {
@@ -90,23 +78,34 @@ function assignmentEmployee(asset, assignment) {
   if (!assignment) return null;
 
   if (isComponentAsset(asset) && assignment.parentAssetId) {
-    const parentAssignment = activeParentAssignment(assignment.parentAssetId);
-    if (!parentAssignment) return null;
+    const parent = db.data.assets.find(
+      x => x.id === Number(assignment.parentAssetId)
+    );
+    const parentAssignment = activeParentAssignment(
+      assignment.parentAssetId
+    );
+
+    if (!parentAssignment || !parent) return null;
 
     return {
       employeeId: parentAssignment.employeeId,
       employeeName: userName(parentAssignment.employeeId),
       assignedDate: assignment.assignedDate,
-      parentAssetId: assignment.parentAssetId,
+      parentAssetId: parent.id,
       parentAssetName: parent.name || '',
       parentAssetTag: parent.assetTag || '',
-      arentAssetBrand: parent.brand || '',
+      parentAssetBrand: parent.brand || '',
       parentAssetSerialNumber: parent.serialNumber || '',
       serialNumber: assignment.serialNumber || '',
     };
   }
 
-  if (assignment.employeeId === null || assignment.employeeId === undefined) return null;
+  if (
+    assignment.employeeId === null ||
+    assignment.employeeId === undefined
+  ) {
+    return null;
+  }
 
   return {
     employeeId: assignment.employeeId,
@@ -118,16 +117,21 @@ function assignmentEmployee(asset, assignment) {
 
 function enrichAsset(asset) {
   const active = activeAssignmentsFor(asset.id);
-  const assignees = active.map(a => assignmentEmployee(asset, a)).filter(Boolean);
-  const hasQuantity = asset.quantity !== null && asset.quantity !== undefined;
-  
+  const assignees = active
+    .map(a => assignmentEmployee(asset, a))
+    .filter(Boolean);
+  const hasQuantity =
+    asset.quantity !== null &&
+    asset.quantity !== undefined;
 
   return {
     ...asset,
     currentAssignment: assignees[0] || null,
     assignees,
     assignedCount: assignees.length,
-    quantityAvailable: hasQuantity ? Math.max(0, Number(asset.quantity) - active.length) : null,
+    quantityAvailable: hasQuantity
+      ? Math.max(0, Number(asset.quantity) - active.length)
+      : null,
   };
 }
 
@@ -146,7 +150,10 @@ function recomputeStockStatus(asset) {
   if (asset.quantity === null || asset.quantity === undefined) return;
 
   const activeCount = activeAssignmentsFor(asset.id).length;
-  const available = Math.max(0, Number(asset.quantity) - activeCount);
+  const available = Math.max(
+    0,
+    Number(asset.quantity) - activeCount
+  );
   const wasOutOfStock = asset.status === 'Out of Stock';
 
   if (available <= 0 && asset.status !== 'Retired') {
@@ -182,22 +189,53 @@ function notifyAssigned(asset, employeeId) {
   });
 }
 
-export function assignAssetToEmployee(assetId, employeeId, assignedBy, serialNumber = '') {
+export function assignAssetToEmployee(
+  assetId,
+  employeeId,
+  assignedBy,
+  serialNumber = ''
+) {
   const asset = db.data.assets.find(a => a.id === assetId);
-  if (!asset) throw Object.assign(new Error('Asset not found.'), { status: 404 });
+  if (!asset) {
+    throw Object.assign(new Error('Asset not found.'), { status: 404 });
+  }
 
   if (isComponentAsset(asset)) {
     throw Object.assign(
-      new Error(`${asset.type} must be assigned to its parent asset, not directly to an employee.`),
+      new Error(
+        `${asset.type} must be assigned to its parent asset, not directly to an employee.`
+      ),
       { status: 400 }
     );
   }
 
   const employee = db.data.users.find(u => u.id === employeeId);
-  if (!employee) throw Object.assign(new Error('Employee not found.'), { status: 404 });
+  if (!employee) {
+    throw Object.assign(new Error('Employee not found.'), { status: 404 });
+  }
 
-  const hasQuantity = asset.quantity !== null && asset.quantity !== undefined;
+  const hasQuantity =
+    asset.quantity !== null &&
+    asset.quantity !== undefined;
   const active = activeAssignmentsFor(assetId);
+  const unitSerialRequired = QUANTITY_TRACKED_TYPES.includes(asset.type);
+  const normalizedSerial = String(serialNumber || '').trim();
+
+  if (unitSerialRequired && !normalizedSerial) {
+    throw Object.assign(
+      new Error(`${asset.type} requires a serial number for each assigned unit.`),
+      { status: 400 }
+    );
+  }
+
+  if (unitSerialRequired && activeSerialInUse(assetId, normalizedSerial)) {
+    throw Object.assign(
+      new Error(
+        `Serial number "${normalizedSerial}" is already assigned for this asset.`
+      ),
+      { status: 409 }
+    );
+  }
 
   if (hasQuantity) {
     if (Number(asset.quantity) - active.length <= 0) {
@@ -205,20 +243,23 @@ export function assignAssetToEmployee(assetId, employeeId, assignedBy, serialNum
     }
 
     if (active.some(a => a.employeeId === employeeId)) {
-      throw Object.assign(new Error('Already assigned to this employee.'), { status: 409 });
+      throw Object.assign(
+        new Error('Already assigned to this employee.'),
+        { status: 409 }
+      );
     }
   } else if (active.length > 0) {
-    throw Object.assign(new Error('Asset is not currently available for assignment.'), { status: 409 });
+    throw Object.assign(
+      new Error('Asset is not currently available for assignment.'),
+      { status: 409 }
+    );
   }
 
   const assignment = {
     id: nextId(),
     assetId,
     employeeId,
-    serialNumber:
-    QUANTITY_TRACKED_TYPES.includes(asset.type)
-      ? String(serialNumber || '').trim()
-      : '',
+    serialNumber: unitSerialRequired ? normalizedSerial : '',
     assignedBy,
     assignedDate: new Date().toISOString().slice(0, 10),
     returnedDate: null,
@@ -230,7 +271,12 @@ export function assignAssetToEmployee(assetId, employeeId, assignedBy, serialNum
   if (hasQuantity) recomputeStockStatus(asset);
   else asset.status = 'In Use';
 
-  logAction(assetId, 'Assigned', assignedBy, `Assigned to ${employee.name} by ${userName(assignedBy)}.`);
+  logAction(
+    assetId,
+    'Assigned',
+    assignedBy,
+    `Assigned to ${employee.name} by ${userName(assignedBy)}.`
+  );
   notifyAssigned(asset, employeeId);
 
   return { asset, assignment };
@@ -243,13 +289,19 @@ assetsRouter.get('/', (req, res) => {
         .filter(a => {
           if (a.status !== 'Active') return false;
           if (a.employeeId === req.user.id) return true;
-          if (a.parentAssetId) return activeParentAssignment(a.parentAssetId)?.employeeId === req.user.id;
+          if (a.parentAssetId) {
+            return activeParentAssignment(a.parentAssetId)?.employeeId === req.user.id;
+          }
           return false;
         })
         .map(a => a.assetId)
     );
 
-    return res.json(db.data.assets.filter(a => mineIds.has(a.id)).map(enrichAsset));
+    return res.json(
+      db.data.assets
+        .filter(a => mineIds.has(a.id))
+        .map(enrichAsset)
+    );
   }
 
   if (req.user.role === 'Manager') {
@@ -266,24 +318,64 @@ assetsRouter.get('/', (req, res) => {
         .map(a => a.assetId)
     );
 
-    return res.json(db.data.assets.filter(a => teamAssetIds.has(a.id)).map(enrichAsset));
+    return res.json(
+      db.data.assets
+        .filter(a => teamAssetIds.has(a.id))
+        .map(enrichAsset)
+    );
   }
 
   res.json(db.data.assets.map(enrichAsset));
 });
 
 assetsRouter.post('/', requireRole('Admin'), async (req, res) => {
-  const { name, type, brand, model, serialNumber, purchaseDate, cost, warrantyExpiry, remarks, specs, imageUrl, quantity } = req.body || {};
-  if (!name || !type) return res.status(400).json({ error: 'Asset name and type are required.' });
+  const {
+    name,
+    type,
+    brand,
+    model,
+    serialNumber,
+    purchaseDate,
+    cost,
+    warrantyExpiry,
+    remarks,
+    specs,
+    imageUrl,
+    quantity,
+  } = req.body || {};
 
-  const hasQuantity = quantity !== undefined && quantity !== null && quantity !== '';
-  if (hasQuantity && (!Number.isInteger(Number(quantity)) || Number(quantity) < 0)) {
-    return res.status(400).json({ error: 'Quantity must be a whole number 0 or greater.' });
+  if (!name || !type) {
+    return res.status(400).json({
+      error: 'Asset name and type are required.',
+    });
   }
 
-  const numericCost = cost === undefined || cost === null || cost === '' ? null : Number(cost);
-  if (numericCost !== null && (!Number.isFinite(numericCost) || numericCost < 0)) {
-    return res.status(400).json({ error: 'Cost must be a valid number 0 or greater.' });
+  const hasQuantity =
+    quantity !== undefined &&
+    quantity !== null &&
+    quantity !== '';
+
+  if (
+    hasQuantity &&
+    (!Number.isInteger(Number(quantity)) || Number(quantity) < 0)
+  ) {
+    return res.status(400).json({
+      error: 'Quantity must be a whole number 0 or greater.',
+    });
+  }
+
+  const numericCost =
+    cost === undefined || cost === null || cost === ''
+      ? null
+      : Number(cost);
+
+  if (
+    numericCost !== null &&
+    (!Number.isFinite(numericCost) || numericCost < 0)
+  ) {
+    return res.status(400).json({
+      error: 'Cost must be a valid number 0 or greater.',
+    });
   }
 
   const asset = {
@@ -299,15 +391,23 @@ assetsRouter.post('/', requireRole('Admin'), async (req, res) => {
     warrantyExpiry: warrantyExpiry || '',
     status: 'Available',
     remarks: remarks || '',
-    specs: (specs && typeof specs === 'object') ? specs : {},
+    specs: specs && typeof specs === 'object' ? specs : {},
     imageUrl: imageUrl || null,
     quantity: hasQuantity ? Number(quantity) : null,
   };
 
-  if (hasQuantity && asset.quantity === 0) asset.status = 'Out of Stock';
+  if (hasQuantity && asset.quantity === 0) {
+    asset.status = 'Out of Stock';
+  }
 
   db.data.assets.push(asset);
-  logAction(asset.id, 'Created', req.user.id, `${asset.name} (${asset.assetTag}) was added to inventory by ${req.user.name}.`);
+  logAction(
+    asset.id,
+    'Created',
+    req.user.id,
+    `${asset.name} (${asset.assetTag}) was added to inventory by ${req.user.name}.`
+  );
+
   await db.write();
   res.status(201).json(enrichAsset(asset));
 });
@@ -322,12 +422,23 @@ assetsRouter.post('/:id/clone', requireRole('Admin'), async (req, res) => {
     id: nextId(),
     assetTag: nextAssetTag(source.type),
     serialNumber: '',
-    status: source.quantity !== null && source.quantity !== undefined && Number(source.quantity) === 0 ? 'Out of Stock' : 'Available',
+    status:
+      source.quantity !== null &&
+      source.quantity !== undefined &&
+      Number(source.quantity) === 0
+        ? 'Out of Stock'
+        : 'Available',
     remarks: source.remarks || '',
   };
 
   db.data.assets.push(clone);
-  logAction(clone.id, 'Cloned', req.user.id, `${clone.name} (${clone.assetTag}) was cloned from ${source.assetTag} by ${req.user.name}.`);
+  logAction(
+    clone.id,
+    'Cloned',
+    req.user.id,
+    `${clone.name} (${clone.assetTag}) was cloned from ${source.assetTag} by ${req.user.name}.`
+  );
+
   await db.write();
   res.status(201).json(enrichAsset(clone));
 });
@@ -337,7 +448,20 @@ assetsRouter.put('/:id', requireRole('Admin'), async (req, res) => {
   const asset = db.data.assets.find(a => a.id === id);
   if (!asset) return res.status(404).json({ error: 'Asset not found.' });
 
-  const { name, type, brand, model, serialNumber, purchaseDate, cost, warrantyExpiry, remarks, specs, imageUrl, quantity } = req.body || {};
+  const {
+    name,
+    type,
+    brand,
+    model,
+    serialNumber,
+    purchaseDate,
+    cost,
+    warrantyExpiry,
+    remarks,
+    specs,
+    imageUrl,
+    quantity,
+  } = req.body || {};
 
   if (name !== undefined) asset.name = name;
   if (type !== undefined) asset.type = type;
@@ -347,10 +471,18 @@ assetsRouter.put('/:id', requireRole('Admin'), async (req, res) => {
   if (purchaseDate !== undefined) asset.purchaseDate = purchaseDate;
 
   if (cost !== undefined) {
-    const numericCost = cost === null || cost === '' ? null : Number(cost);
-    if (numericCost !== null && (!Number.isFinite(numericCost) || numericCost < 0)) {
-      return res.status(400).json({ error: 'Cost must be a valid number 0 or greater.' });
+    const numericCost =
+      cost === null || cost === '' ? null : Number(cost);
+
+    if (
+      numericCost !== null &&
+      (!Number.isFinite(numericCost) || numericCost < 0)
+    ) {
+      return res.status(400).json({
+        error: 'Cost must be a valid number 0 or greater.',
+      });
     }
+
     asset.cost = numericCost;
   }
 
@@ -361,14 +493,27 @@ assetsRouter.put('/:id', requireRole('Admin'), async (req, res) => {
 
   if (quantity !== undefined) {
     const hasQuantity = quantity !== null && quantity !== '';
-    if (hasQuantity && (!Number.isInteger(Number(quantity)) || Number(quantity) < 0)) {
-      return res.status(400).json({ error: 'Quantity must be a whole number 0 or greater.' });
+
+    if (
+      hasQuantity &&
+      (!Number.isInteger(Number(quantity)) || Number(quantity) < 0)
+    ) {
+      return res.status(400).json({
+        error: 'Quantity must be a whole number 0 or greater.',
+      });
     }
+
     asset.quantity = hasQuantity ? Number(quantity) : null;
     recomputeStockStatus(asset);
   }
 
-  logAction(id, 'Edited', req.user.id, `${asset.name} (${asset.assetTag}) details were updated by ${req.user.name}.`);
+  logAction(
+    id,
+    'Edited',
+    req.user.id,
+    `${asset.name} (${asset.assetTag}) details were updated by ${req.user.name}.`
+  );
+
   await db.write();
   res.json(enrichAsset(asset));
 });
@@ -377,32 +522,45 @@ assetsRouter.delete('/:id', requireRole('Admin'), async (req, res) => {
   const id = Number(req.params.id);
   const asset = db.data.assets.find(a => a.id === id);
   if (!asset) return res.status(404).json({ error: 'Asset not found.' });
-  if (activeAssignmentsFor(id).length > 0) return res.status(409).json({ error: 'This asset is currently assigned. Return it before deleting.' });
+
+  if (activeAssignmentsFor(id).length > 0) {
+    return res.status(409).json({
+      error: 'This asset is currently assigned. Return it before deleting.',
+    });
+  }
 
   db.data.assets = db.data.assets.filter(a => a.id !== id);
-  logAction(id, 'Deleted', req.user.id, `${asset.name} (${asset.assetTag}) was removed from inventory by ${req.user.name}.`);
+  logAction(
+    id,
+    'Deleted',
+    req.user.id,
+    `${asset.name} (${asset.assetTag}) was removed from inventory by ${req.user.name}.`
+  );
+
   await db.write();
   res.json({ ok: true });
 });
 
 assetsRouter.get('/component-options/:type', requireRole('Admin'), (req, res) => {
   const componentType = req.params.type;
-  const parentType = componentParentType(componentType);
+  const parentTypes = componentParentTypes(componentType);
 
   if (parentTypes.length === 0) {
-  return res.status(400).json({
-    error: 'Unsupported component asset type.'
-  });
-}
+    return res.status(400).json({
+      error: 'Unsupported component asset type.',
+    });
+  }
 
   const options = db.data.assets
-    .filter(parent =>
-  parentTypes.includes(parent.type)
-)
+    .filter(parent => parentTypes.includes(parent.type))
     .map(parent => {
       const parentAssignment = activeParentAssignment(parent.id);
-      const existingComponentAssignment = activeComponentAssignmentToParent(parent.id, componentType);
-      const assignedEmployeeName = parentAssignment ? userName(parentAssignment.employeeId) : null;
+      const existingComponentAssignment =
+        activeComponentAssignmentToParent(parent.id, componentType);
+      const assignedEmployeeName = parentAssignment
+        ? userName(parentAssignment.employeeId)
+        : null;
+
       const label = componentType === 'UPS Battery'
         ? `${parent.serialNumber || parent.assetTag} - ${assignedEmployeeName || 'Unassigned'}`
         : `${parent.name || parent.assetTag} - ${assignedEmployeeName || 'Unassigned'}`;
@@ -426,14 +584,20 @@ assetsRouter.get('/component-options/:type', requireRole('Admin'), (req, res) =>
 
 assetsRouter.post('/:id/assign', requireRole('Admin'), async (req, res) => {
   const id = Number(req.params.id);
-  const {
-  employeeId,
-  serialNumber
-} = req.body || {};
-  if (!employeeId) return res.status(400).json({ error: 'employeeId is required.' });
+  const { employeeId, serialNumber } = req.body || {};
+
+  if (!employeeId) {
+    return res.status(400).json({ error: 'employeeId is required.' });
+  }
 
   try {
-    const { asset } = assignAssetToEmployee(id, Number(employeeId), req.user.id, serialNumber);
+    const { asset } = assignAssetToEmployee(
+      id,
+      Number(employeeId),
+      req.user.id,
+      serialNumber
+    );
+
     await db.write();
     res.json(enrichAsset(asset));
   } catch (e) {
@@ -443,52 +607,84 @@ assetsRouter.post('/:id/assign', requireRole('Admin'), async (req, res) => {
 
 assetsRouter.post('/:id/assign-component', requireRole('Admin'), async (req, res) => {
   const id = Number(req.params.id);
-  const { parentAssetId } = req.body || {};
+  const { parentAssetId, serialNumber } = req.body || {};
 
   const asset = db.data.assets.find(a => a.id === id);
   if (!asset) return res.status(404).json({ error: 'Asset not found.' });
 
-  const expectedParentTypes =
-  componentParentTypes(asset.type);
+  const expectedParentTypes = componentParentTypes(asset.type);
   if (expectedParentTypes.length === 0) {
-  return res.status(400).json({
-    error: 'This asset is not a supported component.'
-  });
-}
-  if (!parentAssetId) return res.status(400).json({ error: 'parentAssetId is required.' });
+    return res.status(400).json({
+      error: 'This asset is not a supported component.',
+    });
+  }
 
-  const parent = db.data.assets.find(a => a.id === Number(parentAssetId));
-  if (
-  !parent ||
-  !expectedParentTypes.includes(parent.type)
-) {
-  return res.status(400).json({
-    error:
-      `${asset.type} must be assigned to ` +
-      `${expectedParentTypes.join(' or ')}.`
-  });
-}
+  if (!parentAssetId) {
+    return res.status(400).json({ error: 'parentAssetId is required.' });
+  }
+
+  const parent = db.data.assets.find(
+    a => a.id === Number(parentAssetId)
+  );
+
+  if (!parent || !expectedParentTypes.includes(parent.type)) {
+    return res.status(400).json({
+      error:
+        `${asset.type} must be assigned to ` +
+        `${expectedParentTypes.join(' or ')}.`,
+    });
+  }
 
   const parentAssignment = activeParentAssignment(parent.id);
   if (!parentAssignment) {
-    return res.status(409).json({ error: `The selected ${expectedParentType} is not currently assigned to an employee.` });
+    return res.status(409).json({
+      error:
+        `The selected ${parent.type} is not currently assigned to an employee.`,
+    });
   }
 
   const activeComponentAssignments = activeAssignmentsFor(asset.id);
   if (activeComponentAssignmentToParent(parent.id, asset.type)) {
-    return res.status(409).json({ error: `This ${expectedParentType} already has a ${asset.type} assigned.` });
+    return res.status(409).json({
+      error:
+        `This ${parent.type} already has a ${asset.type} assigned.`,
+    });
   }
+
+  const normalizedSerial = String(serialNumber || '').trim();
 
   if (isQuantityTrackedComponent(asset)) {
     if (asset.quantity === null || asset.quantity === undefined) {
-      return res.status(400).json({ error: `${asset.type} must have a quantity configured before assignment.` });
+      return res.status(400).json({
+        error:
+          `${asset.type} must have a quantity configured before assignment.`,
+      });
     }
 
     if (Number(asset.quantity) - activeComponentAssignments.length <= 0) {
-      return res.status(409).json({ error: 'This component is out of stock.' });
+      return res.status(409).json({
+        error: 'This component is out of stock.',
+      });
+    }
+
+    if (!normalizedSerial) {
+      return res.status(400).json({
+        error:
+          `${asset.type} requires a serial number for each assigned unit.`,
+      });
+    }
+
+    if (activeSerialInUse(asset.id, normalizedSerial)) {
+      return res.status(409).json({
+        error:
+          `Serial number "${normalizedSerial}" is already assigned for this component asset.`,
+      });
     }
   } else if (activeComponentAssignments.length > 0) {
-    return res.status(409).json({ error: `${asset.type} is already assigned. Return it before assigning it again.` });
+    return res.status(409).json({
+      error:
+        `${asset.type} is already assigned. Return it before assigning it again.`,
+    });
   }
 
   const assignment = {
@@ -496,9 +692,8 @@ assetsRouter.post('/:id/assign-component', requireRole('Admin'), async (req, res
     assetId: asset.id,
     employeeId: parentAssignment.employeeId,
     parentAssetId: parent.id,
-    serialNumber:
-    isQuantityTrackedComponent(asset)
-      ? String(req.body.serialNumber || '').trim()
+    serialNumber: isQuantityTrackedComponent(asset)
+      ? normalizedSerial
       : '',
     assignedBy: req.user.id,
     assignedDate: new Date().toISOString().slice(0, 10),
@@ -508,8 +703,11 @@ assetsRouter.post('/:id/assign-component', requireRole('Admin'), async (req, res
 
   db.data.assetAssignments.push(assignment);
 
-  if (isQuantityTrackedComponent(asset)) recomputeStockStatus(asset);
-  else asset.status = 'In Use';
+  if (isQuantityTrackedComponent(asset)) {
+    recomputeStockStatus(asset);
+  } else {
+    asset.status = 'In Use';
+  }
 
   logAction(
     asset.id,
@@ -527,16 +725,32 @@ assetsRouter.post('/:id/assign-component', requireRole('Admin'), async (req, res
 assetsRouter.post('/:id/bulk-assign', requireRole('Admin'), async (req, res) => {
   const id = Number(req.params.id);
   const { employeeIds } = req.body || {};
-  if (!Array.isArray(employeeIds) || employeeIds.length === 0) return res.status(400).json({ error: 'employeeIds must be a non-empty array.' });
+
+  if (!Array.isArray(employeeIds) || employeeIds.length === 0) {
+    return res.status(400).json({
+      error: 'employeeIds must be a non-empty array.',
+    });
+  }
 
   const asset = db.data.assets.find(a => a.id === id);
   if (!asset) return res.status(404).json({ error: 'Asset not found.' });
-  if (isComponentAsset(asset)) return res.status(400).json({ error: `${asset.type} must be assigned to its parent asset.` });
-  if (asset.quantity !== null && asset.quantity !== undefined) {
-    return res.status(400).json({ error: 'Bulk assignment is only for standard assets. Use single assignment for quantity-tracked items.' });
+
+  if (isComponentAsset(asset)) {
+    return res.status(400).json({
+      error: `${asset.type} must be assigned to its parent asset.`,
+    });
   }
 
-  const already = new Set(activeAssignmentsFor(id).map(a => a.employeeId));
+  if (asset.quantity !== null && asset.quantity !== undefined) {
+    return res.status(400).json({
+      error:
+        'Bulk assignment is only for standard assets. Use single assignment for quantity-tracked items.',
+    });
+  }
+
+  const already = new Set(
+    activeAssignmentsFor(id).map(a => a.employeeId)
+  );
   const created = [];
 
   for (const rawId of employeeIds) {
@@ -561,10 +775,20 @@ assetsRouter.post('/:id/bulk-assign', requireRole('Admin'), async (req, res) => 
     created.push(employee.name);
   }
 
-  if (created.length === 0) return res.status(409).json({ error: 'All selected employees are already assigned to this asset.' });
+  if (created.length === 0) {
+    return res.status(409).json({
+      error: 'All selected employees are already assigned to this asset.',
+    });
+  }
 
   asset.status = 'In Use';
-  logAction(id, 'Assigned', req.user.id, `Bulk-assigned to ${created.join(', ')} by ${req.user.name}.`);
+  logAction(
+    id,
+    'Assigned',
+    req.user.id,
+    `Bulk-assigned to ${created.join(', ')} by ${req.user.name}.`
+  );
+
   await db.write();
   res.json(enrichAsset(asset));
 });
@@ -575,28 +799,54 @@ assetsRouter.post('/:id/return', requireRole('Admin'), async (req, res) => {
   if (!asset) return res.status(404).json({ error: 'Asset not found.' });
 
   const active = activeAssignmentsFor(id);
-  if (active.length === 0) return res.status(409).json({ error: 'This asset does not have an active assignment.' });
+  if (active.length === 0) {
+    return res.status(409).json({
+      error: 'This asset does not have an active assignment.',
+    });
+  }
 
   const { employeeId, parentAssetId } = req.body || {};
   let assignment;
 
   if (parentAssetId !== undefined) {
-    assignment = active.find(a => Number(a.parentAssetId) === Number(parentAssetId));
-    if (!assignment) return res.status(404).json({ error: 'No active component assignment found for that parent asset.' });
+    assignment = active.find(
+      a => Number(a.parentAssetId) === Number(parentAssetId)
+    );
+
+    if (!assignment) {
+      return res.status(404).json({
+        error: 'No active component assignment found for that parent asset.',
+      });
+    }
   } else if (employeeId !== undefined) {
-    assignment = active.find(a => a.employeeId === Number(employeeId));
-    if (!assignment) return res.status(404).json({ error: 'No active assignment found for that employee.' });
+    assignment = active.find(
+      a => a.employeeId === Number(employeeId)
+    );
+
+    if (!assignment) {
+      return res.status(404).json({
+        error: 'No active assignment found for that employee.',
+      });
+    }
   } else if (active.length === 1) {
     assignment = active[0];
   } else {
-    return res.status(400).json({ error: 'Multiple assignments exist; specify the employee or parent asset to return.' });
+    return res.status(400).json({
+      error:
+        'Multiple assignments exist; specify the employee or parent asset to return.',
+    });
   }
 
   const parent = assignment.parentAssetId
-    ? db.data.assets.find(a => a.id === Number(assignment.parentAssetId))
+    ? db.data.assets.find(
+        a => a.id === Number(assignment.parentAssetId)
+      )
     : null;
 
-  const employeeIdForLog = parent ? activeParentAssignment(parent.id)?.employeeId || assignment.employeeId : assignment.employeeId;
+  const employeeIdForLog = parent
+    ? activeParentAssignment(parent.id)?.employeeId || assignment.employeeId
+    : assignment.employeeId;
+
   const employeeName = userName(employeeIdForLog);
 
   assignment.returnedDate = new Date().toISOString().slice(0, 10);
@@ -608,8 +858,16 @@ assetsRouter.post('/:id/return', requireRole('Admin'), async (req, res) => {
     asset.status = 'Available';
   }
 
-  const locationLabel = parent ? ` from ${parent.serialNumber || parent.assetTag}` : ` by ${employeeName}`;
-  logAction(id, 'Returned', req.user.id, `${asset.name} (${asset.assetTag}) was returned${locationLabel}.`);
+  const locationLabel = parent
+    ? ` from ${parent.serialNumber || parent.assetTag}`
+    : ` by ${employeeName}`;
+
+  logAction(
+    id,
+    'Returned',
+    req.user.id,
+    `${asset.name} (${asset.assetTag}) was returned${locationLabel}.`
+  );
 
   await db.write();
   res.json(enrichAsset(asset));
@@ -619,10 +877,21 @@ assetsRouter.post('/:id/retire', requireRole('Admin'), async (req, res) => {
   const id = Number(req.params.id);
   const asset = db.data.assets.find(a => a.id === id);
   if (!asset) return res.status(404).json({ error: 'Asset not found.' });
-  if (activeAssignmentsFor(id).length > 0) return res.status(409).json({ error: 'Return this asset before retiring it.' });
+
+  if (activeAssignmentsFor(id).length > 0) {
+    return res.status(409).json({
+      error: 'Return this asset before retiring it.',
+    });
+  }
 
   asset.status = 'Retired';
-  logAction(id, 'Status Changed', req.user.id, `${asset.name} (${asset.assetTag}) was retired from active service by ${req.user.name}.`);
+  logAction(
+    id,
+    'Status Changed',
+    req.user.id,
+    `${asset.name} (${asset.assetTag}) was retired from active service by ${req.user.name}.`
+  );
+
   await db.write();
   res.json(enrichAsset(asset));
 });
@@ -634,22 +903,31 @@ assetsRouter.get('/:id/history', requireRole('Admin', 'Manager'), (req, res) => 
     const teamIds = teamIdsOf(req.user.id);
     const everAssignedToTeam = db.data.assetAssignments.some(a => {
       if (a.assetId !== id) return false;
-      const employeeId = a.parentAssetId
-        ? activeParentAssignment(a.parentAssetId)?.employeeId || a.employeeId
+      const parent = a.parentAssetId
+        ? db.data.assets.find(x => x.id === Number(a.parentAssetId))
+        : null;
+      const employeeId = parent
+        ? activeParentAssignment(parent.id)?.employeeId || a.employeeId
         : a.employeeId;
       return teamIds.has(employeeId);
     });
 
     if (!everAssignedToTeam) {
-      return res.status(403).json({ error: 'You can only view history for assets assigned to your team.' });
+      return res.status(403).json({
+        error: 'You can only view history for assets assigned to your team.',
+      });
     }
   }
 
   const assignments = db.data.assetAssignments
     .filter(a => a.assetId === id)
     .map(a => {
-      const parent = a.parentAssetId ? db.data.assets.find(x => x.id === Number(a.parentAssetId)) : null;
-      const parentAssignment = parent ? activeParentAssignment(parent.id) : null;
+      const parent = a.parentAssetId
+        ? db.data.assets.find(x => x.id === Number(a.parentAssetId))
+        : null;
+      const parentAssignment = parent
+        ? activeParentAssignment(parent.id)
+        : null;
       const employeeId = parentAssignment?.employeeId || a.employeeId;
 
       return {
@@ -658,6 +936,8 @@ assetsRouter.get('/:id/history', requireRole('Admin', 'Manager'), (req, res) => 
         assignedByName: userName(a.assignedBy),
         parentAssetId: parent?.id || a.parentAssetId || null,
         parentAssetTag: parent?.assetTag || null,
+        parentAssetName: parent?.name || null,
+        parentAssetBrand: parent?.brand || null,
         parentSerialNumber: parent?.serialNumber || null,
       };
     })
@@ -665,7 +945,10 @@ assetsRouter.get('/:id/history', requireRole('Admin', 'Manager'), (req, res) => 
 
   const logs = db.data.assetLogs
     .filter(l => l.assetId === id)
-    .map(l => ({ ...l, performedByName: userName(l.performedBy) }))
+    .map(l => ({
+      ...l,
+      performedByName: userName(l.performedBy),
+    }))
     .sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1));
 
   res.json({ assignments, logs });
