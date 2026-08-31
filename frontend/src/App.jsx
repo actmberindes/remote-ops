@@ -3859,7 +3859,7 @@ function AssetDetailModal({ isOpen, onClose, asset }) {
 
                         {assignment.serialNumber && (
                           <div className="text-[10px] text-muted mt-0.5">
-                            S/N: {assignment.serialNumber}
+                            Serial#: {assignment.serialNumber}
                           </div>
                         )}
 
@@ -3875,7 +3875,7 @@ function AssetDetailModal({ isOpen, onClose, asset }) {
 
                         {assignment.serialNumber && (
                           <div className="text-[10px] text-muted mt-0.5">
-                            S/N: {assignment.serialNumber}
+                            Serial#: {assignment.serialNumber}
                           </div>
                         )}
 
