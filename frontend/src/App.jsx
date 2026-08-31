@@ -3864,7 +3864,7 @@ function AssetDetailModal({ isOpen, onClose, asset }) {
                         )}
 
                         <div className="text-[10px] text-muted mt-0.5">
-                          {assignment.assignedDate}
+                          Assigned {assignment.assignedDate}
                         </div>
                       </>
                     ) : (
