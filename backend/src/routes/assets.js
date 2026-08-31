@@ -9,6 +9,12 @@ const COMPONENT_PARENT_TYPES = {
   'UPS Battery': 'UPS',
   SSD: 'Desktop',
   RAM: 'Desktop',
+  'Video Card': 'Desktop',
+};
+const COMPONENT_PARENT_ALTERNATES = {
+  SSD: ['Desktop', 'Laptop'],
+  RAM: ['Desktop', 'Laptop'],
+  'Video Card': ['Desktop', 'Laptop'],
 };
 const QUANTITY_TRACKED_TYPES = [
   'Mouse',
@@ -50,6 +56,16 @@ function isComponentAsset(asset) {
   return !!COMPONENT_PARENT_TYPES[asset?.type];
 }
 
+function componentParentTypes(assetType) {
+  if (COMPONENT_PARENT_ALTERNATES[assetType]) {
+    return COMPONENT_PARENT_ALTERNATES[assetType];
+  }
+
+  const parentType = COMPONENT_PARENT_TYPES[assetType];
+
+  return parentType ? [parentType] : [];
+}
+
 function componentParentType(assetType) {
   return COMPONENT_PARENT_TYPES[assetType] || null;
 }
@@ -82,6 +98,11 @@ function assignmentEmployee(asset, assignment) {
       employeeName: userName(parentAssignment.employeeId),
       assignedDate: assignment.assignedDate,
       parentAssetId: assignment.parentAssetId,
+      parentAssetName: parent.name || '',
+      parentAssetTag: parent.assetTag || '',
+      arentAssetBrand: parent.brand || '',
+      parentAssetSerialNumber: parent.serialNumber || '',
+      serialNumber: assignment.serialNumber || '',
     };
   }
 
@@ -91,6 +112,7 @@ function assignmentEmployee(asset, assignment) {
     employeeId: assignment.employeeId,
     employeeName: userName(assignment.employeeId),
     assignedDate: assignment.assignedDate,
+    serialNumber: assignment.serialNumber || '',
   };
 }
 
@@ -367,17 +389,23 @@ assetsRouter.get('/component-options/:type', requireRole('Admin'), (req, res) =>
   const componentType = req.params.type;
   const parentType = componentParentType(componentType);
 
-  if (!parentType) return res.status(400).json({ error: 'Unsupported component asset type.' });
+  if (parentTypes.length === 0) {
+  return res.status(400).json({
+    error: 'Unsupported component asset type.'
+  });
+}
 
   const options = db.data.assets
-    .filter(parent => parent.type === parentType)
+    .filter(parent =>
+  parentTypes.includes(parent.type)
+)
     .map(parent => {
       const parentAssignment = activeParentAssignment(parent.id);
       const existingComponentAssignment = activeComponentAssignmentToParent(parent.id, componentType);
       const assignedEmployeeName = parentAssignment ? userName(parentAssignment.employeeId) : null;
       const label = componentType === 'UPS Battery'
         ? `${parent.serialNumber || parent.assetTag} - ${assignedEmployeeName || 'Unassigned'}`
-        : `${parent.brand || parent.name || parent.assetTag} - ${assignedEmployeeName || 'Unassigned'}`;
+        : `${parent.name || parent.assetTag} - ${assignedEmployeeName || 'Unassigned'}`;
 
       return {
         id: parent.id,
@@ -420,14 +448,26 @@ assetsRouter.post('/:id/assign-component', requireRole('Admin'), async (req, res
   const asset = db.data.assets.find(a => a.id === id);
   if (!asset) return res.status(404).json({ error: 'Asset not found.' });
 
-  const expectedParentType = componentParentType(asset.type);
-  if (!expectedParentType) return res.status(400).json({ error: 'This asset is not a supported component.' });
+  const expectedParentTypes =
+  componentParentTypes(asset.type);
+  if (expectedParentTypes.length === 0) {
+  return res.status(400).json({
+    error: 'This asset is not a supported component.'
+  });
+}
   if (!parentAssetId) return res.status(400).json({ error: 'parentAssetId is required.' });
 
   const parent = db.data.assets.find(a => a.id === Number(parentAssetId));
-  if (!parent || parent.type !== expectedParentType) {
-    return res.status(400).json({ error: `A ${asset.type} must be assigned to a ${expectedParentType}.` });
-  }
+  if (
+  !parent ||
+  !expectedParentTypes.includes(parent.type)
+) {
+  return res.status(400).json({
+    error:
+      `${asset.type} must be assigned to ` +
+      `${expectedParentTypes.join(' or ')}.`
+  });
+}
 
   const parentAssignment = activeParentAssignment(parent.id);
   if (!parentAssignment) {

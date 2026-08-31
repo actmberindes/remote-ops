@@ -3098,7 +3098,7 @@ function AdminTickets() {
 
 /* ============================== ASSET MANAGEMENT & LIFECYCLE ENGINE ============================== */
 
-const ASSET_TYPES = ['Desktop', 'Laptop', 'Printer', 'Monitor', 'Server', 'UPS', 'UPS Battery', 'SSD', 'RAM', 'Mouse', 'Keyboard', 'Headset', 'Webcam', 'Software License', 'Others'];
+const ASSET_TYPES = ['Desktop', 'Laptop', 'Printer', 'Monitor', 'Server', 'UPS', 'UPS Battery', 'SSD', 'RAM', 'Video Card', 'Mouse', 'Keyboard', 'Headset', 'Webcam', 'Software License', 'Others'];
 const CONSUMABLE_TYPES = ['Mouse', 'Keyboard', 'UPS Battery', 'Headset', 'Webcam'];
 const QUANTITY_TRACKED_TYPES = [
   'Mouse',
@@ -3110,8 +3110,9 @@ const QUANTITY_TRACKED_TYPES = [
 const emptyAssetForm = { name: '', type: ASSET_TYPES[0], brand: '', model: '', serialNumber: '', purchaseDate: '',  cost: '', warrantyExpiry: '', remarks: '', specs: {}, imageUrl: '', quantity: '' };
 const COMPONENT_PARENT_TYPES = {
   'UPS Battery': 'UPS',
-  SSD: 'Desktop',
-  RAM: 'Desktop'
+  SSD: 'Desktop/Laptop',
+  RAM: 'Desktop/Laptop',
+  'Video Card': 'Desktop/Laptop'
 };
 
 // Drives the dynamic "Specifications" section of the Add/Edit Asset form — different fields per asset type.
@@ -3141,6 +3142,13 @@ RAM: [
   'Memory Type',
   'Speed',
   'Module Type'
+],
+'Video Card': [
+  'GPU / Chipset',
+  'VRAM',
+  'Interface',
+  'Outputs',
+  'Power Requirement'
 ],
   Mouse: ['Connectivity', 'DPI', 'Buttons'],
   Keyboard: ['Connectivity', 'Layout', 'Switch Type'],
@@ -3781,10 +3789,12 @@ function AssetDetailModal({ isOpen, onClose, asset }) {
           {asset.type}
         </div>
 
-        <div>
-          <span className="text-muted">Serial #:</span>{' '}
-          {asset.serialNumber || '—'}
-        </div>
+        {!QUANTITY_TRACKED_TYPES.includes(asset.type) && (
+          <div>
+            <span className="text-muted">Serial #:</span>{' '}
+            {asset.serialNumber || '—'}
+          </div>
+        )}
 
         <div>
           <span className="text-muted">Purchased:</span>{' '}
@@ -3814,32 +3824,72 @@ function AssetDetailModal({ isOpen, onClose, asset }) {
             </div>
 
             <div className="flex flex-col gap-2">
-              {(asset.assignees || []).map((assignment, index) => (
-                <div
-                  key={`${assignment.employeeId}-${index}`}
-                  className="p-2.5 rounded-lg border border-[var(--border)]"
-                >
-                <div className="font-semibold">
-                  {assignment.employeeName}
-                </div>
-                {assignment.serialNumber && (
-                  <div className="text-[10px] text-muted mt-0.5">
-                    S/N: {assignment.serialNumber}
-                </div>
-                )}
-            <div className="text-[10px] text-muted mt-0.5">
-              Assigned {assignment.assignedDate}
+              {(asset.assignees || []).map((assignment, index) => {
+                const isComponent =
+                  !!assignment.parentAssetId;
+
+                return (
+                  <div
+                    key={`${assignment.employeeId}-${assignment.parentAssetId || 'employee'}-${index}`}
+                    className="p-2.5 rounded-lg border border-[var(--border)]"
+                  >
+                    {isComponent ? (
+                      <>
+                        <div className="font-semibold">
+                          {assignment.parentAssetName ||
+                            assignment.parentAssetTag ||
+                            'Parent Asset'}
+                        </div>
+
+                        <div className="text-[10px] text-muted mt-0.5">
+                          Employee: {assignment.employeeName}
+                        </div>
+
+                        {assignment.parentAssetBrand && (
+                          <div className="text-[10px] text-muted mt-0.5">
+                            Brand: {assignment.parentAssetBrand}
+                          </div>
+                        )}
+
+                        {assignment.parentAssetSerialNumber && (
+                          <div className="text-[10px] text-muted mt-0.5">
+                            Parent S/N: {assignment.parentAssetSerialNumber}
+                          </div>
+                        )}
+
+                        {assignment.serialNumber && (
+                          <div className="text-[10px] text-muted mt-0.5">
+                            S/N: {assignment.serialNumber}
+                          </div>
+                        )}
+
+                        <div className="text-[10px] text-muted mt-0.5">
+                          {assignment.assignedDate}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="font-semibold">
+                          {assignment.employeeName}
+                        </div>
+
+                        {assignment.serialNumber && (
+                          <div className="text-[10px] text-muted mt-0.5">
+                            S/N: {assignment.serialNumber}
+                          </div>
+                        )}
+
+                        <div className="text-[10px] text-muted mt-0.5">
+                          Assigned {assignment.assignedDate}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-            {assignment.parentAssetId && (
-              <div className="text-[10px] accent-text mt-0.5">
-                Attached to parent asset
-              </div>
-            )}
           </div>
-        ))}
-      </div>
-    </div>
-  )}
+        )}
       </div>
       {hasAnySpec && (
         <div className="mb-3">
