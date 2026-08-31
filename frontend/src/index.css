@@ -6,3 +6,28 @@ html, body, #root {
   width: 100%;
   min-height: 100%;
 }
+
+/* Keep modal dialogs within the viewport and scroll long content internally. */
+.fixed.inset-0.z-50 > .card {
+  max-height: 90vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Make the scrollbar unobtrusive while keeping it easy to use. */
+.fixed.inset-0.z-50 > .card::-webkit-scrollbar {
+  width: 8px;
+}
+
+.fixed.inset-0.z-50 > .card::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.fixed.inset-0.z-50 > .card::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.45);
+  border-radius: 999px;
+}
+
+.fixed.inset-0.z-50 > .card {
+  scrollbar-width: thin;
+}
