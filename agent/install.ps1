@@ -26,6 +26,13 @@ if (-not (Test-Path -LiteralPath $SourceVbs -PathType Leaf)) {
 }
 
 # --------------------------------------------------
+# Stop an already-running copy before replacing/re-enrolling
+# --------------------------------------------------
+
+Get-Process -Name "remote-ops-agent" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 500
+
+# --------------------------------------------------
 # Create installation directory
 # --------------------------------------------------
 
@@ -35,6 +42,15 @@ New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
 Copy-Item -Path $SourceExe -Destination $TargetExe -Force
 Copy-Item -Path $SourceVbs -Destination $TargetVbs -Force
+
+# Windows can preserve a downloaded-file security zone on executables. Remove
+# that marker so the enrollment executable can start normally from PowerShell.
+try {
+    Unblock-File -LiteralPath $TargetExe -ErrorAction Stop
+}
+catch {
+    # Non-fatal: some local files have no zone marker to remove.
+}
 
 # --------------------------------------------------
 # Check enrollment
@@ -53,18 +69,17 @@ if (-not $isAlreadyEnrolled) {
     Write-Host "==========================================="
     Write-Host ""
     Write-Host "Have the Admin enrollment code ready."
-    Write-Host "The enrollment window will remain visible while the code is entered."
+    Write-Host "The enrollment prompt will remain visible while the code is entered."
     Write-Host ""
 
-    $process = Start-Process `
-        -FilePath $TargetExe `
-        -ArgumentList "--enroll" `
-        -WorkingDirectory $InstallDir `
-        -Wait `
-        -PassThru
+    # Run the executable directly instead of Start-Process. This keeps the
+    # enrollment prompt attached to the current PowerShell console and avoids
+    # Windows Start-Process cancellation errors.
+    & $TargetExe --enroll
+    $exitCode = $LASTEXITCODE
 
-    if ($process.ExitCode -ne 0) {
-        throw "Device enrollment did not complete successfully. Exit code: $($process.ExitCode)"
+    if ($exitCode -ne 0) {
+        throw "Device enrollment did not complete successfully. Exit code: $exitCode"
     }
 
     Write-Host ""
