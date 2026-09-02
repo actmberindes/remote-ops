@@ -39,6 +39,15 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
 
   async function tickScheduled() {
     if (!running) return;
+
+    // Do not capture or upload screenshots while Windows has no interactive user.
+    // This keeps the portal free of sign-out captures and avoids unnecessary files.
+    const telemetry = getDeviceState();
+    if (telemetry.state === 'logged-out') {
+      log('Scheduled screenshot skipped: no logged-in Windows user.');
+      return;
+    }
+
     try {
       const filePath = await capture.captureFull();
       const uploaded = await client.uploadFile(config.deviceToken, filePath);
@@ -52,6 +61,14 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
 
   async function tickLive() {
     if (!running) return;
+
+    // Do not capture or upload Live View frames while Windows has no interactive user.
+    const telemetry = getDeviceState();
+    if (telemetry.state === 'logged-out') {
+      log('Live frame skipped: no logged-in Windows user.');
+      return;
+    }
+
     try {
       const filePath = await capture.captureLive();
       const uploaded = await client.uploadFile(config.deviceToken, filePath);
@@ -93,7 +110,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
     await sendHeartbeat();
   }
 
-  // Monitoring is now automatic for an enrolled device. There is no employee
+  // Monitoring is automatic for an enrolled device. There is no employee
   // Start/Stop session check in the scheduler.
   const heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_PERIOD_MS);
   const configTimer = setInterval(pollConfig, HEARTBEAT_PERIOD_MS);
