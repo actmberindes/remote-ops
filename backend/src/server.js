@@ -13,6 +13,7 @@ import { uploadsRouter, uploadsDir } from './uploads.js';
 import { agentRouter } from './routes/agent.js';
 import { activityRouter, purgeOldActivity } from './routes/activity.js';
 import { db, nextAssetTag } from './db.js';
+import { purgeMonitoringFiles } from './monitoring-retention.js';
 
 const app = express();
 
@@ -68,14 +69,29 @@ app.use('/api/assets', assetsRouter);
 app.use('/api/asset-tags', assetTagsRouter);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/agent', agentRouter);
+
+// Live View timelapse/video generation has been removed from the portal.
+// Keep the old route blocked so stale clients cannot generate new videos.
+app.use('/api/activity/live-video', (req, res) => {
+  res.status(410).json({ error: 'Live View Timelapse video generation has been removed.' });
+});
 app.use('/api/activity', activityRouter);
 
-// Run the monitoring-file/database retention sweep at startup and periodically.
-// This ensures Live View files do not remain on disk just because nobody opened
-// the monitoring pages or uploaded another frame recently.
-try {
+async function runMonitoringRetention() {
   purgeOldActivity();
+  purgeMonitoringFiles({
+    monitoringUploadsDir: `${uploadsDir}/monitoring`,
+    liveViewDays: db.data.agentConfig.liveViewRetentionDays,
+    screenshotDays: db.data.agentConfig.screenshotRetentionDays,
+    screenshots: db.data.screenshots,
+    liveFrames: db.data.liveFrames,
+    liveFrameHistory: db.data.liveFrameHistory,
+  });
   await db.write();
+}
+
+try {
+  await runMonitoringRetention();
 } catch (err) {
   console.error(`Initial monitoring retention cleanup failed: ${err.message}`);
 }
@@ -83,8 +99,7 @@ try {
 const RETENTION_SWEEP_MS = 60 * 60 * 1000;
 setInterval(async () => {
   try {
-    purgeOldActivity();
-    await db.write();
+    await runMonitoringRetention();
   } catch (err) {
     console.error(`Monitoring retention sweep failed: ${err.message}`);
   }
