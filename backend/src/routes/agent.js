@@ -151,7 +151,12 @@ agentRouter.post('/quit-authorize', requireDevice(db), async (req, res) => {
   const matches = sameLength && crypto.timingSafeEqual(Buffer.from(configured), Buffer.from(supplied));
   if (!matches) return res.status(403).json({ error: 'Invalid administrator code.' });
 
-  res.json({ ok: true, authorized: true });
+  const now = new Date().toISOString();
+  recordStateChange(req.device, 'offline', now);
+  req.device.lastSeenAt = now;
+  await db.write();
+
+  res.json({ ok: true, authorized: true, status: 'offline', serverTime: now });
 });
 
 agentRouter.get('/config-admin', requireAuth(db), requireRole('Admin'), (req, res) => res.json(db.data.agentConfig));
