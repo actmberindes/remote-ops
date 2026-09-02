@@ -1,0 +1,54 @@
+name: Build Remote Ops Agent
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'agent/src/**'
+      - 'agent/package.json'
+      - 'agent/package-lock.json'
+      - '.github/workflows/build-agent.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build-agent:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+          cache-dependency-path: agent/package-lock.json
+
+      - name: Install agent dependencies
+        working-directory: agent
+        run: npm ci
+
+      - name: Build Windows executable
+        working-directory: agent
+        run: npm run build:win
+
+      - name: Replace checked-in executable
+        shell: pwsh
+        run: |
+          Copy-Item -LiteralPath 'agent/dist/remote-ops-agent.exe' -Destination 'agent/remote-ops-agent.exe' -Force
+
+      - name: Commit rebuilt executable
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agent/remote-ops-agent.exe
+          if (git diff --cached --quiet) {
+            Write-Host 'No executable changes to commit.'
+            exit 0
+          }
+          git commit -m 'Build updated Remote Ops Agent executable'
+          git push
