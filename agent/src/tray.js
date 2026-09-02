@@ -6,7 +6,7 @@ const SysTrayModule = require('systray2');
 const SysTray = SysTrayModule.default || SysTrayModule;
 
 // Real 16x16 Windows ICO payload.
-const ICON_BASE64 = 'AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAADrYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/8pZs//fBqf/1spP/9bOU/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/7ntH//3u6P/sai7/62Ml/+54Q//rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/ufUn/9ryi//rYyf/xlGn/62Ml//fBqf/0q4r/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/vf0v/86N//+tkJ//98uz/7XI6/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml//rczf/wi13/+tjI/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/9KyM/+12QP/2uZ3/+tjJ//a2mP/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml//ray//wi13/8ZFm//a8of/uekX/+Mmz/+xsMv/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/ym3P/9KyL/+xsMv/74NT/62Ml//a5nf/0rIz/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml//CIWP/xkWX//Ong//OkgP/5z7z/74VV/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+xsMf/sbTP/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
+const ICON_BASE64 = 'AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAADrYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/8pZs//fBqf/1spP/9bOU/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/7ntH//3u6P/sai7/62Ml/+54Q//rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/ufUn/9ryi//rYyf/xlGn/62Ml//fBqf/0q4r/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/vf0v/86N//+tkJ//98uz/7XI6/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml//rczf/wi13/+tjI/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/9KyM/+12QP/2uZ3/+tjJ//a2mP/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml//ray//wi13/8ZFm//a8of/uekX/+Mmz/+xsMv/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/ym3P/9KyL/+xsMv/74NT/62Ml//a5nf/0rIz/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml//CIWP/xkWX//Ong//OkgP/5z7z/74VV/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+xsMf/sbTP/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/62Ml/+tjJf/rYyX/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
 
 function ensureTrayIcon() {
   const dir = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'RemoteOpsAgent');
@@ -95,7 +95,13 @@ function startTray({ employeeName, deviceToken, client, onQuit } = {}) {
 
   const itemEmployee = { title: `Assigned: ${employeeName || 'Unassigned'}`, tooltip: 'Managed employee assignment', enabled: false };
   const itemStatus = { title: 'Device Offline', tooltip: 'Remote Ops device heartbeat state', enabled: false };
-  const itemQuit = { title: 'Quit (Admin)', tooltip: 'Requires the Remote Ops administrator code', enabled: true };
+
+  // Temporarily disabled. The Quit (Admin) flow will be revisited later.
+  const itemQuit = {
+    title: 'Quit (Admin)',
+    tooltip: 'Temporarily disabled — this action is not available',
+    enabled: false,
+  };
 
   const systray = new SysTray({
     menu: { icon: ensureTrayIcon(), title: 'Remote Ops', tooltip: 'Remote Ops Device Agent', items: [itemEmployee, itemStatus, SysTray.separator, itemQuit] },
@@ -103,31 +109,8 @@ function startTray({ employeeName, deviceToken, client, onQuit } = {}) {
     copyDir: true,
   });
 
-  let quitting = false;
-  systray.onClick(action => {
-    if (quitting || action?.item?.title !== 'Quit (Admin)') return;
-    quitting = true;
-
-    (async () => {
-      try {
-        if (!client || !deviceToken) throw new Error('Admin quit is unavailable because device authorization is not initialized.');
-        const code = await promptAdminCodeInteractive();
-        if (!code) { quitting = false; return; }
-        await client.authorizeQuit(deviceToken, code);
-        onQuit?.();
-        await systray.kill(false);
-        process.exit(0);
-      } catch (err) {
-        quitting = false;
-        console.error(`Admin quit authorization failed: ${err.message}`);
-      }
-    })().catch(err => {
-      quitting = false;
-      console.error(`Tray quit action failed: ${err.message}`);
-    });
-  });
-
   const ready = systray.ready();
+
   function updateStatus(state) {
     const labels = { active: 'Device Active', idle: 'Device Idle', 'logged-out': 'No User Logged In', offline: 'Device Offline', revoked: 'Device Revoked', pending: 'Enrollment Pending' };
     const label = labels[state] || 'Device Offline';
@@ -135,6 +118,7 @@ function startTray({ employeeName, deviceToken, client, onQuit } = {}) {
     itemStatus.tooltip = `Remote Ops device state: ${label}`;
     systray.sendAction({ type: 'update-item', item: itemStatus });
   }
+
   async function kill() { try { await systray.kill(false); } catch (_) {} }
   return { ready, setStatus: updateStatus, kill };
 }
