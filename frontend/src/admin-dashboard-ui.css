@@ -1,0 +1,221 @@
+/* Admin Dashboard visual system — presentation only. */
+
+.admin-dashboard-mode {
+  background:
+    radial-gradient(circle at 85% 0%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 28%),
+    var(--bg);
+}
+
+.admin-dashboard-command-bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+  padding: 22px 24px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--surface), color-mix(in srgb, var(--surface) 86%, var(--accent) 14%));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.10);
+  position: relative;
+  overflow: hidden;
+}
+
+.admin-dashboard-command-bar::after {
+  content: '';
+  position: absolute;
+  width: 190px;
+  height: 190px;
+  right: -70px;
+  top: -100px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  pointer-events: none;
+}
+
+.admin-dashboard-command-copy {
+  min-width: 0;
+}
+
+.admin-dashboard-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 9px;
+  margin-bottom: 7px;
+  border-radius: 999px;
+  background: var(--info-tint);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.admin-dashboard-command-bar h1 {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: clamp(20px, 2vw, 27px);
+  line-height: 1.15;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.admin-dashboard-command-bar p {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+  max-width: 680px;
+}
+
+.admin-dashboard-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  position: relative;
+  z-index: 1;
+}
+
+.admin-dashboard-quick-actions button {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform .15s ease, border-color .15s ease, background .15s ease;
+}
+
+.admin-dashboard-quick-actions button:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent);
+  background: var(--info-tint);
+}
+
+.admin-kpi-grid > .card {
+  min-height: 112px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid var(--border) !important;
+  box-shadow: 0 7px 20px rgba(0, 0, 0, 0.08) !important;
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+
+.admin-kpi-grid > .card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), transparent);
+}
+
+.admin-kpi-grid > .card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.12) !important;
+}
+
+.admin-kpi-grid > .card > div:first-child {
+  width: 44px !important;
+  height: 44px !important;
+  padding: 0 !important;
+  border-radius: 12px !important;
+}
+
+.admin-kpi-grid > .card > div:first-child svg {
+  width: 20px;
+  height: 20px;
+}
+
+.admin-kpi-grid .text-2xl {
+  font-size: 27px;
+  letter-spacing: -0.04em;
+}
+
+.admin-kpi-meta {
+  position: absolute;
+  left: 16px;
+  bottom: 11px;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 600;
+  white-space: nowrap;
+  max-width: calc(100% - 20px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-dashboard-panel,
+.admin-dashboard-roster,
+.admin-monitoring-panel {
+  border: 1px solid var(--border) !important;
+  border-radius: 16px;
+  box-shadow: 0 7px 20px rgba(0, 0, 0, 0.07) !important;
+}
+
+.admin-dashboard-panel > div:first-child,
+.admin-dashboard-roster > div:first-child,
+.admin-monitoring-panel > div:first-child {
+  letter-spacing: -0.01em;
+}
+
+.admin-dashboard-panel .recharts-wrapper,
+.admin-dashboard-panel .recharts-surface,
+.admin-dashboard-roster,
+.admin-monitoring-panel {
+  transition: transform .16s ease;
+}
+
+.admin-dashboard-roster > div:last-child > div,
+.admin-monitoring-panel .border {
+  transition: border-color .15s ease, background .15s ease;
+}
+
+.admin-dashboard-roster > div:last-child > div:hover,
+.admin-monitoring-panel .border:hover {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  background: color-mix(in srgb, var(--bg) 82%, var(--accent) 18%) !important;
+}
+
+/* Give the dashboard a little more visual breathing room without changing layout semantics. */
+.admin-dashboard-mode main,
+.admin-dashboard-mode {
+  scroll-behavior: smooth;
+}
+
+@media (max-width: 900px) {
+  .admin-dashboard-command-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .admin-dashboard-quick-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-dashboard-command-bar {
+    padding: 18px;
+  }
+
+  .admin-dashboard-quick-actions button {
+    flex: 1 1 auto;
+  }
+
+  .admin-kpi-meta {
+    position: static;
+    margin-top: 8px;
+    white-space: normal;
+  }
+
+  .admin-kpi-grid > .card {
+    min-height: 128px;
+  }
+}
