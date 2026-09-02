@@ -31,30 +31,25 @@ async function requestBlob(path, { method = 'GET', body } = {}) {
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-
   const res = await fetch(`${API_URL}${path}`, {
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-
   if (!res.ok) {
     let data = {};
     try { data = await res.json(); } catch (e) { /* non-json error */ }
     throw new Error(data.error || `Request failed (${res.status})`);
   }
-
   return res.blob();
 }
 
 export const api = {
   getToken, setToken,
-
   managers: () => request('/auth/managers', { auth: false }),
   login: (email, password) => request('/auth/login', { method: 'POST', body: { email, password }, auth: false }),
   register: (form) => request('/auth/register', { method: 'POST', body: form, auth: false }),
   me: () => request('/auth/me'),
-
   users: {
     list: () => request('/users'),
     create: (form) => request('/users', { method: 'POST', body: form }),
@@ -62,23 +57,19 @@ export const api = {
     remove: (id) => request(`/users/${id}`, { method: 'DELETE' }),
     setMyStatus: (status) => request('/users/me/status', { method: 'PATCH', body: { status } }),
   },
-
   applications: {
     list: () => request('/applications'),
     create: (form) => request('/applications', { method: 'POST', body: form }),
     patch: (id, body) => request(`/applications/${id}`, { method: 'PATCH', body }),
   },
-
   timeSessions: {
     list: () => request('/time-sessions'),
     create: (body) => request('/time-sessions', { method: 'POST', body }),
   },
-
   notifications: {
     list: () => request('/notifications'),
     markAllRead: () => request('/notifications/mark-all-read', { method: 'POST' }),
   },
-
   uploads: {
     upload: async (file) => {
       const headers = {};
@@ -94,7 +85,6 @@ export const api = {
     },
     fileUrl: (path) => (path && path.startsWith('/uploads/') ? `${API_URL.replace(/\/api$/, '')}${path}` : path),
   },
-
   tickets: {
     list: () => request('/tickets'),
     get: (id) => request(`/tickets/${id}`),
@@ -104,7 +94,6 @@ export const api = {
     update: (id, body) => request(`/tickets/${id}`, { method: 'PATCH', body }),
     assignAsset: (id, assetId) => request(`/tickets/${id}/assign-asset`, { method: 'POST', body: { assetId } }),
   },
-
   assets: {
     list: () => request('/assets'),
     create: (body) => request('/assets', { method: 'POST', body }),
@@ -120,33 +109,16 @@ export const api = {
     history: (id) => request(`/assets/${id}/history`),
     printTag: async (id) => {
       const token = getToken();
-
-      const res = await fetch(
-        `${API_URL}/asset-tags/${id}/print`,
-        {
-          headers: token
-            ? { Authorization: `Bearer ${token}` }
-            : {},
-        }
-      );
-
+      const res = await fetch(`${API_URL}/asset-tags/${id}/print`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
       const html = await res.text();
-
       if (!res.ok) {
         let message = `Request failed (${res.status})`;
-
-        try {
-          const data = JSON.parse(html);
-          message = data.error || message;
-        } catch (_) {}
-
+        try { const data = JSON.parse(html); message = data.error || message; } catch (_) {}
         throw new Error(message);
       }
-
       return html;
     },
   },
-
   activity: {
     liveView: () => request('/activity/live-view'),
     liveHistory: ({ employeeId, date, limit } = {}) => {
@@ -157,11 +129,6 @@ export const api = {
       const qs = params.toString();
       return request(`/activity/live-history${qs ? `?${qs}` : ''}`);
     },
-    liveVideo: ({ employeeId, date, startAt, endAt }) =>
-      requestBlob('/activity/live-video', {
-        method: 'POST',
-        body: { employeeId, date, startAt, endAt },
-      }),
     screenshots: ({ employeeId, date, limit } = {}) => {
       const params = new URLSearchParams();
       if (employeeId) params.set('employeeId', employeeId);
@@ -180,7 +147,6 @@ export const api = {
       return request(`/activity/web-usage${qs ? `?${qs}` : ''}`);
     },
   },
-
   agent: {
     registerDevice: (body) => request('/agent/devices/register', { method: 'POST', body }),
     devices: () => request('/agent/devices'),
