@@ -15,7 +15,7 @@ const defaultData = {
   agentConfig: {
     screenshotIntervalMinutes: 10,
     liveViewFrameIntervalSeconds: 5,
-    screenshotRetentionDays: 7,
+    screenshotRetentionDays: 3,
     liveViewRetentionDays: 3,
     webUsageRetentionDays: 7,
   },
@@ -40,6 +40,9 @@ for (const device of db.data.devices) {
 }
 if (db.data.agentConfig && db.data.agentConfig.screenshotRetentionDays === 30 && !db.data.agentConfig.liveViewRetentionDays) {
   db.data.agentConfig.screenshotRetentionDays = 7;
+}
+if (db.data.agentConfig && db.data.agentConfig.screenshotRetentionDays === undefined) {
+  db.data.agentConfig.screenshotRetentionDays = 3;
 }
 if (db.data.agentConfig && db.data.agentConfig.liveViewRetentionDays === undefined) {
   db.data.agentConfig.liveViewRetentionDays = 3;
