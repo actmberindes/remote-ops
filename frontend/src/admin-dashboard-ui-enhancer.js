@@ -17,7 +17,15 @@ function textOf(el) {
 function isAdminDashboard() {
   const header = document.querySelector('header');
   const main = document.querySelector('main');
-  return Boolean(header && main && textOf(header).includes('Admin Dashboard'));
+  if (!header || !main || !textOf(header).includes('Admin Dashboard')) return false;
+
+  // The header keeps the role label on every Admin page, so determine the
+  // actual page from the active sidebar item. Only the Dashboard item gets
+  // the dashboard-only UI treatment.
+  const dashboardButton = [...document.querySelectorAll('aside button')]
+    .find(btn => textOf(btn).toLowerCase() === 'dashboard');
+
+  return Boolean(dashboardButton?.classList.contains('nav-active'));
 }
 
 function findNavButton(label) {
