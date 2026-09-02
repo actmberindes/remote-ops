@@ -151,12 +151,10 @@ async function enhanceBulkAssignModal() {
     event.stopPropagation();
     event.stopImmediatePropagation();
 
-    const selectedIds = [
-      ...[...modal.querySelectorAll('input[type="checkbox"]')]
-        .filter(input => input.checked)
-        .map(input => Number(input.value))
-        .filter(Number.isFinite)
-    ];
+    const selectedIds = [...modal.querySelectorAll('input[type="checkbox"]')]
+      .filter(input => input.checked)
+      .map(input => Number(input.value))
+      .filter(Number.isFinite);
 
     if (!selectedIds.length) return;
 
@@ -164,6 +162,7 @@ async function enhanceBulkAssignModal() {
     const assetName = headingText.replace(/^Bulk Assign\s+/, '').trim();
     const assets = await loadAssets();
     const asset = assets.find(item => item.name === assetName);
+
     if (!asset) {
       window.alert('Unable to identify the asset for bulk assignment. Please close and reopen the dialog.');
       return;
@@ -174,7 +173,6 @@ async function enhanceBulkAssignModal() {
     button.textContent = 'Assigning…';
 
     try {
-      await getJson(`/assets/${asset.id}`); // confirms the token/session is still valid
       const response = await fetch(`${API_URL}/assets/${asset.id}/bulk-assign`, {
         method: 'POST',
         headers: {
