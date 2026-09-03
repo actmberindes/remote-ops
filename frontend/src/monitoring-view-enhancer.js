@@ -65,9 +65,7 @@ function injectStyles() {
     .remoteops-display-image{width:100%;height:100%;object-fit:cover;display:block}
     .remoteops-display-empty{display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--text-muted);font-size:9px}
     .remoteops-display-empty span:first-child{font-size:22px}
-    .remoteops-display-badge{position:absolute;left:7px;top:7px;display:inline-flex;align-items:center;gap:5px;padding:4px 7px;border-radius:999px;background:rgba(0,0,0,.72);color:#fff;font-size:8px;font-weight:900;letter-spacing:.08em}
-    .remoteops-display-dot{width:6px;height:6px;border-radius:50%;display:inline-block}
-    .remoteops-display-name{position:absolute;right:7px;top:7px;padding:4px 7px;border-radius:999px;background:rgba(0,0,0,.72);color:#fff;font-size:8px;font-weight:800;max-width:55%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .remoteops-display-name{position:absolute;right:7px;top:7px;padding:4px 7px;border-radius:999px;background:rgba(0,0,0,.72);color:#fff;font-size:8px;font-weight:800;max-width:68%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .remoteops-display-updated{padding:6px 8px;color:var(--text-muted);font-size:8px}
     .remoteops-monitor-empty{padding:24px 10px;border:1px dashed var(--border);border-radius:10px;color:var(--text-muted);font-size:10px;text-align:center}
     @media (max-width:700px){.remoteops-size-control span{display:none}.remoteops-size-control input{width:70px}.remoteops-display-grid{grid-template-columns:1fr}}
@@ -135,7 +133,7 @@ function applyGridSize(card, type, size) {
   }
 }
 
-function displayHtml(display, state, employeeName) {
+function displayHtml(display, employeeName) {
   const imageUrl = uploadUrl(display?.frameUrl);
   const displayName = escapeHtml(display?.displayName || `Display ${Number(display?.displayIndex) || 1}`);
   const captured = display?.capturedAt ? new Date(display.capturedAt) : null;
@@ -143,12 +141,9 @@ function displayHtml(display, state, employeeName) {
   const image = imageUrl
     ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(employeeName)} — ${displayName}" class="remoteops-display-image" />`
     : `<div class="remoteops-display-empty"><span>▣</span><span>No recent frame</span></div>`;
-  const label = state === 'idle' ? 'IDLE' : 'LIVE';
-  const tone = state === 'idle' ? 'var(--warning)' : 'var(--success)';
   return `<div class="remoteops-display-frame">
     <div class="remoteops-display-canvas">
       ${image}
-      <span class="remoteops-display-badge"><span class="remoteops-display-dot" style="background:${tone}"></span>${label}</span>
       <span class="remoteops-display-name">${displayName}</span>
     </div>
     <div class="remoteops-display-updated">Updated ${escapeHtml(updated)}</div>
@@ -171,7 +166,7 @@ function employeeTileHtml(item) {
       </div>
       <span class="remoteops-live-state" style="color:${state === 'idle' ? 'var(--warning)' : 'var(--success)'};border-color:${state === 'idle' ? 'var(--warning)' : 'var(--success)'}33">${state === 'idle' ? 'IDLE' : 'LIVE'}</span>
     </div>
-    <div class="remoteops-display-grid">${displays.map(display => displayHtml(display, state, employeeName)).join('')}</div>
+    <div class="remoteops-display-grid">${displays.map(display => displayHtml(display, employeeName)).join('')}</div>
   </div>`;
 }
 
