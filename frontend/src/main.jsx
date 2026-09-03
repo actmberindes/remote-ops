@@ -5,6 +5,7 @@ import './index.css';
 import './admin-dashboard-ui.css';
 import './asset-manager-assignment-enhancer.js';
 import './admin-dashboard-ui-enhancer.js';
+import './live-view-idle-enhancer.js';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
