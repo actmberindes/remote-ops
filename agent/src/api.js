@@ -34,8 +34,8 @@ function createClient(apiUrl) {
     heartbeat: (deviceToken, telemetry) => request(apiUrl, '/agent/heartbeat', { method: 'POST', token: deviceToken, body: telemetry }),
     authorizeQuit: (deviceToken, code) => request(apiUrl, '/agent/quit-authorize', { method: 'POST', token: deviceToken, body: { code } }),
     uploadFile: (deviceToken, filePath) => request(apiUrl, '/uploads/monitoring', { method: 'POST', token: deviceToken, isMultipart: true, filePath }),
-    postScheduledScreenshot: (deviceToken, url, filename) => request(apiUrl, '/activity/screenshots', { method: 'POST', token: deviceToken, body: { url, filename, capturedAt: new Date().toISOString() } }),
-    postLiveFrame: (deviceToken, url) => request(apiUrl, '/activity/live-frame', { method: 'POST', token: deviceToken, body: { url, capturedAt: new Date().toISOString() } }),
+    postScheduledScreenshot: (deviceToken, url, filename, display = {}) => request(apiUrl, '/activity/screenshots', { method: 'POST', token: deviceToken, body: { url, filename, displayId: display.displayId ?? null, displayName: display.displayName ?? null, displayIndex: display.displayIndex ?? null, capturedAt: new Date().toISOString() } }),
+    postLiveFrame: (deviceToken, url, display = {}) => request(apiUrl, '/activity/live-frame', { method: 'POST', token: deviceToken, body: { url, displayId: display.displayId ?? null, displayName: display.displayName ?? null, displayIndex: display.displayIndex ?? null, capturedAt: new Date().toISOString() } }),
     postWebUsage: (deviceToken, entries) => request(apiUrl, '/activity/web-usage', { method: 'POST', token: deviceToken, body: { entries } }),
   };
 }
