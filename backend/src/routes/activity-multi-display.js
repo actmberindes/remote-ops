@@ -34,6 +34,16 @@ function displayKey(frame = {}) {
   return `display-${Number(frame.displayIndex) || 1}`;
 }
 
+function hasExplicitDisplayMetadata(frame = {}) {
+  return frame.displayId !== undefined && frame.displayId !== null && frame.displayId !== '';
+}
+
+function filterLegacyFrames(frames) {
+  if (!frames.some(hasExplicitDisplayMetadata)) return frames;
+  // Ignore pre-multi-display frames that had no displayId/display metadata.
+  return frames.filter(hasExplicitDisplayMetadata);
+}
+
 function displaySort(a, b) {
   const ai = Number(a.displayIndex) || 1;
   const bi = Number(b.displayIndex) || 1;
@@ -42,7 +52,7 @@ function displaySort(a, b) {
 }
 
 function latestFramesForDevice(deviceId) {
-  const frames = (db.data.liveFrames || []).filter(frame => frame.deviceId === deviceId);
+  const frames = filterLegacyFrames((db.data.liveFrames || []).filter(frame => frame.deviceId === deviceId));
   const latest = new Map();
   for (const frame of frames) {
     const key = displayKey(frame);
@@ -55,8 +65,9 @@ function latestFramesForDevice(deviceId) {
 }
 
 function latestHistoryFramesForDevice(deviceId) {
+  const frames = filterLegacyFrames((db.data.liveFrameHistory || []).filter(item => item.deviceId === deviceId));
   const latest = new Map();
-  for (const frame of (db.data.liveFrameHistory || []).filter(item => item.deviceId === deviceId)) {
+  for (const frame of frames) {
     const key = displayKey(frame);
     const existing = latest.get(key);
     if (!existing || new Date(frame.capturedAt || 0).getTime() > new Date(existing.capturedAt || 0).getTime()) {
