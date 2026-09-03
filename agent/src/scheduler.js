@@ -37,11 +37,23 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
     }
   }
 
+  async function uploadCaptures(captures, postCapture) {
+    const uploaded = [];
+    for (const item of captures) {
+      try {
+        const result = await client.uploadFile(config.deviceToken, item.filePath);
+        await postCapture(result, item);
+        uploaded.push({ ...item, url: result.url, filename: result.filename });
+      } finally {
+        capture.cleanup(item.filePath);
+      }
+    }
+    return uploaded;
+  }
+
   async function tickScheduled() {
     if (!running) return;
 
-    // Do not capture or upload screenshots while Windows has no interactive user.
-    // This keeps the portal free of sign-out captures and avoids unnecessary files.
     const telemetry = getDeviceState();
     if (telemetry.state === 'logged-out') {
       log('Scheduled screenshot skipped: no logged-in Windows user.');
@@ -49,11 +61,11 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
     }
 
     try {
-      const filePath = await capture.captureFull();
-      const uploaded = await client.uploadFile(config.deviceToken, filePath);
-      await client.postScheduledScreenshot(config.deviceToken, uploaded.url, uploaded.filename);
-      capture.cleanup(filePath);
-      log(`Scheduled screenshot captured and uploaded (${uploaded.url}).`);
+      const captures = await capture.captureFullAll();
+      await uploadCaptures(captures, async (result, item) => {
+        await client.postScheduledScreenshot(config.deviceToken, result.url, result.filename, item);
+      });
+      log(`Scheduled screenshot captured for ${captures.length} display(s).`);
     } catch (e) {
       log(`Scheduled capture failed: ${e.message}`);
     }
@@ -62,7 +74,6 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
   async function tickLive() {
     if (!running) return;
 
-    // Do not capture or upload Live View frames while Windows has no interactive user.
     const telemetry = getDeviceState();
     if (telemetry.state === 'logged-out') {
       log('Live frame skipped: no logged-in Windows user.');
@@ -70,10 +81,10 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
     }
 
     try {
-      const filePath = await capture.captureLive();
-      const uploaded = await client.uploadFile(config.deviceToken, filePath);
-      await client.postLiveFrame(config.deviceToken, uploaded.url);
-      capture.cleanup(filePath);
+      const captures = await capture.captureLiveAll();
+      await uploadCaptures(captures, async (result, item) => {
+        await client.postLiveFrame(config.deviceToken, result.url, item);
+      });
     } catch (e) {
       log(`Live frame failed: ${e.message}`);
     }
@@ -110,8 +121,6 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
     await sendHeartbeat();
   }
 
-  // Monitoring is automatic for an enrolled device. There is no employee
-  // Start/Stop session check in the scheduler.
   const heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_PERIOD_MS);
   const configTimer = setInterval(pollConfig, HEARTBEAT_PERIOD_MS);
 
