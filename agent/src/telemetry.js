@@ -33,17 +33,26 @@ function getInteractiveUser() {
     try { return os.userInfo().username || ''; } catch (_) { return ''; }
   }
 
-  // Do not rely on process.env.USERNAME because a Windows background service
-  // may run as LocalSystem or another service account. Ask Windows which
-  // interactive user is actually logged on to the machine.
-  const output = run('powershell.exe', [
-    '-NoProfile',
-    '-NonInteractive',
-    '-Command',
-    '$cs = Get-CimInstance Win32_ComputerSystem; if ($cs.UserName) { $cs.UserName }',
-  ]);
+  // The Remote Ops agent is launched from the user's Windows Startup folder.
+  // In an RDP session, the agent therefore runs inside that user's session.
+  // Using the process identity correctly identifies the RDP user.
+  //
+  // Win32_ComputerSystem.UserName is not suitable here because Microsoft
+  // documents that, in a Terminal Services session, it returns the console
+  // user rather than the user logged on through the terminal session.
+  const processUser = run('whoami.exe', []);
+  if (processUser && !/^(NT AUTHORITY\\)?(SYSTEM|LOCAL SERVICE|NETWORK SERVICE)$/i.test(processUser)) {
+    return processUser;
+  }
 
-  return output || '';
+  // Fallback for environments where whoami is unavailable.
+  const envUsername = String(process.env.USERNAME || '').trim();
+  if (envUsername) {
+    const envDomain = String(process.env.USERDOMAIN || '').trim();
+    return envDomain ? `${envDomain}\\${envUsername}` : envUsername;
+  }
+
+  return '';
 }
 
 function getIdentity() {
