@@ -1,48 +1,33 @@
 /* Admin Dashboard UI-only enhancement layer.
-   This file intentionally does not modify application data or business logic.
-   It adds presentation improvements plus read-only dashboard visualizations
-   backed by the existing Admin users/devices APIs. */
+   Presentation improvements only. Live workforce information is combined
+   into the Live Status Roster so the dashboard does not duplicate status data. */
 
 const ADMIN_DASHBOARD_CLASS = 'admin-dashboard-mode';
 const COMMAND_BAR_ID = 'admin-dashboard-command-bar';
-const SECTION_LABELS = {
-  workforce: 'Workforce & WFH Overview',
-  operations: 'IT Operations',
-  monitoring: 'Monitoring & Visibility',
-};
+const SECTION_LABELS = { workforce: 'Workforce & WFH Overview', operations: 'IT Operations', monitoring: 'Monitoring & Visibility' };
 const API_URL = import.meta.env.VITE_API_URL || 'http://192.168.1.2:4000/api';
 const LIVE_REFRESH_MS = 10000;
 let liveMonitorTimer = null;
 let liveMonitorActive = false;
 let liveMonitorRequest = 0;
 
-function textOf(el) {
-  return (el?.textContent || '').replace(/\s+/g, ' ').trim();
-}
+function textOf(el) { return (el?.textContent || '').replace(/\s+/g, ' ').trim(); }
 
 function isAdminDashboard() {
   const header = document.querySelector('header');
   const main = document.querySelector('main');
   if (!header || !main || !textOf(header).includes('Admin Dashboard')) return false;
-
-  const dashboardButton = [...document.querySelectorAll('aside button')]
-    .find(btn => textOf(btn).toLowerCase() === 'dashboard');
-
+  const dashboardButton = [...document.querySelectorAll('aside button')].find(btn => textOf(btn).toLowerCase() === 'dashboard');
   return Boolean(dashboardButton?.classList.contains('nav-active'));
 }
 
 function findNavButton(label) {
-  return [...document.querySelectorAll('aside button')]
-    .find(btn => textOf(btn).toLowerCase() === label.toLowerCase());
+  return [...document.querySelectorAll('aside button')].find(btn => textOf(btn).toLowerCase() === label.toLowerCase());
 }
-
-function goTo(label) {
-  findNavButton(label)?.click();
-}
+function goTo(label) { findNavButton(label)?.click(); }
 
 function addCommandBar(main) {
   if (document.getElementById(COMMAND_BAR_ID)) return;
-
   const bar = document.createElement('section');
   bar.id = COMMAND_BAR_ID;
   bar.className = 'admin-dashboard-command-bar';
@@ -51,34 +36,24 @@ function addCommandBar(main) {
       <div class="admin-dashboard-eyebrow">Operations Command Center</div>
       <h1>Admin Dashboard</h1>
       <p>Organization-wide visibility across workforce, IT support, assets and device monitoring.</p>
-      <div class="admin-dashboard-command-status">
-        <span class="admin-dashboard-command-status-dot"></span>
-        Dashboard data is live from the current workspace
-      </div>
+      <div class="admin-dashboard-command-status"><span class="admin-dashboard-command-status-dot"></span>Dashboard data is live from the current workspace</div>
     </div>
     <div class="admin-dashboard-quick-actions" aria-label="Quick actions">
       <button type="button" data-admin-nav="Applications & Schedules">Applications</button>
       <button type="button" data-admin-nav="Tickets">Tickets</button>
       <button type="button" data-admin-nav="Assets">Assets</button>
       <button type="button" data-admin-nav="Live View">Live View</button>
-    </div>
-  `;
-
-  bar.querySelectorAll('[data-admin-nav]').forEach(btn => {
-    btn.addEventListener('click', () => goTo(btn.dataset.adminNav));
-  });
-
+    </div>`;
+  bar.querySelectorAll('[data-admin-nav]').forEach(btn => btn.addEventListener('click', () => goTo(btn.dataset.adminNav)));
   main.prepend(bar);
 }
 
 function addSectionLabel(main, marker, label) {
   if (main.querySelector(`[data-admin-section="${marker}"]`)) return;
-
   const node = document.createElement('div');
   node.className = 'admin-dashboard-section-label';
   node.dataset.adminSection = marker;
   node.textContent = label;
-
   const candidates = [...main.children];
   if (marker === 'workforce') {
     const target = candidates.find(el => el.classList.contains('grid') && [...el.querySelectorAll('.card')].some(card => /Total Staff|Active Working|Idle Staff|Pending WFH/.test(textOf(card))));
@@ -93,15 +68,12 @@ function addSectionLabel(main, marker, label) {
 }
 
 function decorateKpis(main) {
-  const grids = [...main.querySelectorAll('.grid')];
-  const kpiGrid = grids.find(grid => {
+  const kpiGrid = [...main.querySelectorAll('.grid')].find(grid => {
     const cards = [...grid.children].filter(el => el.classList.contains('card'));
     return cards.length === 4 && cards.every(card => /Total Staff|Active Working|Idle Staff|Pending WFH/.test(textOf(card)));
   });
   if (!kpiGrid) return;
-
   kpiGrid.classList.add('admin-kpi-grid');
-
   [...kpiGrid.children].forEach(card => {
     if (card.querySelector('.admin-kpi-meta')) return;
     const label = textOf(card);
@@ -110,19 +82,16 @@ function decorateKpis(main) {
     if (label.includes('Active Working')) meta = 'Currently reporting active';
     if (label.includes('Idle Staff')) meta = 'Past the activity threshold';
     if (label.includes('Pending WFH')) meta = 'Awaiting approval action';
-
     const metaNode = document.createElement('div');
     metaNode.className = 'admin-kpi-meta';
     metaNode.textContent = meta;
     card.appendChild(metaNode);
   });
-
   addSectionLabel(main, 'workforce', SECTION_LABELS.workforce);
 }
 
 function decorateOperationsKpis(main) {
-  const candidates = [...main.querySelectorAll('.grid')];
-  const opsGrid = candidates.find(grid => {
+  const opsGrid = [...main.querySelectorAll('.grid')].find(grid => {
     const cards = [...grid.children].filter(el => el.classList.contains('card'));
     return cards.length === 4 && /Open Tickets/.test(textOf(grid)) && /Resolved Tickets/.test(textOf(grid)) && /Assets In Use/.test(textOf(grid)) && /Assets Available/.test(textOf(grid));
   });
@@ -131,91 +100,46 @@ function decorateOperationsKpis(main) {
   addSectionLabel(main, 'operations', SECTION_LABELS.operations);
 }
 
+function findWorkforceCard(main) {
+  return [...main.querySelectorAll('.card')].find(card => /Live Employee Activity|Live Workforce Status/.test(textOf(card))) || null;
+}
+function findRosterCard(main) { return [...main.querySelectorAll('.card')].find(card => textOf(card).includes('Live Status Roster')) || null; }
+
+function combineWorkforceIntoRoster(main) {
+  const workforceCard = findWorkforceCard(main);
+  const rosterCard = findRosterCard(main);
+  if (!workforceCard || !rosterCard) return;
+  const workforceLayout = workforceCard.parentElement;
+  workforceLayout?.classList.add('admin-workforce-layout');
+  workforceCard.classList.add('admin-live-workforce-source');
+  if (workforceCard !== rosterCard && workforceCard.isConnected) workforceCard.remove();
+  rosterCard.classList.add('admin-live-roster-enhanced');
+}
+
 function decorateDashboardSections(main) {
   main.classList.add(ADMIN_DASHBOARD_CLASS);
-
   const cards = [...main.querySelectorAll('.card')];
   cards.forEach(card => {
     const content = textOf(card);
-    if (content.includes('Live Employee Activity') || content.includes('Live Workforce Status') || content.includes('Tickets by Status') || content.includes('Assets by Status')) {
-      card.classList.add('admin-dashboard-panel');
-      card.classList.add('admin-live-activity-card');
-    }
-    if (content.includes('Live Status Roster')) {
-      card.classList.add('admin-dashboard-roster');
-    }
-    if (content.includes('Live Desktop View') || content.includes('Recent Screenshots')) {
-      card.classList.add('admin-monitoring-panel');
-    }
+    if (content.includes('Live Employee Activity') || content.includes('Tickets by Status') || content.includes('Assets by Status')) card.classList.add('admin-dashboard-panel');
+    if (content.includes('Live Status Roster')) card.classList.add('admin-dashboard-roster');
+    if (content.includes('Live Desktop View') || content.includes('Recent Screenshots')) card.classList.add('admin-monitoring-panel');
   });
-
+  combineWorkforceIntoRoster(main);
   addSectionLabel(main, 'monitoring', SECTION_LABELS.monitoring);
 }
 
-function findDashboardCard(main, heading) {
-  return [...main.querySelectorAll('.card')].find(card => {
-    const first = [...card.children].find(child => textOf(child));
-    return first && textOf(first).toLowerCase().includes(heading.toLowerCase());
-  }) || null;
-}
-
-function findWorkforceCard(main) {
-  return [...main.querySelectorAll('.card')].find(card =>
-    /Live Employee Activity|Live Workforce Status/.test(textOf(card))
-  ) || null;
-}
-
-function findRosterCard(main) {
-  return [...main.querySelectorAll('.card')].find(card => textOf(card).includes('Live Status Roster')) || null;
-}
-
 function createStatusLabel(status) {
-  const labels = {
-    active: 'Active',
-    idle: 'Idle',
-    'logged-out': 'No User',
-    offline: 'Offline',
-    pending: 'Pending',
-    revoked: 'Revoked',
-    'no-device': 'No Device',
-  };
-  return labels[status] || 'Unknown';
+  return { active: 'Active', idle: 'Idle', 'logged-out': 'No User', offline: 'Offline', pending: 'Pending', revoked: 'Revoked', 'no-device': 'No Device' }[status] || 'Unknown';
 }
-
 function statusTone(status) {
-  return {
-    active: 'success',
-    idle: 'warning',
-    'logged-out': 'info',
-    offline: 'neutral',
-    pending: 'warning',
-    revoked: 'danger',
-    'no-device': 'neutral',
-  }[status] || 'neutral';
+  return { active: 'success', idle: 'warning', 'logged-out': 'info', offline: 'neutral', pending: 'warning', revoked: 'danger', 'no-device': 'neutral' }[status] || 'neutral';
 }
-
-function initials(name) {
-  return String(name || '?')
-    .split(/\s+/)
-    .filter(Boolean)
-    .map(part => part[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase() || '?';
-}
-
+function initials(name) { return String(name || '?').split(/\s+/).filter(Boolean).map(part => part[0]).join('').slice(0, 2).toUpperCase() || '?'; }
 function statusDot(status) {
-  const tones = {
-    success: 'var(--success)',
-    warning: 'var(--warning)',
-    info: 'var(--info)',
-    neutral: 'var(--neutral)',
-    danger: 'var(--danger)',
-  };
-  const tone = statusTone(status);
-  return `<span class="admin-live-status-dot" style="background:${tones[tone] || tones.neutral}"></span>`;
+  const tones = { success: 'var(--success)', warning: 'var(--warning)', info: 'var(--info)', neutral: 'var(--neutral)', danger: 'var(--danger)' };
+  return `<span class="admin-live-status-dot" style="background:${tones[statusTone(status)] || tones.neutral}"></span>`;
 }
-
 function formatLastSeen(value) {
   if (!value) return 'Never seen';
   const date = new Date(value);
@@ -229,22 +153,15 @@ function formatLastSeen(value) {
   if (hours < 24) return `${hours}h ago`;
   return date.toLocaleString();
 }
-
 function getAuthHeaders() {
   const token = localStorage.getItem('rw_token');
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
-
 async function fetchDashboardMonitoring() {
   const headers = getAuthHeaders();
-  const [usersRes, devicesRes] = await Promise.all([
-    fetch(`${API_URL}/users`, { headers }),
-    fetch(`${API_URL}/agent/devices`, { headers }),
-  ]);
-
+  const [usersRes, devicesRes] = await Promise.all([fetch(`${API_URL}/users`, { headers }), fetch(`${API_URL}/agent/devices`, { headers })]);
   if (!usersRes.ok) throw new Error(`Unable to load users (${usersRes.status})`);
   if (!devicesRes.ok) throw new Error(`Unable to load devices (${devicesRes.status})`);
-
   const [users, devices] = await Promise.all([usersRes.json(), devicesRes.json()]);
   return { users, devices };
 }
@@ -252,303 +169,129 @@ async function fetchDashboardMonitoring() {
 function buildEmployeeRoster(users, devices) {
   const employees = users.filter(u => u.role === 'Employee');
   const byEmployee = new Map();
-
-  devices
-    .filter(d => d.enrolled !== false && !d.revoked && d.employeeId != null)
-    .forEach(device => {
-      const key = Number(device.employeeId);
-      const existing = byEmployee.get(key);
-      const currentTime = new Date(device.lastSeenAt || 0).getTime();
-      const existingTime = new Date(existing?.device?.lastSeenAt || 0).getTime();
-      if (!existing || currentTime > existingTime) {
-        byEmployee.set(key, { device });
-      }
-    });
-
+  devices.filter(d => d.enrolled !== false && !d.revoked && d.employeeId != null).forEach(device => {
+    const key = Number(device.employeeId);
+    const existing = byEmployee.get(key);
+    const currentTime = new Date(device.lastSeenAt || 0).getTime();
+    const existingTime = new Date(existing?.device?.lastSeenAt || 0).getTime();
+    if (!existing || currentTime > existingTime) byEmployee.set(key, { device });
+  });
   return employees.map(employee => {
-    const match = byEmployee.get(Number(employee.id));
-    const device = match?.device || null;
-    return {
-      employee,
-      device,
-      status: device?.status || 'no-device',
-    };
+    const device = byEmployee.get(Number(employee.id))?.device || null;
+    return { employee, device, status: device?.status || 'no-device' };
   }).sort((a, b) => {
     const order = { active: 0, idle: 1, 'logged-out': 2, offline: 3, 'no-device': 4 };
     const ao = order[a.status] ?? 5;
     const bo = order[b.status] ?? 5;
-    if (ao !== bo) return ao - bo;
-    return String(a.employee.name || '').localeCompare(String(b.employee.name || ''));
+    return ao !== bo ? ao - bo : String(a.employee.name || '').localeCompare(String(b.employee.name || ''));
   });
 }
-
 function buildStatusCounts(roster) {
-  const counts = {
-    active: 0,
-    idle: 0,
-    'logged-out': 0,
-    offline: 0,
-    'no-device': 0,
-  };
-  roster.forEach(item => {
-    if (counts[item.status] !== undefined) counts[item.status] += 1;
-    else counts.offline += 1;
-  });
+  const counts = { active: 0, idle: 0, 'logged-out': 0, offline: 0, 'no-device': 0 };
+  roster.forEach(item => { if (counts[item.status] !== undefined) counts[item.status] += 1; else counts.offline += 1; });
   return counts;
 }
 
-function renderWorkforceStatus(card, counts, totalEmployees) {
+function renderRoster(card, roster) {
   if (!card) return;
-
-  card.classList.add('admin-live-workforce-card');
-
-  const existingTitle = [...card.children].find(child => /Live Employee Activity|Live Workforce Status/.test(textOf(child)));
-  if (existingTitle) {
-    existingTitle.textContent = 'Live Workforce Status';
-    existingTitle.classList.add('admin-live-workforce-title');
-  }
-
-  const subtitle = [...card.children].find(child => child !== existingTitle && textOf(child).includes('Real-time attendance'));
-  if (subtitle) subtitle.textContent = 'Current state of monitored employee devices';
-
-  let content = card.querySelector('.admin-live-workforce-content');
-  if (!content) {
-    [...card.children].forEach(child => {
-      if (child !== existingTitle && child !== subtitle && child !== content) child.remove();
-    });
-    content = document.createElement('div');
-    content.className = 'admin-live-workforce-content';
-    card.appendChild(content);
-  }
-
-  const visibleStatuses = [
-    ['active', 'Active', 'var(--success)'],
-    ['idle', 'Idle', 'var(--warning)'],
-    ['logged-out', 'No User', 'var(--info)'],
-    ['offline', 'Offline', 'var(--neutral)'],
-    ['no-device', 'No Device', 'var(--text-muted)'],
-  ];
-  const total = Math.max(totalEmployees, 1);
-  const activeCount = counts.active + counts.idle + counts['logged-out'];
-  const percent = Math.round((activeCount / total) * 100);
-
-  content.innerHTML = `
-    <div class="admin-live-summary-row">
-      <div><strong>${totalEmployees}</strong><span>Employees</span></div>
-      <div><strong>${activeCount}</strong><span>Reporting</span></div>
-      <div><strong>${counts.offline}</strong><span>Offline</span></div>
-      <div><strong>${counts['no-device']}</strong><span>No Device</span></div>
-    </div>
-    <div class="admin-live-stacked-bar" role="img" aria-label="Current workforce status distribution">
-      ${visibleStatuses.map(([key, label, color]) => {
-        const width = (counts[key] / total) * 100;
-        return width > 0 ? `<span title="${label}: ${counts[key]}" style="width:${width}%;background:${color}"></span>` : '';
-      }).join('')}
-    </div>
-    <div class="admin-live-legend">
-      ${visibleStatuses.map(([key, label, color]) => `
-        <span><i style="background:${color}"></i>${label}<strong>${counts[key]}</strong></span>
-      `).join('')}
-    </div>
-    <div class="admin-live-reporting-note">${percent}% of employees currently reporting from a managed device</div>
-    <div class="admin-live-updated">Updated just now</div>
-  `;
-}
-
-function renderRoster(card, roster, filter = 'all') {
-  if (!card) return;
-  card.classList.add('admin-dashboard-roster');
-  card.classList.add('admin-live-roster-enhanced');
-
+  card.classList.add('admin-dashboard-roster', 'admin-live-roster-enhanced');
   const existingTitle = [...card.children].find(child => textOf(child).includes('Live Status Roster'));
   if (existingTitle) {
-    const count = roster.length;
-    existingTitle.innerHTML = `
-      <span>Live Status Roster</span>
-      <span class="admin-roster-title-count">${count} Employees</span>
-    `;
+    existingTitle.innerHTML = `<span>Live Status Roster</span><span class="admin-roster-title-count">${roster.length} Employees</span>`;
     existingTitle.classList.add('admin-live-roster-title');
   }
-
   let content = card.querySelector('.admin-live-roster-content');
   if (!content) {
-    [...card.children].forEach(child => {
-      if (child !== existingTitle) child.remove();
-    });
+    [...card.children].forEach(child => { if (child !== existingTitle) child.remove(); });
     content = document.createElement('div');
     content.className = 'admin-live-roster-content';
     card.appendChild(content);
   }
-
   const counts = buildStatusCounts(roster);
-  const filtered = filter === 'all' ? roster : roster.filter(item => item.status === filter);
-
   content.innerHTML = `
     <div class="admin-roster-summary">
-      ${[
-        ['active', 'Active'],
-        ['idle', 'Idle'],
-        ['logged-out', 'No User'],
-        ['offline', 'Offline'],
-      ].map(([key, label]) => `
-        <button type="button" class="admin-roster-chip ${filter === key ? 'is-active' : ''}" data-roster-filter="${key}">
-          ${statusDot(key)}<span>${label}</span><strong>${counts[key]}</strong>
-        </button>
+      ${[['active','Active'],['idle','Idle'],['logged-out','No User'],['offline','Offline'],['no-device','No Device']].map(([key,label]) => `
+        <button type="button" class="admin-roster-chip" data-roster-filter="${key}">${statusDot(key)}<span>${label}</span><strong>${counts[key]}</strong></button>
       `).join('')}
     </div>
+    <div class="admin-roster-overview">
+      <div class="admin-roster-overview-primary"><strong>${roster.length}</strong><span>Total employees</span></div>
+      <div><strong>${counts.active + counts.idle + counts['logged-out']}</strong><span>Reporting</span></div>
+      <div><strong>${Math.round(((counts.active + counts.idle + counts['logged-out']) / Math.max(roster.length,1)) * 100)}%</strong><span>Coverage</span></div>
+    </div>
     <div class="admin-roster-tools">
-      <input class="admin-roster-search" type="search" placeholder="Search employee, department, or device…" aria-label="Search live status roster" value="" />
+      <input class="admin-roster-search" type="search" placeholder="Search employee, department, or device…" aria-label="Search live status roster" />
       <select class="admin-roster-filter" aria-label="Filter live status">
-        <option value="all" ${filter === 'all' ? 'selected' : ''}>All statuses</option>
-        <option value="active" ${filter === 'active' ? 'selected' : ''}>Active</option>
-        <option value="idle" ${filter === 'idle' ? 'selected' : ''}>Idle</option>
-        <option value="logged-out" ${filter === 'logged-out' ? 'selected' : ''}>No User Logged In</option>
-        <option value="offline" ${filter === 'offline' ? 'selected' : ''}>Offline</option>
-        <option value="no-device" ${filter === 'no-device' ? 'selected' : ''}>No Device</option>
+        <option value="all">All statuses</option><option value="active">Active</option><option value="idle">Idle</option><option value="logged-out">No User Logged In</option><option value="offline">Offline</option><option value="no-device">No Device</option>
       </select>
     </div>
     <div class="admin-roster-list"></div>
   `;
-
   const list = content.querySelector('.admin-roster-list');
   const searchInput = content.querySelector('.admin-roster-search');
   const select = content.querySelector('.admin-roster-filter');
-
   const draw = () => {
     const q = String(searchInput.value || '').trim().toLowerCase();
     const currentFilter = select.value;
-    const rows = (currentFilter === 'all' ? roster : roster.filter(item => item.status === currentFilter))
-      .filter(({ employee, device }) => {
-        if (!q) return true;
-        const haystack = [
-          employee.name,
-          employee.department,
-          employee.jobTitle,
-          device?.deviceName,
-          device?.hostname,
-          device?.domainUser,
-        ].filter(Boolean).join(' ').toLowerCase();
-        return haystack.includes(q);
-      });
-
-    if (rows.length === 0) {
-      list.innerHTML = '<div class="admin-roster-empty">No employees match this view.</div>';
-      return;
-    }
-
+    const rows = (currentFilter === 'all' ? roster : roster.filter(item => item.status === currentFilter)).filter(({ employee, device }) => {
+      if (!q) return true;
+      return [employee.name, employee.department, employee.jobTitle, device?.deviceName, device?.hostname, device?.domainUser].filter(Boolean).join(' ').toLowerCase().includes(q);
+    });
+    if (rows.length === 0) { list.innerHTML = '<div class="admin-roster-empty">No employees match this view.</div>'; return; }
     list.innerHTML = rows.map(({ employee, device, status }) => {
       const deviceLabel = device?.deviceName || device?.hostname || 'No managed device';
       const userLabel = device?.domainUser || (status === 'logged-out' ? 'No user logged in' : employee.jobTitle || '—');
-      return `
-        <div class="admin-roster-row">
-          <div class="admin-roster-avatar">${initials(employee.name)}</div>
-          <div class="admin-roster-main">
-            <div class="admin-roster-name">${employee.name || 'Unknown Employee'}</div>
-            <div class="admin-roster-meta">${employee.department || '—'} · ${userLabel}</div>
-            <div class="admin-roster-device">${deviceLabel}</div>
-          </div>
-          <div class="admin-roster-state">
-            <div class="admin-roster-status">${statusDot(status)}${createStatusLabel(status)}</div>
-            <div class="admin-roster-seen">${device ? formatLastSeen(device.lastSeenAt) : 'Not enrolled'}</div>
-          </div>
-        </div>
-      `;
+      return `<div class="admin-roster-row"><div class="admin-roster-avatar">${initials(employee.name)}</div><div class="admin-roster-main"><div class="admin-roster-name">${employee.name || 'Unknown Employee'}</div><div class="admin-roster-meta">${employee.department || '—'} · ${userLabel}</div><div class="admin-roster-device">${deviceLabel}</div></div><div class="admin-roster-state"><div class="admin-roster-status">${statusDot(status)}${createStatusLabel(status)}</div><div class="admin-roster-seen">${device ? formatLastSeen(device.lastSeenAt) : 'Not enrolled'}</div></div></div>`;
     }).join('');
   };
-
-  content.querySelectorAll('[data-roster-filter]').forEach(button => {
-    button.addEventListener('click', () => {
-      select.value = button.dataset.rosterFilter;
-      draw();
-      content.querySelectorAll('[data-roster-filter]').forEach(b => b.classList.remove('is-active'));
-      button.classList.add('is-active');
-    });
-  });
+  content.querySelectorAll('[data-roster-filter]').forEach(button => button.addEventListener('click', () => { select.value = button.dataset.rosterFilter; draw(); }));
   searchInput.addEventListener('input', draw);
-  select.addEventListener('change', () => {
-    content.querySelectorAll('[data-roster-filter]').forEach(button => {
-      button.classList.toggle('is-active', button.dataset.rosterFilter === select.value);
-    });
-    draw();
-  });
+  select.addEventListener('change', draw);
   draw();
 }
 
 async function refreshLiveDashboard() {
   if (!liveMonitorActive || !isAdminDashboard()) return;
   const requestId = ++liveMonitorRequest;
-
   try {
     const { users, devices } = await fetchDashboardMonitoring();
     if (!liveMonitorActive || requestId !== liveMonitorRequest || !isAdminDashboard()) return;
-
     const roster = buildEmployeeRoster(users, devices);
-    const counts = buildStatusCounts(roster);
     const main = document.querySelector('main');
     if (!main) return;
-
-    renderWorkforceStatus(findWorkforceCard(main), counts, roster.length);
+    combineWorkforceIntoRoster(main);
     renderRoster(findRosterCard(main), roster);
-  } catch (_) {
-    // Dashboard remains usable if live device data is temporarily unavailable.
-  }
+  } catch (_) {}
 }
-
 function startLiveDashboardMonitor() {
   if (liveMonitorActive) return;
   liveMonitorActive = true;
   refreshLiveDashboard();
   liveMonitorTimer = setInterval(refreshLiveDashboard, LIVE_REFRESH_MS);
 }
-
 function stopLiveDashboardMonitor() {
   liveMonitorActive = false;
   liveMonitorRequest += 1;
-  if (liveMonitorTimer) {
-    clearInterval(liveMonitorTimer);
-    liveMonitorTimer = null;
-  }
+  if (liveMonitorTimer) { clearInterval(liveMonitorTimer); liveMonitorTimer = null; }
 }
-
 function cleanup(main) {
   stopLiveDashboardMonitor();
   main?.classList.remove(ADMIN_DASHBOARD_CLASS);
   document.getElementById(COMMAND_BAR_ID)?.remove();
   main?.querySelectorAll('.admin-dashboard-section-label').forEach(node => node.remove());
 }
-
 function enhance() {
   const main = document.querySelector('main');
   if (!main) return;
-
-  if (!isAdminDashboard()) {
-    if (liveMonitorActive) cleanup(main);
-    else {
-      main.classList.remove(ADMIN_DASHBOARD_CLASS);
-      document.getElementById(COMMAND_BAR_ID)?.remove();
-      main.querySelectorAll('.admin-dashboard-section-label').forEach(node => node.remove());
-    }
-    return;
-  }
-
+  if (!isAdminDashboard()) { if (liveMonitorActive) cleanup(main); else { main.classList.remove(ADMIN_DASHBOARD_CLASS); document.getElementById(COMMAND_BAR_ID)?.remove(); main.querySelectorAll('.admin-dashboard-section-label').forEach(node => node.remove()); } return; }
   addCommandBar(main);
   decorateKpis(main);
   decorateOperationsKpis(main);
   decorateDashboardSections(main);
   startLiveDashboardMonitor();
 }
-
 let scheduled = false;
-const scheduleEnhance = () => {
-  if (scheduled) return;
-  scheduled = true;
-  requestAnimationFrame(() => {
-    scheduled = false;
-    enhance();
-  });
-};
-
+const scheduleEnhance = () => { if (scheduled) return; scheduled = true; requestAnimationFrame(() => { scheduled = false; enhance(); }); };
 const observer = new MutationObserver(scheduleEnhance);
 observer.observe(document.body, { subtree: true, childList: true, characterData: true });
-
 scheduleEnhance();
