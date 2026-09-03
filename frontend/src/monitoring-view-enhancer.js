@@ -4,6 +4,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://192.168.1.2:4000/api';
 const LIVE_REFRESH_MS = 5000;
 const LIVE_SIZE_KEY = 'remoteops_live_tile_size';
 const SCREENSHOT_SIZE_KEY = 'remoteops_screenshot_tile_size';
+const STYLE_ID = 'remoteops-monitoring-view-style';
 let liveTimer = null;
 let liveRequestId = 0;
 
@@ -43,6 +44,37 @@ function safeSize(value, fallback, min = 180, max = 520) {
   return Math.min(max, Math.max(min, Math.round(numeric / 10) * 10));
 }
 
+function injectStyles() {
+  if (document.getElementById(STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent = `
+    .remoteops-size-control{display:inline-flex;align-items:center;gap:6px;margin-right:4px;color:var(--text-muted);font-size:9px;font-weight:800;white-space:nowrap}
+    .remoteops-size-control input{width:82px;accent-color:var(--accent);cursor:pointer}
+    .remoteops-live-grid{display:grid;gap:16px;width:100%}
+    .remoteops-live-employee-tile{min-width:0;border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--surface);box-shadow:0 5px 16px rgba(0,0,0,.06)}
+    .remoteops-live-employee-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:11px 12px;border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--surface) 92%,var(--bg) 8%)}
+    .remoteops-live-employee-info{min-width:0}
+    .remoteops-live-employee-name{font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .remoteops-live-employee-meta,.remoteops-live-employee-device{margin-top:3px;color:var(--text-muted);font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .remoteops-live-employee-device{font-family:'JetBrains Mono',monospace}
+    .remoteops-live-state{display:inline-flex;align-items:center;padding:4px 7px;border:1px solid;border-radius:999px;font-size:8px;font-weight:900;letter-spacing:.08em}
+    .remoteops-display-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;padding:8px}
+    .remoteops-display-frame{min-width:0;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--bg)}
+    .remoteops-display-canvas{position:relative;aspect-ratio:16/10;display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--bg)}
+    .remoteops-display-image{width:100%;height:100%;object-fit:cover;display:block}
+    .remoteops-display-empty{display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--text-muted);font-size:9px}
+    .remoteops-display-empty span:first-child{font-size:22px}
+    .remoteops-display-badge{position:absolute;left:7px;top:7px;display:inline-flex;align-items:center;gap:5px;padding:4px 7px;border-radius:999px;background:rgba(0,0,0,.72);color:#fff;font-size:8px;font-weight:900;letter-spacing:.08em}
+    .remoteops-display-dot{width:6px;height:6px;border-radius:50%;display:inline-block}
+    .remoteops-display-name{position:absolute;right:7px;top:7px;padding:4px 7px;border-radius:999px;background:rgba(0,0,0,.72);color:#fff;font-size:8px;font-weight:800;max-width:55%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .remoteops-display-updated{padding:6px 8px;color:var(--text-muted);font-size:8px}
+    .remoteops-monitor-empty{padding:24px 10px;border:1px dashed var(--border);border-radius:10px;color:var(--text-muted);font-size:10px;text-align:center}
+    @media (max-width:700px){.remoteops-size-control span{display:none}.remoteops-size-control input{width:70px}.remoteops-display-grid{grid-template-columns:1fr}}
+  `;
+  document.head.appendChild(style);
+}
+
 function findLiveViewCard() {
   return [...document.querySelectorAll('.card')].find(card => {
     const content = textOf(card);
@@ -53,7 +85,7 @@ function findLiveViewCard() {
 function findScreenshotCard() {
   return [...document.querySelectorAll('.card')].find(card => {
     const content = textOf(card);
-    return content.includes('Screenshots') || content.includes('Recent Screenshots');
+    return content.includes('Recent Screenshots') || (content.includes('Screenshots') && card.querySelector('img'));
   }) || null;
 }
 
@@ -63,10 +95,10 @@ function ensureSlider(card, type) {
   const fallback = type === 'live' ? 300 : 220;
   const current = safeSize(localStorage.getItem(key), fallback);
   const id = `remoteops-${type}-size-control`;
-  if (document.getElementById(id)) {
-    const slider = document.getElementById(id);
-    slider.value = String(current);
-    return slider;
+  const existing = card.querySelector(`#${id}`);
+  if (existing) {
+    existing.value = String(current);
+    return existing;
   }
 
   const heading = [...card.querySelectorAll('h3')].find(h => /Live Desktop View|Team Live View|Screenshots|Recent Screenshots/i.test(textOf(h)));
@@ -88,20 +120,17 @@ function ensureSlider(card, type) {
   const controls = header.querySelector('.flex.items-center.gap-2:last-child') || header.lastElementChild;
   if (controls) controls.insertBefore(wrapper, controls.firstChild);
   else header.appendChild(wrapper);
-
   return input;
 }
 
 function applyGridSize(card, type, size) {
   if (!card) return;
+  const candidates = [...card.querySelectorAll('.grid')];
   if (type === 'live') {
-    const grid = card.querySelector('[data-remoteops-live-grid]') || [...card.querySelectorAll('.grid')].find(grid => grid.querySelector('.remoteops-live-employee-tile'));
+    const grid = card.querySelector('[data-remoteops-live-grid]') || candidates.find(item => item.classList.contains('remoteops-live-grid'));
     if (grid) grid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${size}px, 1fr))`;
   } else {
-    const grid = card.querySelector('[data-remoteops-screenshot-grid]') || [...card.querySelectorAll('.grid')].find(grid => {
-      const images = grid.querySelectorAll('img');
-      return images.length > 0;
-    });
+    const grid = card.querySelector('[data-remoteops-screenshot-grid]') || candidates.find(item => item.querySelectorAll('img').length > 0);
     if (grid) grid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${size}px, 1fr))`;
   }
 }
@@ -116,7 +145,6 @@ function displayHtml(display, state, employeeName) {
     : `<div class="remoteops-display-empty"><span>▣</span><span>No recent frame</span></div>`;
   const label = state === 'idle' ? 'IDLE' : 'LIVE';
   const tone = state === 'idle' ? 'var(--warning)' : 'var(--success)';
-
   return `<div class="remoteops-display-frame">
     <div class="remoteops-display-canvas">
       ${image}
@@ -134,7 +162,6 @@ function employeeTileHtml(item) {
   const displays = Array.isArray(item.displays) && item.displays.length > 0
     ? item.displays
     : [{ displayIndex: 1, displayName: 'Display 1', frameUrl: item.frameUrl, capturedAt: item.capturedAt }];
-
   return `<div class="remoteops-live-employee-tile" data-remoteops-employee="${escapeHtml(employeeName)}">
     <div class="remoteops-live-employee-heading">
       <div class="remoteops-live-employee-info">
@@ -163,11 +190,8 @@ async function refreshLiveView() {
       grid.className = 'remoteops-live-grid';
       const existingGrids = [...card.querySelectorAll('.grid')];
       const target = existingGrids.find(candidate => candidate.querySelector('img')) || existingGrids[existingGrids.length - 1];
-      if (target) {
-        target.replaceWith(grid);
-      } else {
-        card.appendChild(grid);
-      }
+      if (target) target.replaceWith(grid);
+      else card.appendChild(grid);
     }
 
     grid.innerHTML = data.length > 0
@@ -190,7 +214,15 @@ function enhanceScreenshots() {
   const card = findScreenshotCard();
   if (!card) return;
   const input = ensureSlider(card, 'screenshots');
-  applyGridSize(card, 'screenshots', safeSize(input?.value, 220, 180, 520));
+  const size = safeSize(input?.value, 220, 180, 520);
+  const grid = [...card.querySelectorAll('.grid')].find(item => {
+    const images = item.querySelectorAll('img');
+    return images.length > 0;
+  });
+  if (grid) {
+    grid.dataset.remoteopsScreenshotGrid = 'true';
+    grid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${size}px, 1fr))`;
+  }
 }
 
 function startLive() {
@@ -199,11 +231,11 @@ function startLive() {
   liveTimer = setInterval(refreshLiveView, LIVE_REFRESH_MS);
 }
 
+injectStyles();
+startLive();
+enhanceScreenshots();
 const observer = new MutationObserver(() => {
   if (findLiveViewCard()) startLive();
   enhanceScreenshots();
 });
-
 observer.observe(document.body, { subtree: true, childList: true, characterData: true });
-startLive();
-enhanceScreenshots();
