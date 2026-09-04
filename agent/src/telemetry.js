@@ -33,19 +33,13 @@ function getInteractiveUser() {
     try { return os.userInfo().username || ''; } catch (_) { return ''; }
   }
 
-  // The Remote Ops agent is launched from the user's Windows Startup folder.
-  // In an RDP session, the agent therefore runs inside that user's session.
-  // Using the process identity correctly identifies the RDP user.
-  //
-  // Win32_ComputerSystem.UserName is not suitable here because Microsoft
-  // documents that, in a Terminal Services session, it returns the console
-  // user rather than the user logged on through the terminal session.
+  // The agent runs inside the signed-in user's interactive Windows session.
+  // whoami.exe therefore identifies the actual local or RDP user for that session.
   const processUser = run('whoami.exe', []);
   if (processUser && !/^(NT AUTHORITY\\)?(SYSTEM|LOCAL SERVICE|NETWORK SERVICE)$/i.test(processUser)) {
     return processUser;
   }
 
-  // Fallback for environments where whoami is unavailable.
   const envUsername = String(process.env.USERNAME || '').trim();
   if (envUsername) {
     const envDomain = String(process.env.USERDOMAIN || '').trim();
@@ -55,9 +49,20 @@ function getInteractiveUser() {
   return '';
 }
 
+function getConnectionType() {
+  if (process.platform !== 'win32') return { isRdp: false, sessionName: null };
+
+  // SESSIONNAME is populated per interactive Windows session. RDP sessions use
+  // names such as RDP-Tcp#4, while a locally signed-in console uses Console.
+  const sessionName = String(process.env.SESSIONNAME || '').trim() || null;
+  const isRdp = /^RDP-Tcp#/i.test(sessionName || '');
+  return { isRdp, sessionName };
+}
+
 function getIdentity() {
   const hostname = process.env.COMPUTERNAME || os.hostname();
   const interactiveUser = getInteractiveUser();
+  const connection = getConnectionType();
 
   const match = interactiveUser.match(/^([^\\]+)\\(.+)$/);
   const domain = match ? match[1] : null;
@@ -70,6 +75,8 @@ function getIdentity() {
     domain,
     domainUser,
     username,
+    isRdp: connection.isRdp,
+    sessionName: connection.sessionName,
   };
 }
 
