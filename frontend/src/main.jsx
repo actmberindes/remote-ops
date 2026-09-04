@@ -7,6 +7,7 @@ import './asset-manager-assignment-enhancer.js';
 import './admin-dashboard-ui-enhancer.js';
 import './live-view-idle-enhancer.js';
 import './monitoring-view-enhancer.js';
+import './monitoring-rdp-label-enhancer.js';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
