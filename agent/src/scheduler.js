@@ -20,14 +20,16 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
         hostname: telemetry.hostname,
         domain: telemetry.domain,
         domainUser: telemetry.domainUser,
+        isRdp: telemetry.isRdp,
+        sessionName: telemetry.sessionName,
         agentVersion: config.agentVersion,
       });
 
       onDeviceStateChange?.(telemetry.state, telemetry);
       if (telemetry.state === 'active') {
-        log(`Heartbeat: Active — ${telemetry.domainUser || 'No user'}.`);
+        log(`Heartbeat: Active — ${telemetry.domainUser || 'No user'}${telemetry.isRdp ? ' (RDP)' : ''}.`);
       } else if (telemetry.state === 'idle') {
-        log(`Heartbeat: Idle — ${telemetry.domainUser || 'No user'} (5+ minutes).`);
+        log(`Heartbeat: Idle — ${telemetry.domainUser || 'No user'} (5+ minutes)${telemetry.isRdp ? ' (RDP)' : ''}.`);
       } else {
         log('Heartbeat: No logged-in Windows user.');
       }
@@ -51,6 +53,13 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
     return uploaded;
   }
 
+  function capturesForSession(captures, telemetry) {
+    // An RDP session is treated as a single-display monitoring session. Keep
+    // the first/primary physical display only, even if the host has 2+ monitors.
+    if (!telemetry.isRdp) return captures;
+    return captures.filter(item => Number(item.displayIndex) === 1).slice(0, 1);
+  }
+
   async function tickScheduled() {
     if (!running) return;
 
@@ -61,11 +70,12 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
     }
 
     try {
-      const captures = await capture.captureFullAll();
+      const allCaptures = await capture.captureFullAll();
+      const captures = capturesForSession(allCaptures, telemetry);
       await uploadCaptures(captures, async (result, item) => {
         await client.postScheduledScreenshot(config.deviceToken, result.url, result.filename, item);
       });
-      log(`Scheduled screenshot captured for ${captures.length} display(s).`);
+      log(`Scheduled screenshot captured for ${captures.length} display(s)${telemetry.isRdp ? ' (RDP primary display only).' : '.'}`);
     } catch (e) {
       log(`Scheduled capture failed: ${e.message}`);
     }
@@ -81,7 +91,8 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
     }
 
     try {
-      const captures = await capture.captureLiveAll();
+      const allCaptures = await capture.captureLiveAll();
+      const captures = capturesForSession(allCaptures, telemetry);
       await uploadCaptures(captures, async (result, item) => {
         await client.postLiveFrame(config.deviceToken, result.url, item);
       });
