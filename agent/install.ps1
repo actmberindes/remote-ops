@@ -1,17 +1,31 @@
-# Remote Ops Agent - Windows per-user installer
-# Run from PowerShell without administrator rights.
+# Remote Ops Agent - Windows machine-wide installer
+# Run PowerShell as Administrator.
+# The agent is installed once per physical device and starts in each interactive user session.
 
 $ErrorActionPreference = "Stop"
 
-$InstallDir = Join-Path $env:LOCALAPPDATA "RemoteOpsAgent"
+$InstallDir = Join-Path ($env:ProgramData) "RemoteOpsAgent"
 $ExeName = "remote-ops-agent.exe"
 $VbsName = "start-agent.vbs"
-
 $SourceExe = Join-Path $PSScriptRoot $ExeName
 $SourceVbs = Join-Path $PSScriptRoot $VbsName
-
 $TargetExe = Join-Path $InstallDir $ExeName
 $TargetVbs = Join-Path $InstallDir $VbsName
+$ConfigDir = Join-Path ($env:ProgramData) "RemoteOpsAgent"
+$ConfigPath = Join-Path $ConfigDir "config.json"
+$LegacyConfigPath = Join-Path ($env:APPDATA) "RemoteOpsAgent\config.json"
+$CommonStartupDir = [Environment]::GetFolderPath("CommonStartup")
+$ShortcutPath = Join-Path $CommonStartupDir "RemoteOpsAgent.lnk"
+
+# --------------------------------------------------
+# Require administrator rights
+# --------------------------------------------------
+
+$currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$principal = New-Object Security.Principal.WindowsPrincipal($currentIdentity)
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw "Please run install.ps1 from an elevated PowerShell window (Run as Administrator)."
+}
 
 # --------------------------------------------------
 # Verify source files
@@ -26,111 +40,104 @@ if (-not (Test-Path -LiteralPath $SourceVbs -PathType Leaf)) {
 }
 
 # --------------------------------------------------
-# Stop an already-running copy before replacing/re-enrolling
+# Stop existing process(es) before replacing files
 # --------------------------------------------------
 
 Get-Process -Name "remote-ops-agent" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Milliseconds 500
+Start-Sleep -Milliseconds 700
 
 # --------------------------------------------------
-# Create installation directory
+# Create machine-wide install directory
 # --------------------------------------------------
 
 Write-Host "Installing Remote Ops Agent to $InstallDir..."
-
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
 Copy-Item -Path $SourceExe -Destination $TargetExe -Force
 Copy-Item -Path $SourceVbs -Destination $TargetVbs -Force
 
-# Windows can preserve a downloaded-file security zone on executables. Remove
-# that marker so the enrollment executable can start normally from PowerShell.
-try {
-    Unblock-File -LiteralPath $TargetExe -ErrorAction Stop
+try { Unblock-File -LiteralPath $TargetExe -ErrorAction Stop } catch { }
+
+# Allow authenticated local users to run the already-enrolled agent and read its
+# machine-wide configuration. Enrollment itself is performed by this installer.
+& icacls.exe $InstallDir /inheritance:e /grant:r "Users:(OI)(CI)(RX)" "Administrators:(OI)(CI)(F)" "SYSTEM:(OI)(CI)(F)" | Out-Null
+
+# --------------------------------------------------
+# Migrate an existing per-user enrollment into ProgramData
+# --------------------------------------------------
+
+if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf) -and (Test-Path -LiteralPath $LegacyConfigPath -PathType Leaf)) {
+    Write-Host "Migrating existing per-user enrollment into the machine-wide configuration..."
+    Copy-Item -LiteralPath $LegacyConfigPath -Destination $ConfigPath -Force
 }
-catch {
-    # Non-fatal: some local files have no zone marker to remove.
+
+# Grant the active interactive user temporary write access during enrollment/config migration.
+if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) {
+    & icacls.exe $ConfigDir /grant:r "$($currentIdentity.Name):(OI)(CI)(M)" | Out-Null
 }
 
 # --------------------------------------------------
 # Check enrollment
 # --------------------------------------------------
 
-$configDir = Join-Path $env:APPDATA "RemoteOpsAgent"
-$configPath = Join-Path $configDir "config.json"
-
-$isAlreadyEnrolled = Test-Path -LiteralPath $configPath -PathType Leaf
+$isAlreadyEnrolled = Test-Path -LiteralPath $ConfigPath -PathType Leaf
 
 if (-not $isAlreadyEnrolled) {
-
     Write-Host ""
     Write-Host "==========================================="
     Write-Host "  Remote Ops - Device Enrollment"
     Write-Host "==========================================="
     Write-Host ""
-    Write-Host "Have the Admin enrollment code ready."
-    Write-Host "The enrollment prompt will remain visible while the code is entered."
+    Write-Host "This enrollment is for the physical computer, not one employee."
+    Write-Host "Any supported Windows user who later signs in can be monitored automatically."
     Write-Host ""
-
-    # Run the executable directly instead of Start-Process. This keeps the
-    # enrollment prompt attached to the current PowerShell console and avoids
-    # Windows Start-Process cancellation errors.
     & $TargetExe --enroll
     $exitCode = $LASTEXITCODE
-
     if ($exitCode -ne 0) {
         throw "Device enrollment did not complete successfully. Exit code: $exitCode"
     }
-
     Write-Host ""
     Write-Host "Device enrollment completed successfully."
 }
 else {
-    Write-Host "An existing enrollment was found. Skipping the enrollment prompt."
+    Write-Host "An existing machine enrollment was found. Skipping the enrollment prompt."
 }
 
+# Lock the machine-wide files after enrollment. Users only need read/execute access.
+& icacls.exe $InstallDir /grant:r "Users:(OI)(CI)(RX)" "Administrators:(OI)(CI)(F)" "SYSTEM:(OI)(CI)(F)" | Out-Null
+
 # --------------------------------------------------
-# Create Startup shortcut
+# Create a Common Startup shortcut so every interactive user starts an agent
+# instance in their own Windows/RDP session.
 # --------------------------------------------------
 
-$StartupDir = [Environment]::GetFolderPath("Startup")
-$ShortcutPath = Join-Path $StartupDir "RemoteOpsAgent.lnk"
+New-Item -ItemType Directory -Force -Path $CommonStartupDir | Out-Null
 
 $WScriptShell = New-Object -ComObject WScript.Shell
-
 $Shortcut = $WScriptShell.CreateShortcut($ShortcutPath)
-
 $Shortcut.TargetPath = Join-Path $env:WINDIR "System32\wscript.exe"
 $Shortcut.Arguments = "`"$TargetVbs`""
 $Shortcut.WorkingDirectory = $InstallDir
 $Shortcut.WindowStyle = 1
-$Shortcut.Description = "Remote Ops desktop monitoring agent"
-
+$Shortcut.Description = "Remote Ops desktop monitoring agent (shared device)"
 $Shortcut.Save()
 
 Write-Host ""
-Write-Host "Startup shortcut registered: $ShortcutPath"
-Write-Host "The agent will start silently at the next Windows sign-in."
+Write-Host "Machine-wide Startup shortcut registered: $ShortcutPath"
+Write-Host "The agent will start for every Windows user at sign-in, including RDP users."
 Write-Host ""
 
 # --------------------------------------------------
-# Start agent now
+# Start the agent for the current user now
 # --------------------------------------------------
 
-$runNow = Read-Host "Start the background agent now? (y/n)"
-
+$runNow = Read-Host "Start the background agent now for the current user? (y/n)"
 if ($runNow -eq "y") {
-
     $WScriptPath = Join-Path $env:WINDIR "System32\wscript.exe"
-
-    Start-Process `
-        -FilePath $WScriptPath `
-        -ArgumentList "`"$TargetVbs`"" `
-        -WorkingDirectory $InstallDir `
-        -WindowStyle Hidden
-
-    Write-Host "Background agent started. Check the Windows system tray for Remote Ops."
+    Start-Process -FilePath $WScriptPath -ArgumentList "`"$TargetVbs`"" -WorkingDirectory $InstallDir -WindowStyle Hidden
+    Write-Host "Background agent started for the current session."
 }
 
 Write-Host ""
 Write-Host "Installation complete."
+Write-Host "Shared-device monitoring is enabled for future Windows/RDP sign-ins."
