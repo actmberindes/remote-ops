@@ -34,14 +34,21 @@ function displayKey(frame = {}) {
   return `display-${Number(frame.displayIndex) || 1}`;
 }
 
-function hasExplicitDisplayMetadata(frame = {}) {
-  return frame.displayId !== undefined && frame.displayId !== null && frame.displayId !== '';
+function hasPhysicalWindowsDisplayId(frame = {}) {
+  const id = String(frame.displayId || '').trim();
+  return /^\\\\\.\\DISPLAY\d+$/i.test(id);
 }
 
 function filterLegacyFrames(frames) {
-  if (!frames.some(hasExplicitDisplayMetadata)) return frames;
-  // Ignore pre-multi-display frames that had no displayId/display metadata.
-  return frames.filter(hasExplicitDisplayMetadata);
+  // The current agent reports real Windows display IDs such as \\\\ . \\DISPLAY1.
+  // Older single-display records used synthetic IDs like display-1; never mix
+  // those stale records into the multi-display Live View once physical display
+  // metadata exists.
+  const physical = frames.filter(hasPhysicalWindowsDisplayId);
+  if (physical.length > 0) return physical;
+
+  // If there are no physical-ID frames yet, only keep explicitly tagged frames.
+  return frames.filter(frame => frame.displayId !== undefined && frame.displayId !== null && frame.displayId !== '');
 }
 
 function displaySort(a, b) {
