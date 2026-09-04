@@ -35,7 +35,6 @@ Copy-Item -Path $SourceExe -Destination $TargetExe -Force
 Copy-Item -Path $SourceVbs -Destination $TargetVbs -Force
 try { Unblock-File -LiteralPath $TargetExe -ErrorAction Stop } catch { }
 
-# Machine-wide agent files are executable/readable by standard users and fully writable by administrators.
 & icacls.exe $InstallDir /inheritance:e /grant:r "Users:(OI)(CI)(RX)" "Administrators:(OI)(CI)(F)" "SYSTEM:(OI)(CI)(F)" | Out-Null
 
 # Migrate an existing per-user enrollment created by the previous installer.
@@ -68,8 +67,7 @@ else {
 
 & icacls.exe $InstallDir /grant:r "Users:(OI)(CI)(RX)" "Administrators:(OI)(CI)(F)" "SYSTEM:(OI)(CI)(F)" | Out-Null
 
-# Remove the legacy per-user Startup shortcut from profiles where it still exists.
-$profilesRoot = Split-Path -Path $env:USERPROFILE -Parent | Split-Path -Path { $_ }
+# Remove legacy per-user Startup shortcuts so the same user does not launch the agent twice.
 $usersRoot = Join-Path $env:SystemDrive 'Users'
 if (Test-Path -LiteralPath $usersRoot) {
     Get-ChildItem -LiteralPath $usersRoot -Directory -Force -ErrorAction SilentlyContinue | ForEach-Object {
