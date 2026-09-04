@@ -39,6 +39,10 @@ function currentEmployeeIdForDevice(device) {
   return currentEmployeeForDevice(device)?.id || null;
 }
 
+function deviceIsRdp(device) {
+  return device?.isRdp === true || /^RDP-Tcp#/i.test(String(device?.sessionName || '').trim());
+}
+
 function deviceIsOnline(device) {
   if (!device || device.revoked || !device.enrolled || !device.lastSeenAt) return false;
   const ts = new Date(device.lastSeenAt).getTime();
@@ -119,10 +123,23 @@ multiDisplayActivityRouter.post('/live-frame', requireDevice(db), async (req, re
 
   const ts = capturedAt || new Date().toISOString();
   const employeeId = currentEmployeeIdForDevice(req.device) || req.device.employeeId;
-  const normalizedIndex = Math.max(1, Number(displayIndex) || 1);
-  const normalizedId = displayId ? String(displayId) : `display-${normalizedIndex}`;
+  const rdp = deviceIsRdp(req.device);
+  const normalizedIndex = rdp ? 1 : Math.max(1, Number(displayIndex) || 1);
+  const normalizedId = rdp ? '\\\\.\\DISPLAY1' : (displayId ? String(displayId) : `display-${normalizedIndex}`);
+  const normalizedName = rdp ? '\\\\.\\DISPLAY1' : (displayName ? String(displayName) : `Display ${normalizedIndex}`);
   const frames = db.data.liveFrames || (db.data.liveFrames = []);
-  const existing = frames.find(frame => frame.deviceId === req.device.id && displayKey(frame) === normalizedId);
+
+  // When a device transitions from local multi-monitor mode to RDP mode,
+  // discard stale secondary live frames so they cannot reappear in Live View.
+  if (rdp) {
+    db.data.liveFrames = frames.filter(frame => {
+      if (frame.deviceId !== req.device.id) return true;
+      return Number(frame.displayIndex) === 1 || displayKey(frame) === normalizedId;
+    });
+  }
+
+  const activeFrames = db.data.liveFrames;
+  const existing = activeFrames.find(frame => frame.deviceId === req.device.id && displayKey(frame) === normalizedId);
 
   const nextFrame = {
     employeeId,
@@ -130,12 +147,12 @@ multiDisplayActivityRouter.post('/live-frame', requireDevice(db), async (req, re
     url,
     capturedAt: ts,
     displayId: normalizedId,
-    displayName: displayName ? String(displayName) : `Display ${normalizedIndex}`,
+    displayName: normalizedName,
     displayIndex: normalizedIndex,
   };
 
   if (existing) Object.assign(existing, nextFrame);
-  else frames.push(nextFrame);
+  else activeFrames.push(nextFrame);
 
   db.data.liveFrameHistory = db.data.liveFrameHistory || [];
   db.data.liveFrameHistory.push({ ...nextFrame, id: nextId() });
@@ -148,7 +165,8 @@ multiDisplayActivityRouter.post('/screenshots', requireDevice(db), async (req, r
   const { url, filename, capturedAt, displayId = null, displayName = null, displayIndex = 1 } = req.body || {};
   if (!url) return res.status(400).json({ error: 'url is required (upload the file to /api/uploads/monitoring first).' });
 
-  const normalizedIndex = Math.max(1, Number(displayIndex) || 1);
+  const rdp = deviceIsRdp(req.device);
+  const normalizedIndex = rdp ? 1 : Math.max(1, Number(displayIndex) || 1);
   const currentEmployeeId = currentEmployeeIdForDevice(req.device) || req.device.employeeId;
   const entry = {
     id: nextId(),
@@ -158,8 +176,8 @@ multiDisplayActivityRouter.post('/screenshots', requireDevice(db), async (req, r
     filename: filename || '',
     capturedAt: capturedAt || new Date().toISOString(),
     type: 'scheduled',
-    displayId: displayId ? String(displayId) : `display-${normalizedIndex}`,
-    displayName: displayName ? String(displayName) : `Display ${normalizedIndex}`,
+    displayId: rdp ? '\\\\.\\DISPLAY1' : (displayId ? String(displayId) : `display-${normalizedIndex}`),
+    displayName: rdp ? '\\\\.\\DISPLAY1' : (displayName ? String(displayName) : `Display ${normalizedIndex}`),
     displayIndex: normalizedIndex,
   };
 
@@ -191,10 +209,10 @@ multiDisplayActivityRouter.get('/live-view', requireAuth(db), requireRole('Admin
     const historyFrames = latestHistoryFramesForDevice(device.id, employeeId);
     const usableFrames = currentFrames.length > 0 ? currentFrames : historyFrames;
     const allDisplays = usableFrames.map((frame, index) => serializeFrame(frame, index + 1));
-    // RDP sessions are intentionally represented as one monitored display.
-    // Even when the physical host has multiple monitors, only the primary
-    // display frame is exposed while the current session is RDP.
-    const displays = device.isRdp ? allDisplays.filter(display => display.displayIndex === 1).slice(0, 1) : allDisplays;
+    const rdp = deviceIsRdp(device);
+    const displays = rdp
+      ? allDisplays.filter(display => Number(display.displayIndex) === 1 || /DISPLAY1$/i.test(String(display.displayId || ''))).slice(0, 1)
+      : allDisplays;
     const first = displays[0] || null;
 
     return {
@@ -208,8 +226,8 @@ multiDisplayActivityRouter.get('/live-view', requireAuth(db), requireRole('Admin
       registeredEmployeeId: device.employeeId,
       registeredEmployeeName: userName(device.employeeId),
       deviceStatus: deviceState(device),
-      connectionType: device.isRdp ? 'RDP' : (device.domainUser ? 'Local' : null),
-      isRdp: device.isRdp === true,
+      connectionType: rdp ? 'RDP' : (device.domainUser ? 'Local' : null),
+      isRdp: rdp,
       sessionName: device.sessionName || null,
       frameUrl: first?.frameUrl || null,
       capturedAt: first?.capturedAt || null,
