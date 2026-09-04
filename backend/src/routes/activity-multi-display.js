@@ -190,7 +190,11 @@ multiDisplayActivityRouter.get('/live-view', requireAuth(db), requireRole('Admin
     const currentFrames = latestFramesForDevice(device.id).filter(frame => frame.employeeId === employeeId);
     const historyFrames = latestHistoryFramesForDevice(device.id, employeeId);
     const usableFrames = currentFrames.length > 0 ? currentFrames : historyFrames;
-    const displays = usableFrames.map((frame, index) => serializeFrame(frame, index + 1));
+    const allDisplays = usableFrames.map((frame, index) => serializeFrame(frame, index + 1));
+    // RDP sessions are intentionally represented as one monitored display.
+    // Even when the physical host has multiple monitors, only the primary
+    // display frame is exposed while the current session is RDP.
+    const displays = device.isRdp ? allDisplays.filter(display => display.displayIndex === 1).slice(0, 1) : allDisplays;
     const first = displays[0] || null;
 
     return {
@@ -204,6 +208,9 @@ multiDisplayActivityRouter.get('/live-view', requireAuth(db), requireRole('Admin
       registeredEmployeeId: device.employeeId,
       registeredEmployeeName: userName(device.employeeId),
       deviceStatus: deviceState(device),
+      connectionType: device.isRdp ? 'RDP' : (device.domainUser ? 'Local' : null),
+      isRdp: device.isRdp === true,
+      sessionName: device.sessionName || null,
       frameUrl: first?.frameUrl || null,
       capturedAt: first?.capturedAt || null,
       lastSeenAt: device.lastSeenAt,
