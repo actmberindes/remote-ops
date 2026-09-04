@@ -7,6 +7,8 @@ const SCREENSHOT_SIZE_KEY = 'remoteops_screenshot_tile_size';
 const STYLE_ID = 'remoteops-monitoring-view-style';
 let liveTimer = null;
 let liveRequestId = 0;
+let latestLiveData = [];
+const liveFiltersWired = new WeakSet();
 
 function textOf(el) {
   return (el?.textContent || '').replace(/\s+/g, ' ').trim();
@@ -44,6 +46,16 @@ function safeSize(value, fallback, min = 180, max = 520) {
   return Math.min(max, Math.max(min, Math.round(numeric / 10) * 10));
 }
 
+function todayISO() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function isWindowsDisplayId(value) {
+  return /^\\\\\.\\DISPLAY\d+$/i.test(String(value || '').trim());
+}
+
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
   const style = document.createElement('style');
@@ -58,7 +70,7 @@ function injectStyles() {
     .remoteops-live-employee-name{font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .remoteops-live-employee-meta,.remoteops-live-employee-device{margin-top:3px;color:var(--text-muted);font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .remoteops-live-employee-device{font-family:'JetBrains Mono',monospace}
-    .remoteops-live-state{display:inline-flex;align-items:center;padding:4px 7px;border:1px solid;border-radius:999px;font-size:8px;font-weight:900;letter-spacing:.08em}
+    .remoteops-live-state{display:inline-flex;align-items:center;padding:4px 7px;border:1px solid;border-radius:999px;font-size:8px;font-weight:900;letter-spacing:.08em;flex-shrink:0}
     .remoteops-display-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;padding:8px}
     .remoteops-display-frame{min-width:0;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--bg)}
     .remoteops-display-canvas{position:relative;aspect-ratio:16/10;display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--bg)}
@@ -123,29 +135,50 @@ function ensureSlider(card, type) {
 
 function applyGridSize(card, type, size) {
   if (!card) return;
-  const candidates = [...card.querySelectorAll('.grid')];
   if (type === 'live') {
-    const grid = card.querySelector('[data-remoteops-live-grid]') || candidates.find(item => item.classList.contains('remoteops-live-grid'));
+    const grid = card.querySelector('[data-remoteops-live-grid]');
     if (grid) grid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${size}px, 1fr))`;
   } else {
-    const grid = card.querySelector('[data-remoteops-screenshot-grid]') || candidates.find(item => item.querySelectorAll('img').length > 0);
+    const grid = card.querySelector('[data-remoteops-screenshot-grid]') || [...card.querySelectorAll('.grid')].find(item => item.querySelectorAll('img').length > 0);
     if (grid) grid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${size}px, 1fr))`;
   }
 }
 
+function getLiveControls(card) {
+  const searchInput = card.querySelector('input[placeholder="Search employee or device…"]');
+  const employeeSelect = [...card.querySelectorAll('select')].find(select => {
+    const label = select.parentElement?.querySelector('label');
+    return /Employee/i.test(textOf(label));
+  });
+  return { searchInput, employeeSelect };
+}
+
+function wireLiveFilters(card) {
+  if (!card || liveFiltersWired.has(card)) return;
+  const { searchInput, employeeSelect } = getLiveControls(card);
+  const rerender = () => renderLiveView(latestLiveData, card);
+  searchInput?.addEventListener('input', rerender);
+  employeeSelect?.addEventListener('change', rerender);
+  liveFiltersWired.add(card);
+}
+
+function validDisplays(item) {
+  const displays = Array.isArray(item?.displays) ? item.displays : [];
+  return displays
+    .filter(display => isWindowsDisplayId(display?.displayId))
+    .sort((a, b) => (Number(a.displayIndex) || 999) - (Number(b.displayIndex) || 999));
+}
+
 function displayHtml(display, employeeName) {
   const imageUrl = uploadUrl(display?.frameUrl);
-  const displayName = escapeHtml(display?.displayName || `Display ${Number(display?.displayIndex) || 1}`);
+  const displayName = escapeHtml(display?.displayName || String(display?.displayId || 'Display'));
   const captured = display?.capturedAt ? new Date(display.capturedAt) : null;
   const updated = captured && !Number.isNaN(captured.getTime()) ? captured.toLocaleTimeString() : 'No frame';
   const image = imageUrl
     ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(employeeName)} — ${displayName}" class="remoteops-display-image" />`
     : `<div class="remoteops-display-empty"><span>▣</span><span>No recent frame</span></div>`;
   return `<div class="remoteops-display-frame">
-    <div class="remoteops-display-canvas">
-      ${image}
-      <span class="remoteops-display-name">${displayName}</span>
-    </div>
+    <div class="remoteops-display-canvas">${image}<span class="remoteops-display-name">${displayName}</span></div>
     <div class="remoteops-display-updated">Updated ${escapeHtml(updated)}</div>
   </div>`;
 }
@@ -154,9 +187,8 @@ function employeeTileHtml(item) {
   const employeeName = item.employeeName || `Employee #${item.employeeId}`;
   const department = item.department || '—';
   const state = item.deviceStatus === 'idle' ? 'idle' : 'active';
-  const displays = Array.isArray(item.displays) && item.displays.length > 0
-    ? item.displays
-    : [{ displayIndex: 1, displayName: 'Display 1', frameUrl: item.frameUrl, capturedAt: item.capturedAt }];
+  const displays = validDisplays(item);
+
   return `<div class="remoteops-live-employee-tile" data-remoteops-employee="${escapeHtml(employeeName)}">
     <div class="remoteops-live-employee-heading">
       <div class="remoteops-live-employee-info">
@@ -166,8 +198,54 @@ function employeeTileHtml(item) {
       </div>
       <span class="remoteops-live-state" style="color:${state === 'idle' ? 'var(--warning)' : 'var(--success)'};border-color:${state === 'idle' ? 'var(--warning)' : 'var(--success)'}33">${state === 'idle' ? 'IDLE' : 'LIVE'}</span>
     </div>
-    <div class="remoteops-display-grid">${displays.map(display => displayHtml(display, employeeName)).join('')}</div>
+    <div class="remoteops-display-grid">${displays.length > 0
+      ? displays.map(display => displayHtml(display, employeeName)).join('')
+      : '<div class="remoteops-monitor-empty">No physical display frames are currently available.</div>'}</div>
   </div>`;
+}
+
+function renderLiveView(data, card) {
+  if (!card) return;
+  const { searchInput, employeeSelect } = getLiveControls(card);
+  const query = String(searchInput?.value || '').trim().toLowerCase();
+  const employeeId = String(employeeSelect?.value || '').trim();
+
+  const filtered = data.filter(item => {
+    if (employeeId && String(item.employeeId) !== employeeId) return false;
+    if (!query) return true;
+    const haystack = [
+      item.employeeName,
+      item.department,
+      item.deviceName,
+      item.hostname,
+      item.domainUser,
+    ].filter(Boolean).join(' ').toLowerCase();
+    return haystack.includes(query);
+  });
+
+  let grid = card.querySelector('[data-remoteops-live-grid]');
+  if (!grid) {
+    grid = document.createElement('div');
+    grid.dataset.remoteopsLiveGrid = 'true';
+    grid.className = 'remoteops-live-grid';
+    const existingGrids = [...card.querySelectorAll('.grid')];
+    const target = existingGrids.find(candidate => candidate.querySelector('img')) || existingGrids[existingGrids.length - 1];
+    if (target) target.replaceWith(grid);
+    else card.appendChild(grid);
+  }
+
+  grid.innerHTML = filtered.length > 0
+    ? filtered.map(employeeTileHtml).join('')
+    : '<div class="remoteops-monitor-empty">No employees match the current Live View filter.</div>';
+
+  const activeCount = filtered.filter(item => item.deviceStatus === 'active').length;
+  const idleCount = filtered.filter(item => item.deviceStatus === 'idle').length;
+  const badges = [...card.querySelectorAll('span')].filter(span => /^(\d+) Active(?: · (\d+) Idle)?$/.test(textOf(span)));
+  if (badges[0]) badges[0].textContent = `${activeCount} Active${idleCount ? ` · ${idleCount} Idle` : ''}`;
+
+  wireLiveFilters(card);
+  const sizeInput = ensureSlider(card, 'live');
+  applyGridSize(card, 'live', safeSize(sizeInput?.value, 300));
 }
 
 async function refreshLiveView() {
@@ -177,43 +255,34 @@ async function refreshLiveView() {
   try {
     const data = await getJson('/activity/live-view');
     if (id !== liveRequestId) return;
-
-    let grid = card.querySelector('[data-remoteops-live-grid]');
-    if (!grid) {
-      grid = document.createElement('div');
-      grid.dataset.remoteopsLiveGrid = 'true';
-      grid.className = 'remoteops-live-grid';
-      const existingGrids = [...card.querySelectorAll('.grid')];
-      const target = existingGrids.find(candidate => candidate.querySelector('img')) || existingGrids[existingGrids.length - 1];
-      if (target) target.replaceWith(grid);
-      else card.appendChild(grid);
-    }
-
-    grid.innerHTML = data.length > 0
-      ? data.map(employeeTileHtml).join('')
-      : '<div class="remoteops-monitor-empty">No employees are currently reporting.</div>';
-
-    const activeCount = data.filter(item => item.deviceStatus === 'active').length;
-    const idleCount = data.filter(item => item.deviceStatus === 'idle').length;
-    const badges = [...card.querySelectorAll('span')].filter(span => /^\d+ Active(?: · \d+ Idle)?$/.test(textOf(span)));
-    badges[0]?.replaceChildren(document.createTextNode(`${activeCount} Active${idleCount ? ` · ${idleCount} Idle` : ''}`));
-
-    const sizeInput = ensureSlider(card, 'live');
-    applyGridSize(card, 'live', safeSize(sizeInput?.value, 300));
+    latestLiveData = Array.isArray(data) ? data : [];
+    renderLiveView(latestLiveData, card);
   } catch (_) {
     // Preserve the existing React Live View if the enhancement has a transient error.
   }
 }
 
+function applyDefaultScreenshotDate(card) {
+  if (!card || card.dataset.remoteopsDefaultDateApplied === 'true') return;
+  const dateInput = card.querySelector('input[type="date"]');
+  if (!dateInput) return;
+  card.dataset.remoteopsDefaultDateApplied = 'true';
+
+  if (dateInput.value) return;
+
+  const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  descriptor?.set?.call(dateInput, todayISO());
+  dateInput.dispatchEvent(new Event('input', { bubbles: true }));
+  dateInput.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
 function enhanceScreenshots() {
   const card = findScreenshotCard();
   if (!card) return;
+  applyDefaultScreenshotDate(card);
   const input = ensureSlider(card, 'screenshots');
   const size = safeSize(input?.value, 220, 180, 520);
-  const grid = [...card.querySelectorAll('.grid')].find(item => {
-    const images = item.querySelectorAll('img');
-    return images.length > 0;
-  });
+  const grid = [...card.querySelectorAll('.grid')].find(item => item.querySelectorAll('img').length > 0);
   if (grid) {
     grid.dataset.remoteopsScreenshotGrid = 'true';
     grid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${size}px, 1fr))`;
