@@ -27,6 +27,16 @@ for (const key of Object.keys(defaultData)) {
   if (db.data[key] === undefined) db.data[key] = defaultData[key];
 }
 if (!Array.isArray(db.data.deviceStateHistory)) db.data.deviceStateHistory = [];
+
+function employeeIdForDomainUser(domainUser) {
+  const normalized = String(domainUser || '').trim().toLowerCase();
+  if (!normalized) return null;
+  const slash = normalized.lastIndexOf('\\');
+  const username = slash >= 0 ? normalized.slice(slash + 1) : normalized;
+  const employee = db.data.users.find(u => u.role === 'Employee' && String(u.email || '').split('@')[0].toLowerCase() === username);
+  return employee?.id || null;
+}
+
 for (const device of db.data.devices) {
   if (device.enrolled === undefined) device.enrolled = !!device.deviceToken;
   if (device.state === undefined) device.state = device.revoked ? 'revoked' : 'offline';
@@ -36,24 +46,14 @@ for (const device of db.data.devices) {
   if (device.domain === undefined) device.domain = null;
   if (device.domainUser === undefined) device.domainUser = null;
   if (device.agentVersion === undefined) device.agentVersion = null;
+  if (device.currentEmployeeId === undefined) device.currentEmployeeId = employeeIdForDomainUser(device.domainUser);
+  if (device.currentSessionStartedAt === undefined) device.currentSessionStartedAt = null;
 }
-if (db.data.agentConfig && db.data.agentConfig.screenshotRetentionDays === 30 && !db.data.agentConfig.liveViewRetentionDays) {
-  db.data.agentConfig.screenshotRetentionDays = 7;
-}
-// The original default screenshot retention was 7 days. Move that untouched
-// default to the new 3-day monitoring retention policy.
-if (db.data.agentConfig && db.data.agentConfig.screenshotRetentionDays === 7) {
-  db.data.agentConfig.screenshotRetentionDays = 3;
-}
-if (db.data.agentConfig && db.data.agentConfig.screenshotRetentionDays === undefined) {
-  db.data.agentConfig.screenshotRetentionDays = 3;
-}
-if (db.data.agentConfig && db.data.agentConfig.liveViewRetentionDays === undefined) {
-  db.data.agentConfig.liveViewRetentionDays = 3;
-}
-if (db.data.agentConfig && db.data.agentConfig.webUsageRetentionDays === undefined) {
-  db.data.agentConfig.webUsageRetentionDays = 7;
-}
+if (db.data.agentConfig && db.data.agentConfig.screenshotRetentionDays === 30 && !db.data.agentConfig.liveViewRetentionDays) db.data.agentConfig.screenshotRetentionDays = 7;
+if (db.data.agentConfig && db.data.agentConfig.screenshotRetentionDays === 7) db.data.agentConfig.screenshotRetentionDays = 3;
+if (db.data.agentConfig && db.data.agentConfig.screenshotRetentionDays === undefined) db.data.agentConfig.screenshotRetentionDays = 3;
+if (db.data.agentConfig && db.data.agentConfig.liveViewRetentionDays === undefined) db.data.agentConfig.liveViewRetentionDays = 3;
+if (db.data.agentConfig && db.data.agentConfig.webUsageRetentionDays === undefined) db.data.agentConfig.webUsageRetentionDays = 7;
 await db.write();
 
 export function nextId() {
