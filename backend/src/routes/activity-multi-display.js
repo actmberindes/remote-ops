@@ -16,6 +16,29 @@ function userName(id) {
   return u ? u.name : 'Unknown';
 }
 
+function resolveCurrentEmployee(domainUser) {
+  const normalized = String(domainUser || '').trim().toLowerCase();
+  if (!normalized) return null;
+  const slash = normalized.lastIndexOf('\\');
+  const username = slash >= 0 ? normalized.slice(slash + 1) : normalized;
+  return db.data.users.find(u => {
+    if (u.role !== 'Employee') return false;
+    const emailLocal = String(u.email || '').split('@')[0].trim().toLowerCase();
+    return emailLocal && emailLocal === username;
+  }) || null;
+}
+
+function currentEmployeeForDevice(device) {
+  const direct = device?.currentEmployeeId
+    ? db.data.users.find(u => u.id === device.currentEmployeeId && u.role === 'Employee')
+    : null;
+  return direct || resolveCurrentEmployee(device?.domainUser);
+}
+
+function currentEmployeeIdForDevice(device) {
+  return currentEmployeeForDevice(device)?.id || null;
+}
+
 function deviceIsOnline(device) {
   if (!device || device.revoked || !device.enrolled || !device.lastSeenAt) return false;
   const ts = new Date(device.lastSeenAt).getTime();
@@ -40,14 +63,8 @@ function hasPhysicalWindowsDisplayId(frame = {}) {
 }
 
 function filterLegacyFrames(frames) {
-  // The current agent reports real Windows display IDs such as \\\\ . \\DISPLAY1.
-  // Older single-display records used synthetic IDs like display-1; never mix
-  // those stale records into the multi-display Live View once physical display
-  // metadata exists.
   const physical = frames.filter(hasPhysicalWindowsDisplayId);
   if (physical.length > 0) return physical;
-
-  // If there are no physical-ID frames yet, only keep explicitly tagged frames.
   return frames.filter(frame => frame.displayId !== undefined && frame.displayId !== null && frame.displayId !== '');
 }
 
@@ -64,22 +81,18 @@ function latestFramesForDevice(deviceId) {
   for (const frame of frames) {
     const key = displayKey(frame);
     const existing = latest.get(key);
-    if (!existing || new Date(frame.capturedAt || 0).getTime() > new Date(existing.capturedAt || 0).getTime()) {
-      latest.set(key, frame);
-    }
+    if (!existing || new Date(frame.capturedAt || 0).getTime() > new Date(existing.capturedAt || 0).getTime()) latest.set(key, frame);
   }
   return [...latest.values()].sort(displaySort);
 }
 
-function latestHistoryFramesForDevice(deviceId) {
-  const frames = filterLegacyFrames((db.data.liveFrameHistory || []).filter(item => item.deviceId === deviceId));
+function latestHistoryFramesForDevice(deviceId, employeeId) {
+  const frames = filterLegacyFrames((db.data.liveFrameHistory || []).filter(item => item.deviceId === deviceId && item.employeeId === employeeId));
   const latest = new Map();
   for (const frame of frames) {
     const key = displayKey(frame);
     const existing = latest.get(key);
-    if (!existing || new Date(frame.capturedAt || 0).getTime() > new Date(existing.capturedAt || 0).getTime()) {
-      latest.set(key, frame);
-    }
+    if (!existing || new Date(frame.capturedAt || 0).getTime() > new Date(existing.capturedAt || 0).getTime()) latest.set(key, frame);
   }
   return [...latest.values()].sort(displaySort);
 }
@@ -105,16 +118,11 @@ multiDisplayActivityRouter.post('/live-frame', requireDevice(db), async (req, re
   if (!url) return res.status(400).json({ error: 'url is required.' });
 
   const ts = capturedAt || new Date().toISOString();
-  const employeeId = req.device.employeeId;
+  const employeeId = currentEmployeeIdForDevice(req.device) || req.device.employeeId;
   const normalizedIndex = Math.max(1, Number(displayIndex) || 1);
   const normalizedId = displayId ? String(displayId) : `display-${normalizedIndex}`;
   const frames = db.data.liveFrames || (db.data.liveFrames = []);
-  const existing = frames.find(frame =>
-    frame.deviceId === req.device.id &&
-    displayKey(frame) === normalizedId
-  ) || (!displayId && normalizedIndex === 1
-    ? frames.find(frame => frame.deviceId === req.device.id && !frame.displayId && (Number(frame.displayIndex) || 1) === 1)
-    : null);
+  const existing = frames.find(frame => frame.deviceId === req.device.id && displayKey(frame) === normalizedId);
 
   const nextFrame = {
     employeeId,
@@ -126,19 +134,8 @@ multiDisplayActivityRouter.post('/live-frame', requireDevice(db), async (req, re
     displayIndex: normalizedIndex,
   };
 
-  if (existing) {
-    const oldUrl = existing.url;
-    Object.assign(existing, nextFrame);
-    if (oldUrl && oldUrl !== url) {
-      const stillUsedByHistory = (db.data.liveFrameHistory || []).some(frame => frame.url === oldUrl);
-      const stillUsedByScreenshot = db.data.screenshots.some(screenshot => screenshot.url === oldUrl);
-      if (!stillUsedByHistory && !stillUsedByScreenshot) {
-        // The main activity route owns the file cleanup logic; leave orphan cleanup to retention.
-      }
-    }
-  } else {
-    frames.push(nextFrame);
-  }
+  if (existing) Object.assign(existing, nextFrame);
+  else frames.push(nextFrame);
 
   db.data.liveFrameHistory = db.data.liveFrameHistory || [];
   db.data.liveFrameHistory.push({ ...nextFrame, id: nextId() });
@@ -152,9 +149,10 @@ multiDisplayActivityRouter.post('/screenshots', requireDevice(db), async (req, r
   if (!url) return res.status(400).json({ error: 'url is required (upload the file to /api/uploads/monitoring first).' });
 
   const normalizedIndex = Math.max(1, Number(displayIndex) || 1);
+  const currentEmployeeId = currentEmployeeIdForDevice(req.device) || req.device.employeeId;
   const entry = {
     id: nextId(),
-    employeeId: req.device.employeeId,
+    employeeId: currentEmployeeId,
     deviceId: req.device.id,
     url,
     filename: filename || '',
@@ -175,32 +173,36 @@ multiDisplayActivityRouter.get('/live-view', requireAuth(db), requireRole('Admin
   const allowed = scopedEmployeeIds(req.user);
   const eligible = db.data.devices
     .filter(device => device.employeeId && deviceIsOnline(device) && ['active', 'idle'].includes(deviceState(device)))
-    .filter(device => !allowed || allowed.has(device.employeeId));
+    .filter(device => {
+      const currentId = currentEmployeeIdForDevice(device);
+      return !allowed || allowed.has(currentId || device.employeeId);
+    });
 
   const chosen = new Map();
   for (const device of eligible) {
-    const existing = chosen.get(device.employeeId);
-    if (!existing || new Date(device.lastSeenAt).getTime() > new Date(existing.lastSeenAt).getTime()) {
-      chosen.set(device.employeeId, device);
-    }
+    const employeeId = currentEmployeeIdForDevice(device) || device.employeeId;
+    const existing = chosen.get(employeeId);
+    if (!existing || new Date(device.lastSeenAt).getTime() > new Date(existing.lastSeenAt).getTime()) chosen.set(employeeId, device);
   }
 
-  const result = [...chosen.values()].map(device => {
-    const emp = db.data.users.find(u => u.id === device.employeeId);
-    const currentFrames = latestFramesForDevice(device.id);
-    const historyFrames = latestHistoryFramesForDevice(device.id);
+  const result = [...chosen.entries()].map(([employeeId, device]) => {
+    const emp = db.data.users.find(u => u.id === employeeId);
+    const currentFrames = latestFramesForDevice(device.id).filter(frame => frame.employeeId === employeeId);
+    const historyFrames = latestHistoryFramesForDevice(device.id, employeeId);
     const usableFrames = currentFrames.length > 0 ? currentFrames : historyFrames;
     const displays = usableFrames.map((frame, index) => serializeFrame(frame, index + 1));
     const first = displays[0] || null;
 
     return {
-      employeeId: device.employeeId,
-      employeeName: emp?.name || userName(device.employeeId),
+      employeeId,
+      employeeName: emp?.name || userName(employeeId),
       department: emp?.department || '',
       deviceId: device.id,
       deviceName: device.deviceName,
       hostname: device.hostname,
       domainUser: device.domainUser,
+      registeredEmployeeId: device.employeeId,
+      registeredEmployeeName: userName(device.employeeId),
       deviceStatus: deviceState(device),
       frameUrl: first?.frameUrl || null,
       capturedAt: first?.capturedAt || null,
