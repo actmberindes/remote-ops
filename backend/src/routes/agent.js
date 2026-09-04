@@ -62,6 +62,9 @@ function publicDevice(device) {
     currentEmployeeId: current?.id || null,
     currentEmployeeName: current?.name || null,
     currentDomainUser: device.domainUser || null,
+    connectionType: device.isRdp ? 'RDP' : (device.domainUser ? 'Local' : null),
+    isRdp: device.isRdp === true,
+    sessionName: device.sessionName || null,
   };
 }
 
@@ -97,6 +100,7 @@ agentRouter.post('/devices/register', requireAuth(db), requireRole('Admin'), asy
     enrollmentCode: generateEnrollmentCode(), enrollmentExpiresAt: Date.now() + ENROLLMENT_TTL_MS,
     machineId: null, hostname: null, domain: null, domainUser: null, agentVersion: null,
     currentEmployeeId: null, currentSessionStartedAt: null,
+    isRdp: false, sessionName: null,
     lastSeenAt: null, lastStateChangedAt: null, state: 'pending', enrolled: false, revoked: false,
   };
 
@@ -106,7 +110,7 @@ agentRouter.post('/devices/register', requireAuth(db), requireRole('Admin'), asy
 });
 
 agentRouter.post('/enroll', async (req, res) => {
-  const { code, machineId, hostname, domain, domainUser, deviceType = 'desktop-agent', agentVersion = null } = req.body || {};
+  const { code, machineId, hostname, domain, domainUser, isRdp = false, sessionName = null, deviceType = 'desktop-agent', agentVersion = null } = req.body || {};
   if (!code) return res.status(400).json({ error: 'Enrollment code is required.' });
   if (!machineId) return res.status(400).json({ error: 'machineId is required.' });
   if (!hostname) return res.status(400).json({ error: 'hostname is required.' });
@@ -127,6 +131,8 @@ agentRouter.post('/enroll', async (req, res) => {
   device.domain = domain ? String(domain) : null; device.domainUser = domainUser ? String(domainUser) : null;
   device.currentEmployeeId = resolvedEmployee?.id || device.employeeId;
   device.currentSessionStartedAt = now;
+  device.isRdp = Boolean(isRdp);
+  device.sessionName = sessionName ? String(sessionName) : null;
   device.agentVersion = agentVersion ? String(agentVersion) : null; device.lastSeenAt = now;
   recordStateChange(device, 'active', now);
 
@@ -155,27 +161,33 @@ agentRouter.get('/session-status', requireDevice(db), (req, res) => {
     currentEmployeeId: current?.id || null,
     domainUser: req.device.domainUser || null,
     deviceName: req.device.deviceName,
+    isRdp: req.device.isRdp === true,
+    connectionType: req.device.isRdp ? 'RDP' : (req.device.domainUser ? 'Local' : null),
+    sessionName: req.device.sessionName || null,
   });
 });
 
 agentRouter.post('/heartbeat', requireDevice(db), async (req, res) => {
-  const { state = 'active', hostname, machineId, domain, domainUser, agentVersion } = req.body || {};
+  const { state = 'active', hostname, machineId, domain, domainUser, isRdp, sessionName, agentVersion } = req.body || {};
   const allowedStates = new Set(['active', 'idle', 'logged-out']);
   const nextState = allowedStates.has(state) ? state : 'active';
   const now = new Date().toISOString();
   const previousDomainUser = String(req.device.domainUser || '').trim().toLowerCase();
+  const previousRdp = req.device.isRdp === true;
 
   if (hostname) req.device.hostname = String(hostname);
   if (machineId) req.device.machineId = String(machineId);
   if (domain !== undefined) req.device.domain = domain ? String(domain) : null;
   if (domainUser !== undefined) req.device.domainUser = domainUser ? String(domainUser) : null;
+  if (isRdp !== undefined) req.device.isRdp = Boolean(isRdp);
+  if (sessionName !== undefined) req.device.sessionName = sessionName ? String(sessionName) : null;
   if (agentVersion) req.device.agentVersion = String(agentVersion);
 
   const nextDomainUser = String(req.device.domainUser || '').trim().toLowerCase();
   const resolvedEmployee = resolveCurrentEmployee(req.device.domainUser);
   const nextEmployeeId = resolvedEmployee?.id || null;
 
-  if (nextDomainUser !== previousDomainUser || req.device.currentEmployeeId !== nextEmployeeId) {
+  if (nextDomainUser !== previousDomainUser || req.device.currentEmployeeId !== nextEmployeeId || previousRdp !== req.device.isRdp) {
     req.device.currentEmployeeId = nextEmployeeId;
     req.device.currentSessionStartedAt = nextEmployeeId ? now : null;
   }
@@ -194,6 +206,9 @@ agentRouter.post('/heartbeat', requireDevice(db), async (req, res) => {
     currentEmployeeId: req.device.currentEmployeeId,
     currentEmployeeName: req.device.currentEmployeeId ? userName(req.device.currentEmployeeId) : null,
     domainUser: req.device.domainUser || null,
+    isRdp: req.device.isRdp === true,
+    connectionType: req.device.isRdp ? 'RDP' : (req.device.domainUser ? 'Local' : null),
+    sessionName: req.device.sessionName || null,
     serverTime: now,
   });
 });
