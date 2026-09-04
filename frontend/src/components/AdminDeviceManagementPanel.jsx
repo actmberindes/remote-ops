@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, Copy, Laptop, Monitor, RefreshCw, ShieldOff, Trash2, UserPlus } from 'lucide-react';
+import { Copy, Monitor, RefreshCw, ShieldOff, Trash2, UserPlus, Wifi, WifiOff, Radio } from 'lucide-react';
 import { api } from '../lib/api.js';
 
 function statusTone(status) {
@@ -22,6 +22,12 @@ function statusLabel(status) {
     pending: 'Pending Enrollment',
     revoked: 'Revoked',
   }[status] || status || 'Unknown';
+}
+
+function connectionLabel(device) {
+  if (device.isRdp || device.connectionType === 'RDP') return 'RDP';
+  if (device.currentDomainUser || device.domainUser) return 'Local';
+  return '—';
 }
 
 export default function AdminDeviceManagementPanel({ users = [], addToast }) {
@@ -119,7 +125,7 @@ export default function AdminDeviceManagementPanel({ users = [], addToast }) {
               <Monitor size={16} className="accent-text" /> Device Management
             </h3>
             <p className="text-xs text-muted mt-0.5">
-              Register company devices, assign them to employees, and monitor device health.
+              Register each physical device once. The current Windows user is detected automatically, so one shared device can be used by multiple employees.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -139,7 +145,7 @@ export default function AdminDeviceManagementPanel({ users = [], addToast }) {
           <form onSubmit={register} className="mb-5 p-4 rounded-xl border border-[var(--border)]" style={{ background: 'var(--bg)' }}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <label className="text-xs font-semibold">
-                Employee
+                Registration Owner
                 <select
                   className="w-full mt-1 rounded-lg px-3 py-2 input-surface text-xs"
                   value={employeeId}
@@ -148,13 +154,14 @@ export default function AdminDeviceManagementPanel({ users = [], addToast }) {
                   <option value="">Select employee…</option>
                   {employees.map(e => <option key={e.id} value={e.id}>{e.name} — {e.department}</option>)}
                 </select>
+                <span className="block text-[10px] font-normal text-muted mt-1">Used for device inventory. Current usage can switch between employees.</span>
               </label>
 
               <label className="text-xs font-semibold">
                 Device Name
                 <input
                   className="w-full mt-1 rounded-lg px-3 py-2 input-surface text-xs"
-                  placeholder="e.g. Karen-PC"
+                  placeholder="e.g. 88F-WS031"
                   value={deviceName}
                   onChange={e => setDeviceName(e.target.value)}
                 />
@@ -198,7 +205,7 @@ export default function AdminDeviceManagementPanel({ users = [], addToast }) {
               </button>
             </div>
             <div className="text-xs text-muted mt-3">
-              Use this code only on the intended device during the IT enrollment process.
+              Use this code only on the intended physical device during the IT enrollment process.
             </div>
           </div>
         )}
@@ -212,13 +219,12 @@ export default function AdminDeviceManagementPanel({ users = [], addToast }) {
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="font-bold text-muted uppercase tracking-wider border-b border-[var(--border)]">
-                  <th className="pb-2.5 px-2">Employee</th>
                   <th className="pb-2.5 px-2">Device</th>
-                  <th className="pb-2.5 px-2">Hostname</th>
-                  <th className="pb-2.5 px-2">Domain User</th>
-                  <th className="pb-2.5 px-2">Type</th>
-                  <th className="pb-2.5 px-2">Last Seen</th>
+                  <th className="pb-2.5 px-2">Registered To</th>
+                  <th className="pb-2.5 px-2">Current User</th>
+                  <th className="pb-2.5 px-2">Session</th>
                   <th className="pb-2.5 px-2">Status</th>
+                  <th className="pb-2.5 px-2">Last Seen</th>
                   <th className="pb-2.5 px-2">Agent</th>
                   <th className="pb-2.5 px-2 text-right">Actions</th>
                 </tr>
@@ -226,19 +232,42 @@ export default function AdminDeviceManagementPanel({ users = [], addToast }) {
               <tbody className="divide-y divide-[var(--border)]">
                 {devices.map(d => {
                   const tone = statusTone(d.status);
+                  const isRdp = d.isRdp || d.connectionType === 'RDP';
                   return (
                     <tr key={d.id} className="hover:bg-[var(--bg)] transition-colors">
-                      <td className="py-3 px-2 font-semibold">{d.employeeName}</td>
-                      <td className="py-3 px-2">{d.deviceName}</td>
-                      <td className="py-3 px-2 text-muted">{d.hostname || '—'}</td>
-                      <td className="py-3 px-2 text-muted mono">{d.domainUser || '—'}</td>
-                      <td className="py-3 px-2 text-muted">{d.type === 'desktop-agent' ? 'Desktop Agent' : 'Browser Extension'}</td>
-                      <td className="py-3 px-2 text-muted whitespace-nowrap">{d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString() : 'Never'}</td>
+                      <td className="py-3 px-2">
+                        <div className="font-semibold">{d.deviceName}</div>
+                        <div className="text-[10px] text-muted mono mt-0.5">{d.hostname || 'Hostname pending'}</div>
+                      </td>
+                      <td className="py-3 px-2">
+                        <div className="font-semibold">{d.registeredEmployeeName || d.employeeName}</div>
+                        <div className="text-[10px] text-muted">Original registration owner</div>
+                      </td>
+                      <td className="py-3 px-2">
+                        {d.currentEmployeeName ? (
+                          <>
+                            <div className="font-semibold">{d.currentEmployeeName}</div>
+                            <div className="text-[10px] text-muted mono">{d.currentDomainUser || d.domainUser || '—'}</div>
+                          </>
+                        ) : (
+                          <span className="text-muted">No user</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-2">
+                        <span className="inline-flex items-center gap-1.5 font-semibold" style={{ color: isRdp ? 'var(--warning)' : 'var(--text-muted)' }}>
+                          {isRdp ? <Radio size={13} /> : <Wifi size={13} />}
+                          {connectionLabel(d)}
+                        </span>
+                        {isRdp && d.sessionName && <div className="text-[9px] text-muted mono mt-0.5">{d.sessionName}</div>}
+                      </td>
                       <td className="py-3 px-2">
                         <span className="inline-flex items-center gap-1.5 font-semibold" style={{ color: tone }}>
                           <span className="rounded-full" style={{ width: 7, height: 7, background: tone }} />
                           {statusLabel(d.status)}
                         </span>
+                      </td>
+                      <td className="py-3 px-2 text-muted whitespace-nowrap">
+                        {d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString() : 'Never'}
                       </td>
                       <td className="py-3 px-2 text-muted">{d.agentVersion || '—'}</td>
                       <td className="py-3 px-2 text-right">
@@ -260,6 +289,12 @@ export default function AdminDeviceManagementPanel({ users = [], addToast }) {
             </table>
           </div>
         )}
+
+        <div className="mt-4 flex flex-wrap items-center gap-3 text-[10px] text-muted">
+          <span className="inline-flex items-center gap-1.5"><Wifi size={12} /> Local session</span>
+          <span className="inline-flex items-center gap-1.5" style={{ color: 'var(--warning)' }}><Radio size={12} /> RDP session</span>
+          <span className="inline-flex items-center gap-1.5"><WifiOff size={12} /> Offline / no session</span>
+        </div>
       </div>
     </div>
   );
