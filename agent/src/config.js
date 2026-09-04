@@ -3,6 +3,10 @@ const path = require('node:path');
 const os = require('node:os');
 
 function configDir() {
+  if (process.platform === 'win32') {
+    const base = process.env.ProgramData || path.join(process.env.SystemDrive || 'C:', 'ProgramData');
+    return path.join(base, 'RemoteOpsAgent');
+  }
   const base = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
   return path.join(base, 'RemoteOpsAgent');
 }
@@ -36,7 +40,7 @@ function loadConfig() {
     }
 
     return merged;
-  } catch (e) {
+  } catch (_) {
     return { ...defaults };
   }
 }
@@ -57,4 +61,4 @@ function hasConsent(config) {
   return !!(config && config.consentAcceptedAt);
 }
 
-module.exports = { loadConfig, saveConfig, isEnrolled, isPaired: isEnrolled, hasConsent, CONFIG_PATH };
+module.exports = { loadConfig, saveConfig, isEnrolled, isPaired: isEnrolled, hasConsent, CONFIG_PATH, configDir };
