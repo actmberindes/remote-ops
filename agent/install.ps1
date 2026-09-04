@@ -13,12 +13,9 @@ $TargetExe = Join-Path $InstallDir $ExeName
 $TargetVbs = Join-Path $InstallDir $VbsName
 $ConfigDir = Join-Path ($env:ProgramData) "RemoteOpsAgent"
 $ConfigPath = Join-Path $ConfigDir "config.json"
-$CurrentUserLegacyConfigPath = Join-Path $env:APPDATA "RemoteOpsAgent\config.json"
+$CurrentUserLegacyConfigPath = Join-Path ($env:APPDATA) "RemoteOpsAgent\config.json"
 $CommonStartupDir = [Environment]::GetFolderPath("CommonStartup")
 $ShortcutPath = Join-Path $CommonStartupDir "RemoteOpsAgent.lnk"
-$MachineRunKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
-$MachineRunName = 'RemoteOpsAgent'
-$MachineRunCommand = "`"$env:WINDIR\System32\wscript.exe`" `"$TargetVbs`""
 
 $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = New-Object Security.Principal.WindowsPrincipal($currentIdentity)
@@ -146,34 +143,13 @@ else {
 & icacls.exe $InstallDir /inheritance:e /grant:r "Users:(OI)(CI)(RX)" "Administrators:(OI)(CI)(F)" "SYSTEM:(OI)(CI)(F)" | Out-Null
 & icacls.exe $ConfigDir /inheritance:e /grant:r "Users:(OI)(CI)(M)" "Administrators:(OI)(CI)(F)" "SYSTEM:(OI)(CI)(F)" | Out-Null
 
-# Remove legacy per-user Startup shortcuts, then explicitly seed shortcuts for
-# existing interactive profiles. This makes the launcher visible in each
-# user's Startup folder while the HKLM Run entry below also covers future users
-# and RDP sign-ins where Startup-folder policy may be restricted.
+# Remove legacy per-user Startup shortcuts so the same user does not launch the agent twice.
 $usersRoot = Join-Path $env:SystemDrive 'Users'
 if (Test-Path -LiteralPath $usersRoot) {
     Get-ChildItem -LiteralPath $usersRoot -Directory -Force -ErrorAction SilentlyContinue | ForEach-Object {
-        if ($_.Name -in @('Public', 'Default', 'Default User', 'All Users')) { return }
-
         $legacyShortcut = Join-Path $_.FullName 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\RemoteOpsAgent.lnk'
         if (Test-Path -LiteralPath $legacyShortcut -PathType Leaf) {
             Remove-Item -LiteralPath $legacyShortcut -Force -ErrorAction SilentlyContinue
-        }
-
-        try {
-            $userStartup = Split-Path $legacyShortcut -Parent
-            New-Item -ItemType Directory -Force -Path $userStartup | Out-Null
-            $userShortcut = New-Object -ComObject WScript.Shell
-            $userLink = $userShortcut.CreateShortcut($legacyShortcut)
-            $userLink.TargetPath = Join-Path $env:WINDIR 'System32\wscript.exe'
-            $userLink.Arguments = "`"$TargetVbs`""
-            $userLink.WorkingDirectory = $InstallDir
-            $userLink.WindowStyle = 1
-            $userLink.Description = 'Remote Ops desktop monitoring agent (shared device)'
-            $userLink.Save()
-        }
-        catch {
-            Write-Host "Could not create per-user Startup shortcut for $($_.Name): $($_.Exception.Message)"
         }
     }
 }
@@ -188,17 +164,9 @@ $Shortcut.WindowStyle = 1
 $Shortcut.Description = "Remote Ops desktop monitoring agent (shared device)"
 $Shortcut.Save()
 
-# Machine Run is the primary automatic-launch mechanism. It runs the agent in
-# the context of every interactive Windows user at sign-in, including users
-# connecting later through RDP, without requiring a separate per-user install.
-New-Item -Path $MachineRunKey -Force | Out-Null
-New-ItemProperty -Path $MachineRunKey -Name $MachineRunName -PropertyType String -Value $MachineRunCommand -Force | Out-Null
-
 Write-Host ""
 Write-Host "Machine-wide Startup shortcut registered: $ShortcutPath"
-Write-Host "Machine-wide Run entry registered: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\$MachineRunName"
-Write-Host "Per-user Startup shortcuts seeded for existing local profiles."
-Write-Host "The agent will start for every Windows user at sign-in, including future RDP users."
+Write-Host "The agent will start for every Windows user at sign-in, including RDP users."
 Write-Host ""
 
 $runNow = Read-Host "Start the background agent now for the current user? (y/n)"
