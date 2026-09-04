@@ -13,7 +13,7 @@ $TargetExe = Join-Path $InstallDir $ExeName
 $TargetVbs = Join-Path $InstallDir $VbsName
 $ConfigDir = Join-Path ($env:ProgramData) "RemoteOpsAgent"
 $ConfigPath = Join-Path $ConfigDir "config.json"
-$LegacyConfigPath = Join-Path ($env:APPDATA) "RemoteOpsAgent\config.json"
+$CurrentUserLegacyConfigPath = Join-Path ($env:APPDATA) "RemoteOpsAgent\config.json"
 $CommonStartupDir = [Environment]::GetFolderPath("CommonStartup")
 $ShortcutPath = Join-Path $CommonStartupDir "RemoteOpsAgent.lnk"
 
@@ -35,13 +35,89 @@ Copy-Item -Path $SourceExe -Destination $TargetExe -Force
 Copy-Item -Path $SourceVbs -Destination $TargetVbs -Force
 try { Unblock-File -LiteralPath $TargetExe -ErrorAction Stop } catch { }
 
-& icacls.exe $InstallDir /inheritance:e /grant:r "Users:(OI)(CI)(RX)" "Administrators:(OI)(CI)(F)" "SYSTEM:(OI)(CI)(F)" | Out-Null
+# Existing installations created by the old per-user installer stored the
+# enrollment under that Windows user's APPDATA. The new shared-device agent
+# stores its enrollment under ProgramData, so scan every local profile rather
+# than looking only at the Administrator's APPDATA.
+function Find-LegacyEnrollment {
+    param(
+        [string]$UsersRoot
+    )
 
-# Migrate an existing per-user enrollment created by the previous installer.
-if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf) -and (Test-Path -LiteralPath $LegacyConfigPath -PathType Leaf)) {
-    Write-Host "Migrating existing per-user enrollment into the machine-wide configuration..."
-    & icacls.exe $ConfigDir /grant:r "$($currentIdentity.Name):(OI)(CI)(M)" | Out-Null
-    Copy-Item -LiteralPath $LegacyConfigPath -Destination $ConfigPath -Force
+    if (-not (Test-Path -LiteralPath $UsersRoot -PathType Container)) {
+        return $null
+    }
+
+    $candidates = @()
+    $profiles = Get-ChildItem -LiteralPath $UsersRoot -Directory -Force -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -notin @('Public', 'Default', 'Default User', 'All Users') }
+
+    foreach ($profile in $profiles) {
+        $candidatePath = Join-Path $profile.FullName 'AppData\Roaming\RemoteOpsAgent\config.json'
+        if (-not (Test-Path -LiteralPath $candidatePath -PathType Leaf)) { continue }
+
+        try {
+            $candidate = Get-Content -LiteralPath $candidatePath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            if ($candidate.deviceToken -and $candidate.deviceId) {
+                $candidates += [PSCustomObject]@{
+                    Path = $candidatePath
+                    Data = $candidate
+                    Profile = $profile.Name
+                }
+            }
+        }
+        catch {
+            Write-Host "Skipping unreadable/invalid legacy config: $candidatePath"
+        }
+    }
+
+    if ($candidates.Count -eq 0) {
+        return $null
+    }
+
+    # Prefer a legacy enrollment that matches this physical machine.
+    $machineGuidOutput = & reg.exe query 'HKLM\SOFTWARE\Microsoft\Cryptography' /v MachineGuid 2>$null
+    $machineGuidMatch = [regex]::Match(($machineGuidOutput | Out-String), 'MachineGuid\s+REG_SZ\s+(.+)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    $machineGuid = if ($machineGuidMatch.Success) { $machineGuidMatch.Groups[1].Value.Trim() } else { $null }
+
+    if ($machineGuid) {
+        $match = $candidates | Where-Object { $_.Data.machineId -and [string]$_.Data.machineId -eq $machineGuid } | Select-Object -First 1
+        if ($match) { return $match }
+    }
+
+    # Otherwise, use the first valid existing enrollment. Only one physical
+    # machine should normally have been enrolled from this computer profile set.
+    return ($candidates | Select-Object -First 1)
+}
+
+# Make the machine-wide config readable/writable by the agent's signed-in users.
+& icacls.exe $ConfigDir /inheritance:e /grant:r "Users:(OI)(CI)(M)" "Administrators:(OI)(CI)(F)" "SYSTEM:(OI)(CI)(F)" | Out-Null
+
+if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) {
+    $legacy = $null
+
+    # First check the current PowerShell user's legacy path, then scan all user
+    # profiles so running this installer elevated does not hide the original
+    # enrollment created under Joshua/Karen/etc.
+    if (Test-Path -LiteralPath $CurrentUserLegacyConfigPath -PathType Leaf) {
+        try {
+            $legacyData = Get-Content -LiteralPath $CurrentUserLegacyConfigPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            if ($legacyData.deviceToken -and $legacyData.deviceId) {
+                $legacy = [PSCustomObject]@{ Path = $CurrentUserLegacyConfigPath; Data = $legacyData; Profile = $currentIdentity.Name }
+            }
+        }
+        catch { }
+    }
+
+    if (-not $legacy) {
+        $legacy = Find-LegacyEnrollment -UsersRoot (Join-Path $env:SystemDrive 'Users')
+    }
+
+    if ($legacy) {
+        Write-Host "Migrating existing device enrollment from $($legacy.Profile) into the machine-wide configuration..."
+        Copy-Item -LiteralPath $legacy.Path -Destination $ConfigPath -Force
+        Write-Host "Existing enrollment migrated successfully. No new enrollment is required."
+    }
 }
 
 $isAlreadyEnrolled = Test-Path -LiteralPath $ConfigPath -PathType Leaf
@@ -54,7 +130,6 @@ if (-not $isAlreadyEnrolled) {
     Write-Host "This enrollment is for the physical computer, not one employee."
     Write-Host "Any supported Windows user who later signs in can be monitored automatically."
     Write-Host ""
-    & icacls.exe $ConfigDir /grant:r "$($currentIdentity.Name):(OI)(CI)(M)" | Out-Null
     & $TargetExe --enroll
     $exitCode = $LASTEXITCODE
     if ($exitCode -ne 0) { throw "Device enrollment did not complete successfully. Exit code: $exitCode" }
@@ -65,7 +140,8 @@ else {
     Write-Host "An existing machine enrollment was found. Skipping the enrollment prompt."
 }
 
-& icacls.exe $InstallDir /grant:r "Users:(OI)(CI)(RX)" "Administrators:(OI)(CI)(F)" "SYSTEM:(OI)(CI)(F)" | Out-Null
+& icacls.exe $InstallDir /inheritance:e /grant:r "Users:(OI)(CI)(RX)" "Administrators:(OI)(CI)(F)" "SYSTEM:(OI)(CI)(F)" | Out-Null
+& icacls.exe $ConfigDir /inheritance:e /grant:r "Users:(OI)(CI)(M)" "Administrators:(OI)(CI)(F)" "SYSTEM:(OI)(CI)(F)" | Out-Null
 
 # Remove legacy per-user Startup shortcuts so the same user does not launch the agent twice.
 $usersRoot = Join-Path $env:SystemDrive 'Users'
