@@ -18,6 +18,28 @@ function userName(id) {
   return u ? u.name : 'Unknown';
 }
 
+function resolveCurrentEmployee(domainUser) {
+  const normalized = String(domainUser || '').trim().toLowerCase();
+  if (!normalized) return null;
+
+  const slash = normalized.lastIndexOf('\\');
+  const username = slash >= 0 ? normalized.slice(slash + 1) : normalized;
+
+  return db.data.users.find(u => {
+    if (u.role !== 'Employee') return false;
+    const emailLocal = String(u.email || '').split('@')[0].trim().toLowerCase();
+    return emailLocal && emailLocal === username;
+  }) || null;
+}
+
+function currentEmployee(device) {
+  const direct = device?.currentEmployeeId
+    ? db.data.users.find(u => u.id === device.currentEmployeeId && u.role === 'Employee')
+    : null;
+  if (direct) return direct;
+  return resolveCurrentEmployee(device?.domainUser);
+}
+
 function resolveDeviceState(device) {
   if (device.revoked) return 'revoked';
   if (!device.enrolled) return 'pending';
@@ -31,10 +53,15 @@ function resolveDeviceState(device) {
 
 function publicDevice(device) {
   const { enrollmentCode, enrollmentExpiresAt, ...safe } = device;
+  const current = currentEmployee(device);
   return {
     ...safe,
     status: resolveDeviceState(device),
-    employeeName: userName(device.employeeId),
+    employeeName: current?.name || userName(device.employeeId),
+    registeredEmployeeName: userName(device.employeeId),
+    currentEmployeeId: current?.id || null,
+    currentEmployeeName: current?.name || null,
+    currentDomainUser: device.domainUser || null,
   };
 }
 
@@ -45,7 +72,7 @@ function recordStateChange(device, nextState, timestamp = new Date().toISOString
   db.data.deviceStateHistory.push({
     id: nextId(),
     deviceId: device.id,
-    employeeId: device.employeeId,
+    employeeId: device.currentEmployeeId || device.employeeId,
     from: previousState,
     to: nextState,
     timestamp,
@@ -69,6 +96,7 @@ agentRouter.post('/devices/register', requireAuth(db), requireRole('Admin'), asy
     pairedAt: null, registeredAt: new Date().toISOString(), enrolledAt: null,
     enrollmentCode: generateEnrollmentCode(), enrollmentExpiresAt: Date.now() + ENROLLMENT_TTL_MS,
     machineId: null, hostname: null, domain: null, domainUser: null, agentVersion: null,
+    currentEmployeeId: null, currentSessionStartedAt: null,
     lastSeenAt: null, lastStateChangedAt: null, state: 'pending', enrolled: false, revoked: false,
   };
 
@@ -92,10 +120,13 @@ agentRouter.post('/enroll', async (req, res) => {
   if (existing) return res.status(409).json({ error: 'This computer is already enrolled as another managed device.' });
 
   const now = new Date().toISOString();
+  const resolvedEmployee = resolveCurrentEmployee(domainUser);
   device.enrolled = true; device.enrolledAt = now; device.pairedAt = now;
   device.enrollmentCode = null; device.enrollmentExpiresAt = null;
   device.machineId = String(machineId); device.hostname = String(hostname);
   device.domain = domain ? String(domain) : null; device.domainUser = domainUser ? String(domainUser) : null;
+  device.currentEmployeeId = resolvedEmployee?.id || device.employeeId;
+  device.currentSessionStartedAt = now;
   device.agentVersion = agentVersion ? String(agentVersion) : null; device.lastSeenAt = now;
   recordStateChange(device, 'active', now);
 
@@ -117,7 +148,14 @@ agentRouter.get('/config', requireDevice(db), (req, res) => {
 });
 
 agentRouter.get('/session-status', requireDevice(db), (req, res) => {
-  res.json({ status: resolveDeviceState(req.device), employeeName: req.device.employeeName || userName(req.device.employeeId), deviceName: req.device.deviceName });
+  const current = currentEmployee(req.device);
+  res.json({
+    status: resolveDeviceState(req.device),
+    employeeName: current?.name || userName(req.device.employeeId),
+    currentEmployeeId: current?.id || null,
+    domainUser: req.device.domainUser || null,
+    deviceName: req.device.deviceName,
+  });
 });
 
 agentRouter.post('/heartbeat', requireDevice(db), async (req, res) => {
@@ -125,6 +163,7 @@ agentRouter.post('/heartbeat', requireDevice(db), async (req, res) => {
   const allowedStates = new Set(['active', 'idle', 'logged-out']);
   const nextState = allowedStates.has(state) ? state : 'active';
   const now = new Date().toISOString();
+  const previousDomainUser = String(req.device.domainUser || '').trim().toLowerCase();
 
   if (hostname) req.device.hostname = String(hostname);
   if (machineId) req.device.machineId = String(machineId);
@@ -132,14 +171,33 @@ agentRouter.post('/heartbeat', requireDevice(db), async (req, res) => {
   if (domainUser !== undefined) req.device.domainUser = domainUser ? String(domainUser) : null;
   if (agentVersion) req.device.agentVersion = String(agentVersion);
 
+  const nextDomainUser = String(req.device.domainUser || '').trim().toLowerCase();
+  const resolvedEmployee = resolveCurrentEmployee(req.device.domainUser);
+  const nextEmployeeId = resolvedEmployee?.id || null;
+
+  if (nextDomainUser !== previousDomainUser || req.device.currentEmployeeId !== nextEmployeeId) {
+    req.device.currentEmployeeId = nextEmployeeId;
+    req.device.currentSessionStartedAt = nextEmployeeId ? now : null;
+  }
+
+  if (nextState === 'logged-out') {
+    req.device.currentEmployeeId = null;
+    req.device.currentSessionStartedAt = null;
+  }
+
   req.device.lastSeenAt = now;
   recordStateChange(req.device, nextState, now);
   await db.write();
-  res.json({ ok: true, status: resolveDeviceState(req.device), serverTime: now });
+  res.json({
+    ok: true,
+    status: resolveDeviceState(req.device),
+    currentEmployeeId: req.device.currentEmployeeId,
+    currentEmployeeName: req.device.currentEmployeeId ? userName(req.device.currentEmployeeId) : null,
+    domainUser: req.device.domainUser || null,
+    serverTime: now,
+  });
 });
 
-// The tray asks the backend to validate an administrator-provided code before
-// allowing a locally running agent to exit. The secret is kept server-side.
 agentRouter.post('/quit-authorize', requireDevice(db), async (req, res) => {
   const configured = String(process.env.AGENT_ADMIN_QUIT_CODE || '').trim();
   const supplied = String(req.body?.code || '').trim();
@@ -152,6 +210,8 @@ agentRouter.post('/quit-authorize', requireDevice(db), async (req, res) => {
   if (!matches) return res.status(403).json({ error: 'Invalid administrator code.' });
 
   const now = new Date().toISOString();
+  req.device.currentEmployeeId = null;
+  req.device.currentSessionStartedAt = null;
   recordStateChange(req.device, 'offline', now);
   req.device.lastSeenAt = now;
   await db.write();
@@ -199,7 +259,7 @@ agentRouter.get('/devices/:id/history', requireAuth(db), requireRole('Admin'), (
 agentRouter.patch('/devices/:id/revoke', requireAuth(db), requireRole('Admin'), async (req, res) => {
   const id = Number(req.params.id); const device = db.data.devices.find(d => d.id === id);
   if (!device) return res.status(404).json({ error: 'Device not found.' });
-  const now = new Date().toISOString(); device.revoked = true; recordStateChange(device, 'revoked', now);
+  const now = new Date().toISOString(); device.revoked = true; device.currentEmployeeId = null; recordStateChange(device, 'revoked', now);
   await db.write(); res.json(publicDevice(device));
 });
 
