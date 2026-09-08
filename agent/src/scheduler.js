@@ -8,6 +8,8 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
   let currentLiveSeconds = null;
   let scheduledTimer = null;
   let liveTimer = null;
+  let liveBusy = false;
+  let scheduledBusy = false;
 
   async function sendHeartbeat() {
     if (!running || !config.deviceToken) return;
@@ -39,13 +41,13 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
     }
   }
 
-  async function uploadCaptures(captures, postCapture) {
+  async function uploadCaptures(captures, postCapture, purpose) {
     const uploaded = [];
     for (const item of captures) {
       try {
-        const result = await client.uploadFile(config.deviceToken, item.filePath);
+        const result = await client.uploadFile(config.deviceToken, item.filePath, purpose);
         await postCapture(result, item);
-        uploaded.push({ ...item, url: result.url, filename: result.filename });
+        uploaded.push({ ...item, ...result });
       } finally {
         capture.cleanup(item.filePath);
       }
@@ -53,51 +55,50 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
     return uploaded;
   }
 
-  function capturesForSession(captures, telemetry) {
-    // An RDP session is treated as a single-display monitoring session. Keep
-    // the first/primary physical display only, even if the host has 2+ monitors.
-    if (!telemetry.isRdp) return captures;
-    return captures.filter(item => Number(item.displayIndex) === 1).slice(0, 1);
-  }
-
   async function tickScheduled() {
-    if (!running) return;
-
-    const telemetry = getDeviceState();
-    if (telemetry.state === 'logged-out') {
-      log('Scheduled screenshot skipped: no logged-in Windows user.');
-      return;
-    }
+    if (!running || scheduledBusy) return;
+    scheduledBusy = true;
 
     try {
-      const allCaptures = await capture.captureFullAll();
-      const captures = capturesForSession(allCaptures, telemetry);
+      const telemetry = getDeviceState();
+      if (telemetry.state === 'logged-out') {
+        log('Scheduled screenshot skipped: no logged-in Windows user.');
+        return;
+      }
+
+      const captures = await capture.captureFullAll({ primaryOnly: telemetry.isRdp });
       await uploadCaptures(captures, async (result, item) => {
         await client.postScheduledScreenshot(config.deviceToken, result.url, result.filename, item);
-      });
+      }, 'screenshot');
       log(`Scheduled screenshot captured for ${captures.length} display(s)${telemetry.isRdp ? ' (RDP primary display only).' : '.'}`);
     } catch (e) {
       log(`Scheduled capture failed: ${e.message}`);
+    } finally {
+      scheduledBusy = false;
     }
   }
 
   async function tickLive() {
-    if (!running) return;
-
-    const telemetry = getDeviceState();
-    if (telemetry.state === 'logged-out') {
-      log('Live frame skipped: no logged-in Windows user.');
-      return;
-    }
+    if (!running || liveBusy) return;
+    liveBusy = true;
 
     try {
-      const allCaptures = await capture.captureLiveAll();
-      const captures = capturesForSession(allCaptures, telemetry);
+      const telemetry = getDeviceState();
+      if (telemetry.state === 'logged-out') {
+        log('Live frame skipped: no logged-in Windows user.');
+        return;
+      }
+
+      // During RDP, capture only the primary physical display. Locally,
+      // preserve the full multi-display capture behavior.
+      const captures = await capture.captureLiveAll({ primaryOnly: telemetry.isRdp });
       await uploadCaptures(captures, async (result, item) => {
-        await client.postLiveFrame(config.deviceToken, result.url, item);
-      });
+        await client.postLiveFrame(config.deviceToken, result.liveFrameToken, item);
+      }, 'live');
     } catch (e) {
       log(`Live frame failed: ${e.message}`);
+    } finally {
+      liveBusy = false;
     }
   }
 
