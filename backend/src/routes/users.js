@@ -8,6 +8,30 @@ usersRouter.use(requireAuth(db));
 
 const DEVICE_OFFLINE_MS = 90 * 1000;
 
+function userName(id) {
+  const u = db.data.users.find(x => x.id === id);
+  return u ? u.name : 'Unknown';
+}
+
+function resolveCurrentEmployee(domainUser) {
+  const normalized = String(domainUser || '').trim().toLowerCase();
+  if (!normalized) return null;
+  const slash = normalized.lastIndexOf('\\\\');
+  const username = slash >= 0 ? normalized.slice(slash + 1) : normalized;
+  return db.data.users.find(u => {
+    if (u.role !== 'Employee') return false;
+    const emailLocal = String(u.email || '').split('@')[0].trim().toLowerCase();
+    return emailLocal && emailLocal === username;
+  }) || null;
+}
+
+function currentEmployee(device) {
+  const direct = device?.currentEmployeeId
+    ? db.data.users.find(u => u.id === device.currentEmployeeId && u.role === 'Employee')
+    : null;
+  return direct || resolveCurrentEmployee(device?.domainUser);
+}
+
 function deviceStatus(device) {
   if (!device || device.revoked || device.enrolled === false) return 'inactive';
   if (!device.lastSeenAt) return 'offline';
@@ -19,17 +43,54 @@ function deviceStatus(device) {
 function publicUserWithDeviceStatus(user) {
   if (user.role !== 'Employee') return publicUser(user);
 
-  const devices = db.data.devices.filter(d => d.employeeId === user.id && !d.revoked);
-  if (devices.length === 0) return publicUser(user);
+  // Prefer the employee currently logged into a managed device, which keeps
+  // shared workstations attributed to the person actually using them.
+  const matchingDevices = db.data.devices.filter(d => {
+    if (d.revoked || d.enrolled === false) return false;
+    const current = currentEmployee(d);
+    return current?.id === user.id || d.employeeId === user.id;
+  });
 
-  const statuses = devices.map(deviceStatus);
-  let status = 'offline';
+  if (matchingDevices.length === 0) return publicUser(user);
 
-  if (statuses.includes('active')) status = 'active';
-  else if (statuses.includes('idle')) status = 'idle';
-  else if (statuses.includes('logged-out')) status = 'logged-out';
+  const ranked = matchingDevices
+    .map(device => ({
+      device,
+      status: deviceStatus(device),
+      lastSeenMs: new Date(device.lastSeenAt || 0).getTime(),
+      changedMs: new Date(device.lastStateChangedAt || device.lastSeenAt || 0).getTime(),
+    }))
+    .filter(item => item.status !== 'offline')
+    .sort((a, b) => {
+      const rank = { active: 4, idle: 3, 'logged-out': 2, inactive: 1, offline: 0 };
+      return (rank[b.status] || 0) - (rank[a.status] || 0) || b.lastSeenMs - a.lastSeenMs;
+    });
 
-  return { ...publicUser(user), status };
+  const offlineFallback = matchingDevices
+    .map(device => ({
+      device,
+      status: deviceStatus(device),
+      lastSeenMs: new Date(device.lastSeenAt || 0).getTime(),
+      changedMs: new Date(device.lastStateChangedAt || device.lastSeenAt || 0).getTime(),
+    }))
+    .sort((a, b) => b.lastSeenMs - a.lastSeenMs)[0];
+
+  const selected = ranked[0] || offlineFallback;
+  const status = selected?.status || 'offline';
+  const statusSince = selected?.changedMs && selected.changedMs > 0
+    ? new Date(selected.changedMs).toISOString()
+    : null;
+
+  return {
+    ...publicUser(user),
+    status,
+    statusSince,
+    deviceName: selected?.device?.deviceName || null,
+    currentEmployeeId: currentEmployee(selected?.device)?.id || null,
+    currentEmployeeName: currentEmployee(selected?.device)?.name || null,
+    deviceStatus: status,
+    deviceLastSeenAt: selected?.device?.lastSeenAt || null,
+  };
 }
 
 // Any signed-in user can see the directory. Employee live status is derived from
