@@ -11,6 +11,7 @@ import './monitoring-view-enhancer.js';
 import './monitoring-rdp-label-enhancer.js';
 import './live-view-fullscreen-enhancer.js';
 import './screenshot-metadata-enhancer.js';
+import './employee-idle-duration-enhancer.js';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
