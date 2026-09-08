@@ -45,8 +45,8 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
     const uploaded = [];
     for (const item of captures) {
       try {
-        const result = await client.uploadFile(config.deviceToken, item.filePath, purpose);
-        await postCapture(result, item);
+        const result = await client.uploadFile(config.deviceToken, item.filePath, purpose, item);
+        if (postCapture) await postCapture(result, item);
         uploaded.push({ ...item, ...result });
       } finally {
         capture.cleanup(item.filePath);
@@ -89,12 +89,11 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
         return;
       }
 
-      // During RDP, capture only the primary physical display. Locally,
-      // preserve the full multi-display capture behavior.
       const captures = await capture.captureLiveAll({ primaryOnly: telemetry.isRdp });
-      await uploadCaptures(captures, async (result, item) => {
-        await client.postLiveFrame(config.deviceToken, result.liveFrameToken, item);
-      }, 'live');
+      // Live uploads now include display metadata in the same multipart
+      // request that creates the frame token. This removes the old token /
+      // metadata race and makes each stored frame immediately renderable.
+      await uploadCaptures(captures, null, 'live');
     } catch (e) {
       log(`Live frame failed: ${e.message}`);
     } finally {
@@ -114,6 +113,9 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       currentLiveSeconds = cfg.liveViewFrameIntervalSeconds;
       if (liveTimer) clearInterval(liveTimer);
       liveTimer = setInterval(tickLive, currentLiveSeconds * 1000);
+      // Capture immediately after the first config sync instead of waiting a
+      // full interval before Live View receives its first frame.
+      tickLive();
       log(`Live frame interval set to ${currentLiveSeconds} second(s).`);
     }
   }
