@@ -16,7 +16,7 @@ function userName(id) {
 function resolveCurrentEmployee(domainUser) {
   const normalized = String(domainUser || '').trim().toLowerCase();
   if (!normalized) return null;
-  const slash = normalized.lastIndexOf('\\\\');
+  const slash = normalized.lastIndexOf('\\');
   const username = slash >= 0 ? normalized.slice(slash + 1) : normalized;
   return db.data.users.find(u => {
     if (u.role !== 'Employee') return false;
@@ -43,12 +43,13 @@ function deviceStatus(device) {
 function publicUserWithDeviceStatus(user) {
   if (user.role !== 'Employee') return publicUser(user);
 
-  // Prefer the employee currently logged into a managed device, which keeps
-  // shared workstations attributed to the person actually using them.
+  // For shared workstations, attribute the device only to the Windows user
+  // currently logged in. Fall back to the registered employee only when the
+  // device has no resolved current user.
   const matchingDevices = db.data.devices.filter(d => {
     if (d.revoked || d.enrolled === false) return false;
     const current = currentEmployee(d);
-    return current?.id === user.id || d.employeeId === user.id;
+    return current ? current.id === user.id : d.employeeId === user.id;
   });
 
   if (matchingDevices.length === 0) return publicUser(user);
