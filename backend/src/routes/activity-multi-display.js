@@ -182,14 +182,17 @@ multiDisplayActivityRouter.get('/live-view', requireAuth(db), requireRole('Admin
 
 multiDisplayActivityRouter.get('/screenshots', requireAuth(db), requireRole('Admin', 'Manager'), (req, res) => {
   const allowed = scopedEmployeeIds(req.user);
-  const { employeeId, date, limit } = req.query;
+  const { employeeId, date, limit, offset } = req.query;
   let list = db.data.screenshots.filter(item => !allowed || allowed.has(item.employeeId));
   if (employeeId) list = list.filter(item => item.employeeId === Number(employeeId));
   if (date) list = list.filter(item => item.capturedAt.slice(0, 10) === date);
   list.sort((a, b) => (a.capturedAt < b.capturedAt ? 1 : -1));
-  const cap = Math.min(Number(limit) || 30, 200);
 
-  res.json(list.slice(0, cap).map(item => ({
+  const cap = Math.min(Math.max(Number(limit) || 30, 1), 200);
+  const start = Math.max(Number(offset) || 0, 0);
+  const page = list.slice(start, start + cap);
+
+  res.json(page.map(item => ({
     ...item,
     currentUser: userName(item.employeeId),
     display: item.displayName || `Display ${Number(item.displayIndex) || 1}`,
