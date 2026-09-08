@@ -49,7 +49,7 @@ const upload = multer({
 // written to disk only after the request has been classified as a screenshot.
 const monitoringUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 4 },
+  limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 8 },
   fileFilter: (req, file, cb) => {
     const isImage = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.mimetype);
     cb(null, isImage);
