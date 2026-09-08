@@ -1,5 +1,5 @@
 /* Paginated main Screenshots page.
-   The existing React screenshot endpoint is limited to the first batch. This
+   The existing React screenshot view only asks for the first 60 records. This
    enhancer gives the main Screenshots/Team Screenshots pages real pagination
    while leaving Dashboard Recent Screenshots unchanged. */
 
@@ -98,7 +98,7 @@ function removeAfterHeader(card, header) {
 function getState(root) {
   let state = root._remoteopsState;
   if (!state) {
-    state = { page: 1, employeeId: '', date: '', selectedIds: [], loading: false, employees: [] };
+    state = { page: 1, employeeId: '', date: '', selectedIds: [], loading: false, employees: [], employeesLoaded: false };
     root._remoteopsState = state;
   }
   return state;
@@ -141,18 +141,18 @@ async function deleteOne(state, shot, render) {
   try {
     const response = await fetch(`${API_URL}/activity/screenshots/${encodeURIComponent(shot.id)}`, { method: 'DELETE', headers: headers() });
     if (!response.ok) throw new Error(`Delete failed (${response.status})`);
-    state.selectedIds = state.selectedIds.filter(id => id !== shot.id);
+    state.selectedIds = state.selectedIds.filter(id => String(id) !== String(shot.id));
     await render();
   } catch (_) {
     alert('Unable to delete this screenshot.');
   }
 }
 
-async function deleteSelected(state, shots, render) {
+async function deleteSelected(state, render) {
   if (!state.selectedIds.length) return;
   if (!window.confirm(`Delete ${state.selectedIds.length} selected screenshot${state.selectedIds.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
   try {
-    const response = await fetch(`${API_URL}/activity/screenshots/bulk-delete`, {
+    const response = await fetch(`${API_URL}/activity/screenshots/delete-bulk`, {
       method: 'POST',
       headers: { ...headers(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: state.selectedIds }),
@@ -168,7 +168,7 @@ async function deleteSelected(state, shots, render) {
 function tileHtml(shot, state) {
   const image = uploadUrl(shot.url);
   const label = `${shot.employeeName || 'Employee'} — ${new Date(shot.capturedAt).toLocaleString()}`;
-  const checked = state.selectedIds.includes(shot.id) ? 'checked' : '';
+  const checked = state.selectedIds.some(id => String(id) === String(shot.id)) ? 'checked' : '';
   return `<div class="remoteops-screenshot-pagination-tile">
     <input class="remoteops-screenshot-pagination-check" type="checkbox" data-shot-select="${escapeHtml(shot.id)}" ${checked} aria-label="Select screenshot" />
     <button type="button" class="remoteops-screenshot-pagination-image-button" data-shot-view="${escapeHtml(shot.id)}" title="Click to view full size">
@@ -197,10 +197,10 @@ async function renderCard(card, root, state) {
     const shots = Array.isArray(payload?.items) ? payload.items : [];
     const total = Number(payload?.total) || 0;
     const totalPages = Math.max(1, Number(payload?.totalPages) || 1);
-    if (state.page > totalPages) state.page = totalPages;
+    state.page = Math.min(state.page, totalPages);
 
     const employeeOptions = state.employees.map(employee => `<option value="${escapeHtml(employee.id)}">${escapeHtml(employee.name)}</option>`).join('');
-    const allSelected = shots.length > 0 && shots.every(shot => state.selectedIds.includes(shot.id));
+    const allSelected = shots.length > 0 && shots.every(shot => state.selectedIds.some(id => String(id) === String(shot.id)));
 
     root.innerHTML = `
       <div class="remoteops-screenshot-pagination-controls">
@@ -266,18 +266,19 @@ async function renderCard(card, root, state) {
     });
 
     root.querySelector('[data-shot-select-all]')?.addEventListener('change', event => {
+      const pageIds = shots.map(shot => String(shot.id));
+      state.selectedIds = state.selectedIds.map(String);
       if (event.target.checked) {
-        const pageIds = shots.map(shot => shot.id);
         state.selectedIds = [...new Set([...state.selectedIds, ...pageIds])];
       } else {
-        const pageIds = new Set(shots.map(shot => shot.id));
-        state.selectedIds = state.selectedIds.filter(id => !pageIds.has(id));
+        state.selectedIds = state.selectedIds.filter(id => !pageIds.includes(id));
       }
       renderCard(card, root, state);
     });
 
     root.querySelectorAll('[data-shot-select]').forEach(input => input.addEventListener('change', event => {
-      const id = event.target.dataset.shotSelect;
+      const id = String(event.target.dataset.shotSelect);
+      state.selectedIds = state.selectedIds.map(String);
       state.selectedIds = event.target.checked
         ? [...new Set([...state.selectedIds, id])]
         : state.selectedIds.filter(existing => existing !== id);
@@ -294,7 +295,7 @@ async function renderCard(card, root, state) {
       if (shot) deleteOne(state, shot, () => renderCard(card, root, state));
     }));
 
-    root.querySelector('[data-shot-delete-selected]')?.addEventListener('click', () => deleteSelected(state, shots, () => renderCard(card, root, state)));
+    root.querySelector('[data-shot-delete-selected]')?.addEventListener('click', () => deleteSelected(state, () => renderCard(card, root, state)));
   } catch (_) {
     root.innerHTML = '<div class="py-10 text-center text-sm text-muted">Unable to load paginated screenshots.</div>';
   } finally {
