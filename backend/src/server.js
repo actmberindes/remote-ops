@@ -13,6 +13,7 @@ import { uploadsRouter, uploadsDir } from './uploads.js';
 import { agentRouter } from './routes/agent.js';
 import { activityRouter, purgeOldActivity } from './routes/activity.js';
 import { multiDisplayActivityRouter } from './routes/activity-multi-display.js';
+import { screenshotPaginationRouter } from './routes/activity-screenshot-pagination.js';
 import { db, nextAssetTag } from './db.js';
 import { purgeMonitoringFiles } from './monitoring-retention.js';
 
@@ -79,6 +80,7 @@ app.use('/api/activity/live-video', (req, res) => {
 
 // Multi-display activity endpoints must run before the legacy single-display
 // activity router so the same URLs can transparently support multiple screens.
+app.use('/api/activity', screenshotPaginationRouter);
 app.use('/api/activity', multiDisplayActivityRouter);
 app.use('/api/activity', activityRouter);
 
