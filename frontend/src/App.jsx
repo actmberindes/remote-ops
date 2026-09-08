@@ -1022,7 +1022,7 @@ function AdminDashboard() {
         <LiveViewSection
           title="Live Desktop View"
           subtitle="Employees currently active"
-          limit={3}
+          limit={6}
           onViewAll={() => navigate('admin', 'live-view')}
         />
 
