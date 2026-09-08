@@ -44,12 +44,14 @@ const upload = multer({
   fileFilter,
 });
 
-// Monitoring captures use memory storage first. Live View frames therefore
-// never touch the backend disk at all. Screenshot buffers are explicitly
-// written to disk only after the request has been classified as a screenshot.
+// Monitoring captures can be large PNGs, especially on high-resolution or
+// multi-monitor machines. Keep the normal upload limit conservative while
+// allowing Live View / monitoring captures enough headroom.
+const MONITORING_MAX_FILE_SIZE = 25 * 1024 * 1024;
+
 const monitoringUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 8 },
+  limits: { fileSize: MONITORING_MAX_FILE_SIZE, files: 1, fields: 8 },
   fileFilter: (req, file, cb) => {
     const isImage = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.mimetype);
     cb(null, isImage);
@@ -80,6 +82,17 @@ function runUpload(middleware, handler) {
           cleanupFile(req.file);
           return;
         }
+
+        if (err instanceof multer.MulterError) {
+          if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(413).json({ error: 'Monitoring image is too large. Maximum size is 25 MB.' });
+          }
+          if (err.code === 'LIMIT_FIELD_COUNT') {
+            return res.status(400).json({ error: 'Too many multipart fields.' });
+          }
+          return res.status(400).json({ error: `Upload failed: ${err.message}` });
+        }
+
         return next(err);
       }
 
