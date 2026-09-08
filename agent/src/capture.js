@@ -16,12 +16,13 @@ async function listDisplays() {
     : [{ id: 0, name: 'Display 1' }];
 }
 
-async function captureAll(prefix) {
+async function captureAll(prefix, { primaryOnly = false } = {}) {
   const displays = await listDisplays();
+  const selectedDisplays = primaryOnly ? displays.slice(0, 1) : displays;
   const captures = [];
 
-  for (let index = 0; index < displays.length; index += 1) {
-    const display = displays[index];
+  for (let index = 0; index < selectedDisplays.length; index += 1) {
+    const display = selectedDisplays[index];
     const displayIndex = index + 1;
     const safeId = String(display.id ?? displayIndex).replace(/[^a-zA-Z0-9_-]/g, '_');
     const filePath = path.join(tmpDir(), `${prefix}-${Date.now()}-display-${displayIndex}-${safeId}.png`);
@@ -44,13 +45,13 @@ async function captureAll(prefix) {
 }
 
 // Full-quality capture for the scheduled screenshot log. One image is captured per display.
-async function captureFullAll() {
-  return captureAll('full');
+async function captureFullAll(options = {}) {
+  return captureAll('full', options);
 }
 
-// Frequent near-live capture. One image is captured per display.
-async function captureLiveAll() {
-  return captureAll('live');
+// Frequent near-live capture. One image is captured per display unless primaryOnly is requested.
+async function captureLiveAll(options = {}) {
+  return captureAll('live', options);
 }
 
 // Compatibility helpers: retain the original single-path API for older callers.
