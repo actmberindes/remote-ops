@@ -8,8 +8,6 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
   let currentLiveSeconds = null;
   let scheduledTimer = null;
   let liveTimer = null;
-  let liveBusy = false;
-  let scheduledBusy = false;
 
   async function sendHeartbeat() {
     if (!running || !config.deviceToken) return;
@@ -41,13 +39,13 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
     }
   }
 
-  async function uploadCaptures(captures, postCapture, purpose) {
+  async function uploadCaptures(captures, postCapture) {
     const uploaded = [];
     for (const item of captures) {
       try {
-        const result = await client.uploadFile(config.deviceToken, item.filePath, purpose, item);
-        if (postCapture) await postCapture(result, item);
-        uploaded.push({ ...item, ...result });
+        const result = await client.uploadFile(config.deviceToken, item.filePath);
+        await postCapture(result, item);
+        uploaded.push({ ...item, url: result.url, filename: result.filename });
       } finally {
         capture.cleanup(item.filePath);
       }
@@ -55,49 +53,51 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
     return uploaded;
   }
 
+  function capturesForSession(captures, telemetry) {
+    // An RDP session is treated as a single-display monitoring session. Keep
+    // the first/primary physical display only, even if the host has 2+ monitors.
+    if (!telemetry.isRdp) return captures;
+    return captures.filter(item => Number(item.displayIndex) === 1).slice(0, 1);
+  }
+
   async function tickScheduled() {
-    if (!running || scheduledBusy) return;
-    scheduledBusy = true;
+    if (!running) return;
+
+    const telemetry = getDeviceState();
+    if (telemetry.state === 'logged-out') {
+      log('Scheduled screenshot skipped: no logged-in Windows user.');
+      return;
+    }
 
     try {
-      const telemetry = getDeviceState();
-      if (telemetry.state === 'logged-out') {
-        log('Scheduled screenshot skipped: no logged-in Windows user.');
-        return;
-      }
-
-      const captures = await capture.captureFullAll({ primaryOnly: telemetry.isRdp });
+      const allCaptures = await capture.captureFullAll();
+      const captures = capturesForSession(allCaptures, telemetry);
       await uploadCaptures(captures, async (result, item) => {
         await client.postScheduledScreenshot(config.deviceToken, result.url, result.filename, item);
-      }, 'screenshot');
+      });
       log(`Scheduled screenshot captured for ${captures.length} display(s)${telemetry.isRdp ? ' (RDP primary display only).' : '.'}`);
     } catch (e) {
       log(`Scheduled capture failed: ${e.message}`);
-    } finally {
-      scheduledBusy = false;
     }
   }
 
   async function tickLive() {
-    if (!running || liveBusy) return;
-    liveBusy = true;
+    if (!running) return;
+
+    const telemetry = getDeviceState();
+    if (telemetry.state === 'logged-out') {
+      log('Live frame skipped: no logged-in Windows user.');
+      return;
+    }
 
     try {
-      const telemetry = getDeviceState();
-      if (telemetry.state === 'logged-out') {
-        log('Live frame skipped: no logged-in Windows user.');
-        return;
-      }
-
-      const captures = await capture.captureLiveAll({ primaryOnly: telemetry.isRdp });
-      // Live uploads now include display metadata in the same multipart
-      // request that creates the frame token. This removes the old token /
-      // metadata race and makes each stored frame immediately renderable.
-      await uploadCaptures(captures, null, 'live');
+      const allCaptures = await capture.captureLiveAll();
+      const captures = capturesForSession(allCaptures, telemetry);
+      await uploadCaptures(captures, async (result, item) => {
+        await client.postLiveFrame(config.deviceToken, result.url, item);
+      });
     } catch (e) {
       log(`Live frame failed: ${e.message}`);
-    } finally {
-      liveBusy = false;
     }
   }
 
@@ -113,9 +113,6 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       currentLiveSeconds = cfg.liveViewFrameIntervalSeconds;
       if (liveTimer) clearInterval(liveTimer);
       liveTimer = setInterval(tickLive, currentLiveSeconds * 1000);
-      // Capture immediately after the first config sync instead of waiting a
-      // full interval before Live View receives its first frame.
-      tickLive();
       log(`Live frame interval set to ${currentLiveSeconds} second(s).`);
     }
   }
