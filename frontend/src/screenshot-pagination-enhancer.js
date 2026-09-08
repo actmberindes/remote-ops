@@ -13,7 +13,6 @@ const SIZE_KEY = 'remoteops_screenshot_tile_size';
 
 let started = false;
 let observer = null;
-let activeCards = new WeakSet();
 const states = new WeakMap();
 
 const textOf = el => (el?.textContent || '').replace(/\s+/g, ' ').trim();
@@ -79,9 +78,7 @@ function injectStyles() {
 }
 
 function screenshotCards() {
-  return [...document.querySelectorAll('.card')].filter(card => {
-    return [...card.querySelectorAll('h3')].some(h => /^Screenshots$|^Team Screenshots$/i.test(textOf(h)));
-  });
+  return [...document.querySelectorAll('.card')].filter(card => [...card.querySelectorAll('h3')].some(h => /^Screenshots$|^Team Screenshots$/i.test(textOf(h))));
 }
 
 function screenshotGrid(card) {
@@ -91,17 +88,7 @@ function screenshotGrid(card) {
 function getState(card) {
   let state = states.get(card);
   if (!state) {
-    state = {
-      page: 1,
-      items: [],
-      total: 0,
-      loading: false,
-      error: '',
-      selectedIds: new Set(),
-      overlay: null,
-      lastRect: null,
-      loadToken: 0,
-    };
+    state = { page: 1, items: [], total: 0, loading: false, error: '', selectedIds: new Set(), overlay: null, card, abortController: null, loadToken: 0 };
     states.set(card, state);
   }
   return state;
@@ -109,22 +96,19 @@ function getState(card) {
 
 async function fetchBatch(offset, signal) {
   const params = new URLSearchParams({ offset: String(offset), limit: String(BATCH_SIZE) });
-  const response = await fetch(`${API_URL}/activity/screenshots-feed?${params.toString()}`, {
-    headers: headers(),
-    signal,
-  });
+  const response = await fetch(`${API_URL}/activity/screenshots-feed?${params.toString()}`, { headers: headers(), signal });
   if (!response.ok) throw new Error(`Screenshot feed request failed (${response.status})`);
   return response.json();
 }
 
 async function fetchAll(state) {
   const token = ++state.loadToken;
-  const controller = new AbortController();
   state.abortController?.abort();
+  const controller = new AbortController();
   state.abortController = controller;
-
   const all = [];
   let offset = 0;
+
   try {
     while (true) {
       const payload = await fetchBatch(offset, controller.signal);
@@ -147,11 +131,7 @@ function openFullscreen(url, label) {
   document.querySelectorAll('.remoteops-shot-fullscreen').forEach(node => node.remove());
   const overlay = document.createElement('div');
   overlay.className = 'remoteops-shot-fullscreen';
-  overlay.innerHTML = `
-    <button type="button" class="remoteops-shot-fullscreen-close" aria-label="Close">×</button>
-    <img alt="${esc(label)}" src="${esc(src)}" />
-    <div class="remoteops-shot-fullscreen-label">${esc(label)}</div>
-  `;
+  overlay.innerHTML = `<button type="button" class="remoteops-shot-fullscreen-close" aria-label="Close">×</button><img alt="${esc(label)}" src="${esc(src)}"/><div class="remoteops-shot-fullscreen-label">${esc(label)}</div>`;
   overlay.addEventListener('click', event => {
     if (event.target === overlay || event.target.closest('.remoteops-shot-fullscreen-close')) overlay.remove();
   });
@@ -161,10 +141,7 @@ function openFullscreen(url, label) {
 async function deleteScreenshot(state, shot) {
   if (!window.confirm(`Delete this screenshot captured at ${new Date(shot.capturedAt).toLocaleString()}?`)) return;
   try {
-    const response = await fetch(`${API_URL}/activity/screenshots/${encodeURIComponent(shot.id)}`, {
-      method: 'DELETE',
-      headers: headers(),
-    });
+    const response = await fetch(`${API_URL}/activity/screenshots/${encodeURIComponent(shot.id)}`, { method: 'DELETE', headers: headers() });
     if (!response.ok) throw new Error(`Delete failed (${response.status})`);
     state.items = state.items.filter(item => String(item.id) !== String(shot.id));
     state.selectedIds.delete(String(shot.id));
@@ -181,11 +158,7 @@ async function deleteSelected(state) {
   if (!ids.length) return;
   if (!window.confirm(`Delete ${ids.length} selected screenshot${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
   try {
-    const response = await fetch(`${API_URL}/activity/screenshots/delete-bulk`, {
-      method: 'POST',
-      headers: { ...headers(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids }),
-    });
+    const response = await fetch(`${API_URL}/activity/screenshots/delete-bulk`, { method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) });
     if (!response.ok) throw new Error(`Bulk delete failed (${response.status})`);
     const removed = new Set(ids.map(String));
     state.items = state.items.filter(item => !removed.has(String(item.id)));
@@ -202,17 +175,7 @@ function tileHtml(shot, state) {
   const id = String(shot.id);
   const label = `${shot.employeeName || 'Employee'} — ${new Date(shot.capturedAt).toLocaleString()}`;
   const checked = state.selectedIds.has(id) ? 'checked' : '';
-  return `<div class="remoteops-shot-overlay-tile">
-    <input class="remoteops-shot-overlay-check" type="checkbox" data-shot-select="${esc(id)}" ${checked} aria-label="Select screenshot" />
-    <button type="button" class="remoteops-shot-overlay-image-button" data-shot-view="${esc(id)}" title="Click to view full size">
-      <img class="remoteops-shot-overlay-image" loading="lazy" src="${esc(uploadUrl(shot.url))}" alt="${esc(label)}" />
-    </button>
-    <button type="button" class="remoteops-shot-overlay-delete" data-shot-delete="${esc(id)}" title="Delete screenshot">×</button>
-    <div class="remoteops-shot-overlay-meta">
-      <div class="remoteops-shot-overlay-name">${esc(shot.employeeName || 'Unknown Employee')}</div>
-      <div class="remoteops-shot-overlay-date">${esc(new Date(shot.capturedAt).toLocaleString())}</div>
-    </div>
-  </div>`;
+  return `<div class="remoteops-shot-overlay-tile"><input class="remoteops-shot-overlay-check" type="checkbox" data-shot-select="${esc(id)}" ${checked} aria-label="Select screenshot"/><button type="button" class="remoteops-shot-overlay-image-button" data-shot-view="${esc(id)}" title="Click to view full size"><img class="remoteops-shot-overlay-image" loading="lazy" src="${esc(uploadUrl(shot.url))}" alt="${esc(label)}"/></button><button type="button" class="remoteops-shot-overlay-delete" data-shot-delete="${esc(id)}" title="Delete screenshot">×</button><div class="remoteops-shot-overlay-meta"><div class="remoteops-shot-overlay-name">${esc(shot.employeeName || 'Unknown Employee')}</div><div class="remoteops-shot-overlay-date">${esc(new Date(shot.capturedAt).toLocaleString())}</div></div></div>`;
 }
 
 function positionOverlay(card, state) {
@@ -220,18 +183,13 @@ function positionOverlay(card, state) {
   const grid = screenshotGrid(card);
   if (!grid) return;
   const rect = grid.getBoundingClientRect();
-  const top = Math.round(rect.top + window.scrollY);
-  const left = Math.round(rect.left + window.scrollX);
-  const width = Math.round(rect.width);
-  const height = Math.max(360, Math.round(rect.height + 64));
-  state.lastRect = { top, left, width, height };
-  state.overlay.style.top = `${top}px`;
-  state.overlay.style.left = `${left}px`;
-  state.overlay.style.width = `${width}px`;
-  state.overlay.style.height = `${height}px`;
+  state.overlay.style.top = `${Math.round(rect.top + window.scrollY)}px`;
+  state.overlay.style.left = `${Math.round(rect.left + window.scrollX)}px`;
+  state.overlay.style.width = `${Math.round(rect.width)}px`;
+  state.overlay.style.height = `${Math.max(360, Math.round(rect.height + 64))}px`;
 }
 
-function wireOverlay(card, state) {
+function wireOverlay(state) {
   const overlay = state.overlay;
   if (!overlay) return;
 
@@ -251,27 +209,24 @@ function wireOverlay(card, state) {
   });
 
   overlay.querySelector('[data-shot-select-all]')?.addEventListener('change', event => {
-    const pageItems = state.items.slice((state.page - 1) * PAGE_SIZE, state.page * PAGE_SIZE);
-    pageItems.forEach(item => event.target.checked ? state.selectedIds.add(String(item.id)) : state.selectedIds.delete(String(item.id)));
+    const start = (state.page - 1) * PAGE_SIZE;
+    state.items.slice(start, start + PAGE_SIZE).forEach(item => event.target.checked ? state.selectedIds.add(String(item.id)) : state.selectedIds.delete(String(item.id)));
     renderOverlay(state);
   });
 
   overlay.querySelectorAll('[data-shot-select]').forEach(input => input.addEventListener('change', () => {
     const id = String(input.dataset.shotSelect);
-    if (input.checked) state.selectedIds.add(id);
-    else state.selectedIds.delete(id);
+    input.checked ? state.selectedIds.add(id) : state.selectedIds.delete(id);
     renderOverlay(state);
   }));
 
   overlay.querySelectorAll('[data-shot-view]').forEach(button => button.addEventListener('click', () => {
-    const id = String(button.dataset.shotView);
-    const shot = state.items.find(item => String(item.id) === id);
+    const shot = state.items.find(item => String(item.id) === String(button.dataset.shotView));
     if (shot) openFullscreen(shot.url, `${shot.employeeName || 'Employee'} — ${new Date(shot.capturedAt).toLocaleString()}`);
   }));
 
   overlay.querySelectorAll('[data-shot-delete]').forEach(button => button.addEventListener('click', () => {
-    const id = String(button.dataset.shotDelete);
-    const shot = state.items.find(item => String(item.id) === id);
+    const shot = state.items.find(item => String(item.id) === String(button.dataset.shotDelete));
     if (shot) deleteScreenshot(state, shot);
   }));
 
@@ -279,8 +234,7 @@ function wireOverlay(card, state) {
 }
 
 function renderOverlay(state) {
-  const overlay = state.overlay;
-  if (!overlay) return;
+  if (!state.overlay) return;
   const totalPages = Math.max(1, Math.ceil(state.total / PAGE_SIZE));
   state.page = Math.min(state.page, totalPages);
   const start = (state.page - 1) * PAGE_SIZE;
@@ -288,45 +242,28 @@ function renderOverlay(state) {
   const allSelected = pageItems.length > 0 && pageItems.every(item => state.selectedIds.has(String(item.id)));
   const size = sizeValue();
 
-  overlay.innerHTML = `
-    <div class="remoteops-shot-overlay-inner">
-      <div class="remoteops-shot-overlay-summary">
-        <label class="remoteops-shot-overlay-bulk"><input type="checkbox" data-shot-select-all ${allSelected ? 'checked' : ''}/> Select page</label>
-        <span class="remoteops-shot-overlay-summary-text">${state.total} screenshot${state.total === 1 ? '' : 's'} · Page ${state.page} of ${totalPages}</span>
-        ${state.selectedIds.size ? `<button type="button" class="remoteops-shot-overlay-btn" data-shot-delete-selected>Delete ${state.selectedIds.size} Selected</button>` : ''}
-      </div>
-      ${state.loading ? '<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px">Loading screenshots…</div>' : state.error ? `<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--danger);font-size:12px;text-align:center;padding:20px">${esc(state.error)}</div>` : pageItems.length ? `<div class="remoteops-shot-overlay-grid" style="grid-template-columns:repeat(auto-fill,minmax(${size}px,1fr))">${pageItems.map(item => tileHtml(item, state)).join('')}</div>` : '<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px">No screenshots available.</div>'}
-      <div class="remoteops-shot-overlay-nav">
-        <button type="button" class="remoteops-shot-overlay-btn" data-shot-prev ${state.page <= 1 ? 'disabled' : ''}>Previous</button>
-        <span class="remoteops-shot-overlay-page">Page ${state.page} / ${totalPages}</span>
-        <button type="button" class="remoteops-shot-overlay-btn" data-shot-next ${state.page >= totalPages ? 'disabled' : ''}>Next</button>
-      </div>
-    </div>`;
+  state.overlay.innerHTML = `<div class="remoteops-shot-overlay-inner"><div class="remoteops-shot-overlay-summary"><label class="remoteops-shot-overlay-bulk"><input type="checkbox" data-shot-select-all ${allSelected ? 'checked' : ''}/> Select page</label><span class="remoteops-shot-overlay-summary-text">${state.total} screenshot${state.total === 1 ? '' : 's'} · Page ${state.page} of ${totalPages}</span>${state.selectedIds.size ? `<button type="button" class="remoteops-shot-overlay-btn" data-shot-delete-selected>Delete ${state.selectedIds.size} Selected</button>` : ''}</div>${state.loading ? '<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px">Loading screenshots…</div>' : state.error ? `<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--danger);font-size:12px;text-align:center;padding:20px">${esc(state.error)}</div>` : pageItems.length ? `<div class="remoteops-shot-overlay-grid" style="grid-template-columns:repeat(auto-fill,minmax(${size}px,1fr))">${pageItems.map(item => tileHtml(item, state)).join('')}</div>` : '<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px">No screenshots available.</div>'}<div class="remoteops-shot-overlay-nav"><button type="button" class="remoteops-shot-overlay-btn" data-shot-prev ${state.page <= 1 ? 'disabled' : ''}>Previous</button><span class="remoteops-shot-overlay-page">Page ${state.page} / ${totalPages}</span><button type="button" class="remoteops-shot-overlay-btn" data-shot-next ${state.page >= totalPages ? 'disabled' : ''}>Next</button></div></div>`;
 
   positionOverlay(state.card, state);
-  wireOverlay(state.card, state);
+  wireOverlay(state);
 }
 
 async function ensureOverlay(card) {
   const state = getState(card);
-  state.card = card;
-
   const grid = screenshotGrid(card);
   if (!grid) return;
 
   if (!state.overlay || !state.overlay.isConnected) {
-    const overlay = document.createElement('div');
-    overlay.className = 'remoteops-shot-overlay';
-    overlay.setAttribute(OVERLAY_ATTR, 'true');
-    document.body.appendChild(overlay);
-    state.overlay = overlay;
+    state.overlay = document.createElement('div');
+    state.overlay.className = 'remoteops-shot-overlay';
+    state.overlay.setAttribute(OVERLAY_ATTR, 'true');
+    document.body.appendChild(state.overlay);
   }
 
   positionOverlay(card, state);
 
-  if (!state.items.length && !state.loading && state.total === 0) {
+  if (!state.items.length && !state.loading && state.total === 0 && !state.error) {
     state.loading = true;
-    state.error = '';
     renderOverlay(state);
     try {
       const items = await fetchAll(state);
@@ -345,24 +282,8 @@ async function ensureOverlay(card) {
   }
 }
 
-function cleanup() {
-  screenshotCards().forEach(card => {
-    const state = states.get(card);
-    if (state?.overlay?.isConnected) state.overlay.remove();
-  });
-}
-
 function refresh() {
-  const cards = screenshotCards();
-  const liveSet = new Set(cards);
-  cards.forEach(card => ensureOverlay(card));
-  if (activeCards) {
-    // Keep stale overlays out of pages that React has navigated away from.
-    document.querySelectorAll(`[${OVERLAY_ATTR}]`).forEach(node => {
-      const owner = [...states].find?.(() => false);
-      void owner;
-    });
-  }
+  screenshotCards().forEach(card => ensureOverlay(card));
 }
 
 function start() {
