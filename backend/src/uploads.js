@@ -18,12 +18,21 @@ fs.mkdirSync(monitoringUploadsDir, { recursive: true });
 function createStorage(destinationDir) {
   return multer.diskStorage({
     destination: (req, file, cb) => cb(null, destinationDir),
-    filename: (req, file, cb) => {
-      const ext = path.extname(file.originalname);
-      const safeExt = /^\.[a-zA-Z0-9]+$/.test(ext) ? ext : '';
-      cb(null, `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${safeExt}`);
-    },
+    filename: (req, file, cb) => cb(null, createFilename(file.originalname)),
   });
+}
+
+function createFilename(originalname = '') {
+  const ext = path.extname(originalname);
+  const safeExt = /^\.[a-zA-Z0-9]+$/.test(ext) ? ext : '';
+  return `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${safeExt}`;
+}
+
+async function saveBufferToMonitoring(buffer, originalname) {
+  const filename = createFilename(originalname);
+  const filePath = path.join(monitoringUploadsDir, filename);
+  await fs.promises.writeFile(filePath, buffer);
+  return { filename, filePath };
 }
 
 const allowedMimes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf'];
@@ -35,8 +44,11 @@ const upload = multer({
   fileFilter,
 });
 
+// Monitoring captures use memory storage first. Live View frames therefore
+// never touch the backend disk at all. Screenshot buffers are explicitly
+// written to disk only after the request has been classified as a screenshot.
 const monitoringUpload = multer({
-  storage: createStorage(monitoringUploadsDir),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 4 },
   fileFilter: (req, file, cb) => {
     const isImage = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.mimetype);
@@ -95,26 +107,22 @@ uploadsRouter.post('/', runUpload(upload, async (req, res) => {
   });
 }));
 
-// Monitoring uploads are used for both scheduled Screenshots and Live View.
-// Screenshots remain on disk for their configured retention period.
-// Live View is explicitly memory-only: the temporary multipart file is read,
-// moved into the bounded in-memory frame store, and deleted immediately.
+// Monitoring endpoint is shared by scheduled Screenshots and Live View.
+// Only Screenshots are persisted. Live View uses the bounded in-memory store.
 uploadsRouter.post('/monitoring', runUpload(monitoringUpload, async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No monitoring image uploaded, or file type not allowed.' });
+  if (!req.file?.buffer) return res.status(400).json({ error: 'No monitoring image uploaded, or file type not allowed.' });
 
   if (String(req.body?.purpose || '').toLowerCase() === 'live') {
-    const buffer = await fs.promises.readFile(req.file.path);
     const token = putLiveFrame({
       deviceId: req.device?.id ?? null,
       employeeId: req.device?.currentEmployeeId || req.device?.employeeId || null,
       displayId: req.body?.displayId || null,
       displayName: req.body?.displayName || null,
       displayIndex: req.body?.displayIndex || 1,
-      buffer,
+      buffer: req.file.buffer,
       mimeType: req.file.mimetype,
     });
 
-    cleanupFile(req.file);
     return res.status(201).json({
       live: true,
       liveFrameToken: token,
@@ -123,8 +131,9 @@ uploadsRouter.post('/monitoring', runUpload(monitoringUpload, async (req, res) =
     });
   }
 
-  res.status(201).json({
-    url: `/uploads/monitoring/${req.file.filename}`,
+  const saved = await saveBufferToMonitoring(req.file.buffer, req.file.originalname);
+  return res.status(201).json({
+    url: `/uploads/monitoring/${saved.filename}`,
     filename: req.file.originalname,
     mimeType: req.file.mimetype,
     size: req.file.size,
