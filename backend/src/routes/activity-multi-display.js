@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db, nextId } from '../db.js';
 import { requireAuth, requireRole, requireDevice } from '../auth.js';
 import { purgeOldActivity } from './activity.js';
+import { getLiveFrame, getLiveFramesForDevice, clearLiveFramesForDevice } from '../live-frame-store.js';
 
 export const multiDisplayActivityRouter = Router();
 
@@ -79,7 +80,7 @@ function displaySort(a, b) {
   return String(a.displayName || '').localeCompare(String(b.displayName || ''));
 }
 
-function latestFramesForDevice(deviceId) {
+function latestLegacyFramesForDevice(deviceId) {
   const frames = filterLegacyFrames((db.data.liveFrames || []).filter(frame => frame.deviceId === deviceId));
   const latest = new Map();
   for (const frame of frames) {
@@ -90,23 +91,13 @@ function latestFramesForDevice(deviceId) {
   return [...latest.values()].sort(displaySort);
 }
 
-function latestHistoryFramesForDevice(deviceId, employeeId) {
-  const frames = filterLegacyFrames((db.data.liveFrameHistory || []).filter(item => item.deviceId === deviceId && item.employeeId === employeeId));
-  const latest = new Map();
-  for (const frame of frames) {
-    const key = displayKey(frame);
-    const existing = latest.get(key);
-    if (!existing || new Date(frame.capturedAt || 0).getTime() > new Date(existing.capturedAt || 0).getTime()) latest.set(key, frame);
-  }
-  return [...latest.values()].sort(displaySort);
-}
-
 function serializeFrame(frame, fallbackIndex = 1) {
+  const token = frame?.liveFrameToken || frame?.token || null;
   return {
     displayId: frame?.displayId ?? `display-${Number(frame?.displayIndex) || fallbackIndex}`,
     displayName: frame?.displayName || `Display ${Number(frame?.displayIndex) || fallbackIndex}`,
     displayIndex: Number(frame?.displayIndex) || fallbackIndex,
-    frameUrl: frame?.url || null,
+    frameUrl: token ? `/api/activity/live-frame/${encodeURIComponent(token)}` : (frame?.url || null),
     capturedAt: frame?.capturedAt || null,
   };
 }
@@ -117,48 +108,34 @@ function scopedEmployeeIds(user) {
   return new Set([user.id]);
 }
 
+// Live View frames are served from memory and are never persisted in the monitoring
+// uploads directory. Tokens expire automatically in the in-memory store.
+multiDisplayActivityRouter.get('/live-frame/:token', (req, res) => {
+  const frame = getLiveFrame(req.params.token);
+  if (!frame) return res.status(404).end();
+
+  res.setHeader('Content-Type', frame.mimeType || 'image/png');
+  res.setHeader('Content-Length', frame.buffer.length);
+  res.setHeader('Cache-Control', 'private, max-age=5');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.end(frame.buffer);
+});
+
 multiDisplayActivityRouter.post('/live-frame', requireDevice(db), async (req, res) => {
-  const { url, capturedAt, displayId = null, displayName = null, displayIndex = 1 } = req.body || {};
-  if (!url) return res.status(400).json({ error: 'url is required.' });
+  const { liveFrameToken, displayId = null, displayName = null, displayIndex = 1, capturedAt } = req.body || {};
+  if (!liveFrameToken) return res.status(400).json({ error: 'liveFrameToken is required.' });
 
-  const ts = capturedAt || new Date().toISOString();
-  const employeeId = currentEmployeeIdForDevice(req.device) || req.device.employeeId;
-  const rdp = deviceIsRdp(req.device);
-  const normalizedIndex = rdp ? 1 : Math.max(1, Number(displayIndex) || 1);
-  const normalizedId = rdp ? '\\\\.\\DISPLAY1' : (displayId ? String(displayId) : `display-${normalizedIndex}`);
-  const normalizedName = rdp ? '\\\\.\\DISPLAY1' : (displayName ? String(displayName) : `Display ${normalizedIndex}`);
-  const frames = db.data.liveFrames || (db.data.liveFrames = []);
+  const frame = getLiveFrame(liveFrameToken);
+  if (!frame) return res.status(410).json({ error: 'Live frame is no longer available.' });
+  if (frame.deviceId !== req.device.id) return res.status(403).json({ error: 'Live frame does not belong to this device.' });
 
-  // When a device transitions from local multi-monitor mode to RDP mode,
-  // discard stale secondary live frames so they cannot reappear in Live View.
-  if (rdp) {
-    db.data.liveFrames = frames.filter(frame => {
-      if (frame.deviceId !== req.device.id) return true;
-      return Number(frame.displayIndex) === 1 || displayKey(frame) === normalizedId;
-    });
-  }
+  frame.employeeId = currentEmployeeIdForDevice(req.device) || req.device.employeeId;
+  frame.displayId = displayId ? String(displayId) : frame.displayId;
+  frame.displayName = displayName ? String(displayName) : frame.displayName;
+  frame.displayIndex = Math.max(1, Number(displayIndex) || frame.displayIndex || 1);
+  frame.capturedAt = capturedAt || frame.capturedAt;
 
-  const activeFrames = db.data.liveFrames;
-  const existing = activeFrames.find(frame => frame.deviceId === req.device.id && displayKey(frame) === normalizedId);
-
-  const nextFrame = {
-    employeeId,
-    deviceId: req.device.id,
-    url,
-    capturedAt: ts,
-    displayId: normalizedId,
-    displayName: normalizedName,
-    displayIndex: normalizedIndex,
-  };
-
-  if (existing) Object.assign(existing, nextFrame);
-  else activeFrames.push(nextFrame);
-
-  db.data.liveFrameHistory = db.data.liveFrameHistory || [];
-  db.data.liveFrameHistory.push({ ...nextFrame, id: nextId() });
-  purgeOldActivity();
-  await db.write();
-  res.status(201).json({ ok: true });
+  res.status(201).json({ ok: true, liveFrameToken });
 });
 
 multiDisplayActivityRouter.post('/screenshots', requireDevice(db), async (req, res) => {
@@ -205,11 +182,13 @@ multiDisplayActivityRouter.get('/live-view', requireAuth(db), requireRole('Admin
 
   const result = [...chosen.entries()].map(([employeeId, device]) => {
     const emp = db.data.users.find(u => u.id === employeeId);
-    const currentFrames = latestFramesForDevice(device.id).filter(frame => frame.employeeId === employeeId);
-    const historyFrames = latestHistoryFramesForDevice(device.id, employeeId);
-    const usableFrames = currentFrames.length > 0 ? currentFrames : historyFrames;
-    const allDisplays = usableFrames.map((frame, index) => serializeFrame(frame, index + 1));
     const rdp = deviceIsRdp(device);
+    const memoryFrames = getLiveFramesForDevice(device.id, employeeId);
+    const legacyFrames = memoryFrames.length > 0 ? [] : latestLegacyFramesForDevice(device.id).filter(frame => frame.employeeId === employeeId);
+    const usableFrames = memoryFrames.length > 0 ? memoryFrames : legacyFrames;
+    const allDisplays = usableFrames.map((frame, index) => serializeFrame(frame, index + 1));
+
+    // RDP: one primary display. Local: preserve every detected physical display.
     const displays = rdp
       ? allDisplays.filter(display => Number(display.displayIndex) === 1 || /DISPLAY1$/i.test(String(display.displayId || ''))).slice(0, 1)
       : allDisplays;
@@ -251,6 +230,13 @@ multiDisplayActivityRouter.get('/screenshots', requireAuth(db), requireRole('Adm
 
   res.json(list.slice(0, cap).map(item => ({
     ...item,
-    employeeName: `${userName(item.employeeId)}${item.displayName ? ` · ${item.displayName}` : ''}`,
+    currentUser: userName(item.employeeId),
+    display: item.displayName || `Display ${Number(item.displayIndex) || 1}`,
+    date: item.capturedAt ? item.capturedAt.slice(0, 10) : null,
+    employeeName: userName(item.employeeId),
   })));
 });
+
+export function clearLiveFrameStoreForDevice(deviceId) {
+  clearLiveFramesForDevice(deviceId);
+}
