@@ -1,41 +1,30 @@
-/* Replaces the legacy ScreenshotsSection gallery UI without changing the
-   underlying React component. This keeps the old 60-image grid hidden,
-   renders one authoritative paginated gallery, preserves full-screen viewing,
-   and keeps dashboard screenshot controls isolated from View All navigation. */
+/* Authoritative screenshot gallery layer.
+   Hides the legacy 60-image React grid and renders one paginated gallery.
+   The dashboard uses the same screenshot metadata/full-screen behavior.
+   DOM observation only re-ensures the gallery; network refreshes are timer-driven. */
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://192.168.1.2:4000/api';
 const PAGE_SIZE = 36;
-const MAX_ITEMS = 200;
+const FETCH_LIMIT = 200;
 const STYLE_ID = 'remoteops-screenshot-gallery-style';
 const ROOT_ATTR = 'data-remoteops-screenshot-gallery';
 const OVERLAY_ID = 'remoteops-screenshot-fullscreen';
+const REFRESH_MS = 8000;
 
-let timer = null;
+const pageState = new WeakMap();
 let requestInFlight = false;
-let cache = [];
-let state = { page: 1, employeeId: '', date: '' };
+let refreshTimer = null;
 
 function headers() {
   const token = localStorage.getItem('rw_token');
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-function textOf(el) {
-  return (el?.textContent || '').replace(/\s+/g, ' ').trim();
-}
-
-function normalizeUrl(url) {
-  try { return decodeURIComponent(new URL(url, window.location.origin).pathname); }
-  catch (_) { return String(url || ''); }
-}
-
+function textOf(el) { return (el?.textContent || '').replace(/\s+/g, ' ').trim(); }
 function formatDate(value) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
-    hour: 'numeric', minute: '2-digit'
-  });
+  return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
 function injectStyles() {
@@ -47,7 +36,7 @@ function injectStyles() {
     .remoteops-gallery-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
     @media (min-width:768px){.remoteops-gallery-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
     .remoteops-gallery-tile{overflow:hidden;border:1px solid var(--border);border-radius:10px;background:var(--surface);min-width:0}
-    .remoteops-gallery-image-wrap{aspect-ratio:16/9;background:var(--bg);display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:zoom-in}
+    .remoteops-gallery-image-wrap{appearance:none;border:0;padding:0;margin:0;display:block;width:100%;aspect-ratio:16/9;background:var(--bg);overflow:hidden;cursor:zoom-in}
     .remoteops-gallery-image{width:100%;height:100%;object-fit:cover;display:block}
     .remoteops-gallery-meta{padding:8px 9px 9px;font-size:10px;line-height:1.35}
     .remoteops-gallery-user{font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -64,211 +53,87 @@ function injectStyles() {
     #${OVERLAY_ID} .remoteops-fullscreen-close{border:1px solid var(--border);border-radius:8px;padding:5px 8px;background:var(--surface);color:var(--text);font-weight:800;cursor:pointer}
     #${OVERLAY_ID} .remoteops-fullscreen-body{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;background:var(--bg);overflow:auto;padding:12px}
     #${OVERLAY_ID} img{max-width:100%;max-height:100%;object-fit:contain;cursor:zoom-out}
-    .remoteops-dashboard-screenshot-card button[data-view-all-control]{position:relative;z-index:3}
-    .remoteops-dashboard-screenshot-card input[type="range"]{position:relative;z-index:4}
+    .remoteops-dashboard-screenshot-card{position:relative}
+    .remoteops-dashboard-screenshot-card input[type="range"]{position:relative;z-index:20;pointer-events:auto}
   `;
   document.head.appendChild(style);
 }
 
-function isScreenshotsPage(card) {
-  const heading = [...card.querySelectorAll('h1,h2,h3,h4')].find(el => /screenshots/i.test(textOf(el)));
-  return Boolean(heading && /^Screenshots$/i.test(textOf(heading)));
-}
-
-function findScreenshotCards() {
+function findCards() {
   return [...document.querySelectorAll('main .card')].filter(card => {
-    const text = textOf(card);
-    return /Screenshots|Recent Screenshots|Scheduled desktop captures|Latest scheduled captures|Latest captures from your team/i.test(text)
-      && card.querySelector('img');
+    const t = textOf(card);
+    const heading = card.querySelector('h1,h2,h3,h4');
+    return card.querySelector('img') && (/^Screenshots$/i.test(textOf(heading)) || /Recent Screenshots/i.test(t));
   });
 }
-
-function findFullPageCard() {
-  return findScreenshotCards().find(isScreenshotsPage) || null;
+function fullPageCard() {
+  return findCards().find(card => /^Screenshots$/i.test(textOf(card.querySelector('h1,h2,h3,h4')))) || null;
 }
-
-function findDashboardCard() {
-  return findScreenshotCards().find(card => /Recent Screenshots/i.test(textOf(card)) && !isScreenshotsPage(card)) || null;
+function dashboardCard() {
+  return findCards().find(card => /Recent Screenshots/i.test(textOf(card)) && card !== fullPageCard()) || null;
 }
 
 function getFilters(card) {
   const select = card?.querySelector('select');
-  const dateInput = card?.querySelector('input[type="date"]');
-  return {
-    employeeId: select?.value || '',
-    date: dateInput?.value || ''
-  };
+  const date = card?.querySelector('input[type="date"]');
+  return { employeeId: select?.value || '', date: date?.value || '' };
 }
 
-function hideLegacyGallery(card) {
+function hideLegacyGrid(card) {
   if (!card) return null;
-  const root = card.querySelector(`[${ROOT_ATTR}="true"]`);
+  let root = card.querySelector(`[${ROOT_ATTR}="true"]`);
   if (root) return root;
 
-  const candidates = [...card.querySelectorAll('div')].filter(node => node.children?.length);
-  const legacyGrid = candidates.find(node => {
-    const imgs = node.querySelectorAll('img').length;
-    return imgs >= 2 && imgs <= 60 && !node.querySelector(`[${ROOT_ATTR}="true"]`);
+  const legacyGrid = [...card.querySelectorAll('div')].find(node => {
+    const images = node.querySelectorAll('img').length;
+    return images >= 2 && images <= 60 && !node.querySelector(`[${ROOT_ATTR}="true"]`);
   });
   if (legacyGrid) legacyGrid.style.display = 'none';
 
-  const rootNode = document.createElement('div');
-  rootNode.dataset.remoteopsScreenshotGallery = 'true';
-  if (legacyGrid?.parentElement) legacyGrid.parentElement.appendChild(rootNode);
-  else card.appendChild(rootNode);
-  return rootNode;
+  root = document.createElement('div');
+  root.dataset.remoteopsScreenshotGallery = 'true';
+  (legacyGrid?.parentElement || card).appendChild(root);
+  pageState.set(root, { page: 1, items: [], filterKey: '' });
+  return root;
 }
 
-function createFullscreen(item) {
+function openFullscreen(item) {
   document.getElementById(OVERLAY_ID)?.remove();
-
   const overlay = document.createElement('div');
   overlay.id = OVERLAY_ID;
   overlay.innerHTML = `
     <div class="remoteops-fullscreen-shell" role="dialog" aria-modal="true" aria-label="Screenshot preview">
-      <div class="remoteops-fullscreen-bar">
-        <div class="remoteops-fullscreen-title"></div>
-        <button type="button" class="remoteops-fullscreen-close">Close</button>
-      </div>
+      <div class="remoteops-fullscreen-bar"><div class="remoteops-fullscreen-title"></div><button type="button" class="remoteops-fullscreen-close">Close</button></div>
       <div class="remoteops-fullscreen-body"><img alt="Screenshot preview" /></div>
     </div>`;
-
-  const title = overlay.querySelector('.remoteops-fullscreen-title');
-  const img = overlay.querySelector('img');
-  title.textContent = `${item.currentUser || item.employeeName || 'Unknown User'} · ${item.display || item.displayName || 'Display'} · ${formatDate(item.capturedAt)}`;
-  img.src = item.url;
-
+  overlay.querySelector('.remoteops-fullscreen-title').textContent = `${item.currentUser || item.employeeName || 'Unknown User'} · ${item.display || item.displayName || 'Display'} · ${formatDate(item.capturedAt)}`;
+  overlay.querySelector('img').src = item.url;
   const close = () => overlay.remove();
   overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
-  overlay.querySelector('.remoteops-fullscreen-close')?.addEventListener('click', close);
-  img.addEventListener('click', close);
-  document.addEventListener('keydown', function onKey(e) {
-    if (e.key !== 'Escape') return;
-    close();
-    document.removeEventListener('keydown', onKey);
-  }, { once: true });
+  overlay.querySelector('.remoteops-fullscreen-close').addEventListener('click', close);
+  overlay.querySelector('img').addEventListener('click', close);
+  const onKey = e => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onKey); } };
+  document.addEventListener('keydown', onKey);
   document.body.appendChild(overlay);
 }
 
-function renderGallery(root, items, total) {
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  state.page = Math.min(Math.max(1, state.page), pageCount);
-  const start = (state.page - 1) * PAGE_SIZE;
+function renderGallery(root, items) {
+  const local = pageState.get(root) || { page: 1, items: [], filterKey: '' };
+  local.items = items;
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  local.page = Math.max(1, Math.min(local.page, totalPages));
+  pageState.set(root, local);
+  const start = (local.page - 1) * PAGE_SIZE;
   const pageItems = items.slice(start, start + PAGE_SIZE);
-
   root.innerHTML = '';
-
-  if (pageItems.length === 0) {
+  if (!pageItems.length) {
     root.innerHTML = '<div class="py-10 text-center text-sm text-muted">No screenshots match this filter.</div>';
     return;
   }
 
   const grid = document.createElement('div');
   grid.className = 'remoteops-gallery-grid';
-
-  for (const item of pageItems) {
-    const tile = document.createElement('div');
-    tile.className = 'remoteops-gallery-tile';
-
-    const imageWrap = document.createElement('button');
-    imageWrap.type = 'button';
-    imageWrap.className = 'remoteops-gallery-image-wrap';
-    imageWrap.title = 'Click to view full screen';
-
-    const image = document.createElement('img');
-    image.className = 'remoteops-gallery-image';
-    image.loading = 'lazy';
-    image.src = item.url;
-    image.alt = `${item.currentUser || item.employeeName || 'Unknown User'} screenshot`;
-    imageWrap.appendChild(image);
-    imageWrap.addEventListener('click', () => createFullscreen(item));
-
-    const meta = document.createElement('div');
-    meta.className = 'remoteops-gallery-meta';
-    const user = document.createElement('div');
-    user.className = 'remoteops-gallery-user';
-    user.textContent = item.currentUser || item.employeeName || 'Unknown User';
-    const sub = document.createElement('div');
-    sub.className = 'remoteops-gallery-sub';
-    sub.textContent = `${item.display || item.displayName || 'Display'} · ${formatDate(item.capturedAt)}`;
-    meta.append(user, sub);
-
-    tile.append(imageWrap, meta);
-    grid.appendChild(tile);
-  }
-  root.appendChild(grid);
-
-  const nav = document.createElement('div');
-  nav.className = 'remoteops-gallery-pagination';
-
-  const prev = document.createElement('button');
-  prev.type = 'button';
-  prev.textContent = 'Previous';
-  prev.disabled = state.page <= 1;
-  prev.addEventListener('click', () => { state.page -= 1; renderGallery(root, items, total); window.scrollTo({ top: 0, behavior: 'smooth' }); });
-  nav.appendChild(prev);
-
-  const visiblePages = [];
-  const first = Math.max(1, state.page - 2);
-  const last = Math.min(pageCount, first + 4);
-  for (let p = first; p <= last; p += 1) visiblePages.push(p);
-  visiblePages.forEach(p => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.textContent = String(p);
-    button.className = p === state.page ? 'active' : '';
-    button.addEventListener('click', () => { state.page = p; renderGallery(root, items, total); window.scrollTo({ top: 0, behavior: 'smooth' }); });
-    nav.appendChild(button);
-  });
-
-  const next = document.createElement('button');
-  next.type = 'button';
-  next.textContent = 'Next';
-  next.disabled = state.page >= pageCount;
-  next.addEventListener('click', () => { state.page += 1; renderGallery(root, items, total); window.scrollTo({ top: 0, behavior: 'smooth' }); });
-  nav.appendChild(next);
-
-  root.appendChild(nav);
-
-  const count = document.createElement('div');
-  count.className = 'remoteops-gallery-count';
-  count.textContent = `Showing ${start + 1}–${Math.min(start + PAGE_SIZE, total)} of ${total} screenshots · Page ${state.page} of ${pageCount}`;
-  root.appendChild(count);
-}
-
-async function loadAllScreenshots(card, root, dashboard = false) {
-  if (requestInFlight) return;
-  requestInFlight = true;
-  try {
-    const filters = getFilters(card);
-    const params = new URLSearchParams({ limit: String(MAX_ITEMS) });
-    if (filters.employeeId && /^\d+$/.test(String(filters.employeeId))) params.set('employeeId', filters.employeeId);
-    if (filters.date) params.set('date', filters.date);
-    const response = await fetch(`${API_URL}/activity/screenshots?${params.toString()}`, { headers: headers() });
-    if (!response.ok) return;
-    const data = await response.json();
-    cache = Array.isArray(data) ? data : [];
-    state.employeeId = filters.employeeId;
-    state.date = filters.date;
-
-    if (dashboard) {
-      renderDashboard(root, cache);
-    } else {
-      renderGallery(root, cache, cache.length);
-    }
-  } catch (_) {
-    // Keep the existing UI during transient network errors.
-  } finally {
-    requestInFlight = false;
-  }
-}
-
-function renderDashboard(root, items) {
-  const latest = [...items].sort((a, b) => new Date(b.capturedAt) - new Date(a.capturedAt)).slice(0, 8);
-  root.innerHTML = '';
-  const grid = document.createElement('div');
-  grid.className = 'remoteops-gallery-grid';
-  for (const item of latest) {
+  pageItems.forEach(item => {
     const tile = document.createElement('div');
     tile.className = 'remoteops-gallery-tile';
     const button = document.createElement('button');
@@ -281,7 +146,7 @@ function renderDashboard(root, items) {
     img.src = item.url;
     img.alt = `${item.currentUser || item.employeeName || 'Unknown User'} screenshot`;
     button.appendChild(img);
-    button.addEventListener('click', e => { e.stopPropagation(); createFullscreen(item); });
+    button.addEventListener('click', () => openFullscreen(item));
     const meta = document.createElement('div');
     meta.className = 'remoteops-gallery-meta';
     const user = document.createElement('div');
@@ -293,56 +158,131 @@ function renderDashboard(root, items) {
     meta.append(user, sub);
     tile.append(button, meta);
     grid.appendChild(tile);
-  }
+  });
   root.appendChild(grid);
 
-  // Prevent any resize/range control inside the dashboard card from bubbling
-  // into a parent navigation handler or the View All action.
-  root.parentElement?.querySelectorAll('input[type="range"]').forEach(input => {
-    input.addEventListener('click', e => e.stopPropagation());
-    input.addEventListener('pointerdown', e => e.stopPropagation());
-    input.addEventListener('mousedown', e => e.stopPropagation());
-    input.addEventListener('change', e => e.stopPropagation());
+  const nav = document.createElement('div');
+  nav.className = 'remoteops-gallery-pagination';
+  const prev = document.createElement('button');
+  prev.type = 'button'; prev.textContent = 'Previous'; prev.disabled = local.page === 1;
+  prev.addEventListener('click', () => { local.page -= 1; renderGallery(root, local.items); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+  nav.appendChild(prev);
+  const first = Math.max(1, Math.min(local.page - 2, totalPages - 4));
+  const last = Math.min(totalPages, first + 4);
+  for (let p = first; p <= last; p += 1) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = String(p); b.className = p === local.page ? 'active' : '';
+    b.addEventListener('click', () => { local.page = p; renderGallery(root, local.items); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+    nav.appendChild(b);
+  }
+  const next = document.createElement('button');
+  next.type = 'button'; next.textContent = 'Next'; next.disabled = local.page === totalPages;
+  next.addEventListener('click', () => { local.page += 1; renderGallery(root, local.items); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+  nav.appendChild(next);
+  root.appendChild(nav);
+  const count = document.createElement('div');
+  count.className = 'remoteops-gallery-count';
+  count.textContent = `Showing ${start + 1}–${Math.min(start + PAGE_SIZE, items.length)} of ${items.length} screenshots · Page ${local.page} of ${totalPages}`;
+  root.appendChild(count);
+}
+
+function renderDashboard(root, items) {
+  root.innerHTML = '';
+  const latest = items.slice(0, 8);
+  const grid = document.createElement('div');
+  grid.className = 'remoteops-gallery-grid';
+  latest.forEach(item => {
+    const tile = document.createElement('div');
+    tile.className = 'remoteops-gallery-tile';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'remoteops-gallery-image-wrap';
+    button.title = 'Click to view full screen';
+    const img = document.createElement('img');
+    img.className = 'remoteops-gallery-image';
+    img.loading = 'lazy';
+    img.src = item.url;
+    img.alt = `${item.currentUser || item.employeeName || 'Unknown User'} screenshot`;
+    button.appendChild(img);
+    button.addEventListener('click', e => { e.stopPropagation(); openFullscreen(item); });
+    const meta = document.createElement('div');
+    meta.className = 'remoteops-gallery-meta';
+    const user = document.createElement('div');
+    user.className = 'remoteops-gallery-user';
+    user.textContent = item.currentUser || item.employeeName || 'Unknown User';
+    const sub = document.createElement('div');
+    sub.className = 'remoteops-gallery-sub';
+    sub.textContent = `${item.display || item.displayName || 'Display'} · ${formatDate(item.capturedAt)}`;
+    meta.append(user, sub);
+    tile.append(button, meta);
+    grid.appendChild(tile);
+  });
+  root.appendChild(grid);
+}
+
+async function refreshCard(card, root, dashboard) {
+  const filters = getFilters(card);
+  const local = pageState.get(root) || { page: 1, items: [], filterKey: '' };
+  const key = `${filters.employeeId}|${filters.date}|${dashboard ? 'dashboard' : 'full'}`;
+  if (local.filterKey !== key) { local.page = 1; local.filterKey = key; }
+  pageState.set(root, local);
+
+  const params = new URLSearchParams({ limit: String(FETCH_LIMIT) });
+  if (/^\d+$/.test(String(filters.employeeId))) params.set('employeeId', filters.employeeId);
+  if (filters.date) params.set('date', filters.date);
+  const response = await fetch(`${API_URL}/activity/screenshots?${params.toString()}`, { headers: headers() });
+  if (!response.ok) return;
+  const data = await response.json();
+  const items = Array.isArray(data) ? data : [];
+  if (dashboard) renderDashboard(root, items);
+  else renderGallery(root, items);
+}
+
+async function refreshAll() {
+  if (requestInFlight) return;
+  requestInFlight = true;
+  try {
+    const full = fullPageCard();
+    if (full) await refreshCard(full, hideLegacyGrid(full), false);
+    const dash = dashboardCard();
+    if (dash) await refreshCard(dash, hideLegacyGrid(dash), true);
+  } catch (_) {
+    // Preserve existing content during transient network failures.
+  } finally {
+    requestInFlight = false;
+  }
+}
+
+function bindDashboardControls(card) {
+  if (!card || card.dataset.remoteopsControlsBound === 'true') return;
+  card.dataset.remoteopsControlsBound = 'true';
+  card.classList.add('remoteops-dashboard-screenshot-card');
+  const stop = e => e.stopPropagation();
+  card.querySelectorAll('input[type="range"]').forEach(input => {
+    ['click','pointerdown','mousedown','mouseup','change'].forEach(type => input.addEventListener(type, stop));
   });
 }
 
-function enhance() {
+function ensure() {
   injectStyles();
-
-  const fullPageCard = findFullPageCard();
-  if (fullPageCard) {
-    const root = hideLegacyGallery(fullPageCard);
-    if (root) loadAllScreenshots(fullPageCard, root, false);
-  }
-
-  const dashboardCard = findDashboardCard();
-  if (dashboardCard) {
-    dashboardCard.classList.add('remoteops-dashboard-screenshot-card');
-    const root = hideLegacyGallery(dashboardCard);
-    if (root) loadAllScreenshots(dashboardCard, root, true);
-
-    // Keep View All as the only navigation control. Range sliders and other
-    // controls in this card should never trigger the surrounding card/button.
-    dashboardCard.querySelectorAll('input[type="range"]').forEach(input => {
-      input.addEventListener('click', e => e.stopPropagation());
-      input.addEventListener('pointerdown', e => e.stopPropagation());
-      input.addEventListener('mousedown', e => e.stopPropagation());
-      input.addEventListener('change', e => e.stopPropagation());
-    });
-    dashboardCard.querySelectorAll('button').forEach(button => {
-      if (/view all/i.test(textOf(button))) button.dataset.viewAllControl = 'true';
-    });
-  }
+  const full = fullPageCard();
+  if (full) hideLegacyGrid(full);
+  const dash = dashboardCard();
+  if (dash) { hideLegacyGrid(dash); bindDashboardControls(dash); }
 }
 
 function start() {
-  clearInterval(timer);
-  timer = setInterval(() => { requestInFlight = false; enhance(); }, 5000);
-  enhance();
+  ensure();
+  refreshAll();
+  clearInterval(refreshTimer);
+  refreshTimer = setInterval(refreshAll, REFRESH_MS);
+  const observer = new MutationObserver(() => ensure());
+  observer.observe(document.body, { childList: true, subtree: true });
+  document.addEventListener('change', e => {
+    const target = e.target;
+    if (target?.matches?.('main .card select, main .card input[type="date"]')) refreshAll();
+  }, true);
 }
-
-const observer = new MutationObserver(() => enhance());
-observer.observe(document.body, { childList: true, subtree: true });
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
 else start();
