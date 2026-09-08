@@ -83,8 +83,6 @@ function updateStatusBadges(data) {
     const badge = [...header.querySelectorAll('span')].find(node => /^\d+\s+(Active|Idle)$/i.test(textOf(node)));
     if (!badge) return;
 
-    // For dashboard filters, rely on the rendered employee tiles when possible.
-    // Otherwise use the organization/team feed directly.
     const employeeIds = [...card.querySelectorAll('.remoteops-live-employee-tile')]
       .map(tile => {
         const name = textOf(tile.querySelector('.remoteops-live-employee-name'));
@@ -141,6 +139,6 @@ installFullscreenListener();
 refresh();
 timer = setInterval(refresh, REFRESH_MS);
 
-a window.addEventListener('beforeunload', () => {
+window.addEventListener('beforeunload', () => {
   if (timer) clearInterval(timer);
 });
