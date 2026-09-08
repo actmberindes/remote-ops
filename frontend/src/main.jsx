@@ -10,7 +10,6 @@ import './live-view-smooth-enhancer.js';
 import './monitoring-view-enhancer.js';
 import './monitoring-rdp-label-enhancer.js';
 import './live-view-fullscreen-enhancer.js';
-import './screenshot-metadata-enhancer.js';
 import './employee-idle-duration-enhancer.js';
 import './screenshot-gallery-enhancer.js';
 
