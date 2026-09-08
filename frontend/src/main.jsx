@@ -5,6 +5,7 @@ import './index.css';
 import './admin-dashboard-ui.css';
 import './asset-manager-assignment-enhancer.js';
 import './admin-dashboard-ui-enhancer.js';
+import './dashboard-monitoring-controls-enhancer.js';
 import './live-view-idle-enhancer.js';
 import './live-view-smooth-enhancer.js';
 import './monitoring-view-enhancer.js';
