@@ -11,7 +11,6 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
 
   async function sendHeartbeat() {
     if (!running || !config.deviceToken) return;
-
     try {
       const telemetry = getDeviceState();
       await client.heartbeat(config.deviceToken, {
@@ -24,15 +23,10 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
         sessionName: telemetry.sessionName,
         agentVersion: config.agentVersion,
       });
-
       onDeviceStateChange?.(telemetry.state, telemetry);
-      if (telemetry.state === 'active') {
-        log(`Heartbeat: Active — ${telemetry.domainUser || 'No user'}${telemetry.isRdp ? ' (RDP)' : ''}.`);
-      } else if (telemetry.state === 'idle') {
-        log(`Heartbeat: Idle — ${telemetry.domainUser || 'No user'} (5+ minutes)${telemetry.isRdp ? ' (RDP)' : ''}.`);
-      } else {
-        log('Heartbeat: No logged-in Windows user.');
-      }
+      if (telemetry.state === 'active') log(`Heartbeat: Active — ${telemetry.domainUser || 'No user'}${telemetry.isRdp ? ' (RDP)' : ''}.`);
+      else if (telemetry.state === 'idle') log(`Heartbeat: Idle — ${telemetry.domainUser || 'No user'} (5+ minutes)${telemetry.isRdp ? ' (RDP)' : ''}.`);
+      else log('Heartbeat: No logged-in Windows user.');
     } catch (e) {
       onDeviceStateChange?.('offline');
       log(`Heartbeat failed: ${e.message}`);
@@ -54,21 +48,17 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
   }
 
   function capturesForSession(captures, telemetry) {
-    // An RDP session is treated as a single-display monitoring session. Keep
-    // the first/primary physical display only, even if the host has 2+ monitors.
     if (!telemetry.isRdp) return captures;
     return captures.filter(item => Number(item.displayIndex) === 1).slice(0, 1);
   }
 
   async function tickScheduled() {
     if (!running) return;
-
     const telemetry = getDeviceState();
     if (telemetry.state === 'logged-out') {
       log('Scheduled screenshot skipped: no logged-in Windows user.');
       return;
     }
-
     try {
       const allCaptures = await capture.captureFullAll();
       const captures = capturesForSession(allCaptures, telemetry);
@@ -83,13 +73,11 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
 
   async function tickLive() {
     if (!running) return;
-
     const telemetry = getDeviceState();
     if (telemetry.state === 'logged-out') {
       log('Live frame skipped: no logged-in Windows user.');
       return;
     }
-
     try {
       const allCaptures = await capture.captureLiveAll();
       const captures = capturesForSession(allCaptures, telemetry);
@@ -108,7 +96,6 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       scheduledTimer = setInterval(tickScheduled, currentIntervalMinutes * 60 * 1000);
       log(`Scheduled screenshot interval set to ${currentIntervalMinutes} minute(s).`);
     }
-
     if (cfg.liveViewFrameIntervalSeconds !== currentLiveSeconds) {
       currentLiveSeconds = cfg.liveViewFrameIntervalSeconds;
       if (liveTimer) clearInterval(liveTimer);
@@ -134,7 +121,6 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
 
   const heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_PERIOD_MS);
   const configTimer = setInterval(pollConfig, HEARTBEAT_PERIOD_MS);
-
   initialSync();
 
   return {
