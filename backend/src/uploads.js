@@ -14,13 +14,14 @@ export const monitoringUploadsDir = path.join(uploadsDir, 'monitoring');
 fs.mkdirSync(uploadsDir, { recursive: true });
 fs.mkdirSync(monitoringUploadsDir, { recursive: true });
 
-function createStorage(destinationDir) {
+function createStorage(destinationDir, monitoringType = null) {
   return multer.diskStorage({
     destination: (req, file, cb) => cb(null, destinationDir),
     filename: (req, file, cb) => {
       const ext = path.extname(file.originalname);
       const safeExt = /^\.[a-zA-Z0-9]+$/.test(ext) ? ext : '';
-      cb(null, `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${safeExt}`);
+      const prefix = monitoringType ? `${monitoringType}-` : '';
+      cb(null, `${prefix}${Date.now()}-${crypto.randomBytes(6).toString('hex')}${safeExt}`);
     },
   });
 }
@@ -56,9 +57,24 @@ uploadsRouter.post('/', upload.single('file'), (req, res) => {
   });
 });
 
-// Monitoring captures use a separate physical directory from normal asset images
-// and ticket/application attachments so their files can be retained and purged independently.
-uploadsRouter.post('/monitoring', monitoringUpload.single('file'), (req, res) => {
+// Monitoring captures use one physical directory, but filenames are now explicitly
+// prefixed as live-* or screenshot-* so retention never has to guess their type.
+uploadsRouter.post('/monitoring', (req, res, next) => {
+  const type = req.query.type === 'live' ? 'live' : 'screenshot';
+  req.monitoringType = type;
+  next();
+}, (req, res, next) => {
+  const type = req.monitoringType || 'screenshot';
+  const dynamicUpload = multer({
+    storage: createStorage(monitoringUploadsDir, type),
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (innerReq, file, cb) => {
+      const isImage = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.mimetype);
+      cb(null, isImage);
+    },
+  });
+  dynamicUpload.single('file')(req, res, next);
+}, (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No monitoring image uploaded, or file type not allowed.' });
   res.status(201).json({
     url: `/uploads/monitoring/${req.file.filename}`,
