@@ -105,7 +105,9 @@ try {
   console.error(`Initial monitoring retention cleanup failed: ${err.message}`);
 }
 
-const RETENTION_SWEEP_MS = 60 * 60 * 1000;
+// Run frequently so Live View files do not depend on the next frame arriving.
+// Screenshot records still use their independent 3-day retention setting.
+const RETENTION_SWEEP_MS = 30 * 1000;
 setInterval(async () => {
   try {
     await runMonitoringRetention();
