@@ -928,12 +928,12 @@ function AdminMonitoringSettings() {
                 }
               />
               <span className="text-xs text-muted">
-                days
+                minutes
               </span>
             </div>
 
             <div className="text-[10px] text-muted mt-2">
-              Default: <strong>3 days</strong>
+              Default: <strong>5 minutes</strong>
             </div>
           </div>
 
