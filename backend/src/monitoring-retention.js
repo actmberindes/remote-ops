@@ -33,9 +33,6 @@ export function purgeMonitoringFiles({ monitoringUploadsDir, liveViewDays = 3, s
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         walk(fullPath);
-        try {
-          if (fs.readdirSync(fullPath).length === 0) fs.rmdirSync(fullPath);
-        } catch (_) {}
         continue;
       }
 
