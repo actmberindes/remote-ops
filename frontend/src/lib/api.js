@@ -44,6 +44,25 @@ async function requestBlob(path, { method = 'GET', body } = {}) {
   return res.blob();
 }
 
+async function requestAllDateFilteredScreenshots({ employeeId, date }) {
+  const all = [];
+  const batchSize = 200;
+  let offset = 0;
+
+  while (true) {
+    const params = new URLSearchParams({ offset: String(offset), limit: String(batchSize), date });
+    if (employeeId) params.set('employeeId', employeeId);
+    const payload = await request(`/activity/screenshots-feed?${params.toString()}`);
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    all.push(...items);
+
+    if (!payload?.hasMore || items.length === 0) break;
+    offset += items.length;
+  }
+
+  return all;
+}
+
 export const api = {
   getToken, setToken,
   managers: () => request('/auth/managers', { auth: false }),
@@ -130,9 +149,9 @@ export const api = {
       return request(`/activity/live-history${qs ? `?${qs}` : ''}`);
     },
     screenshots: ({ employeeId, date, limit } = {}) => {
+      if (date) return requestAllDateFilteredScreenshots({ employeeId, date });
       const params = new URLSearchParams();
       if (employeeId) params.set('employeeId', employeeId);
-      if (date) params.set('date', date);
       if (limit) params.set('limit', limit);
       const qs = params.toString();
       return request(`/activity/screenshots${qs ? `?${qs}` : ''}`);
