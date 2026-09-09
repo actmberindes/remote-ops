@@ -39,11 +39,11 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
     }
   }
 
-  async function uploadCaptures(captures, postCapture) {
+  async function uploadCaptures(captures, postCapture, type = 'screenshot') {
     const uploaded = [];
     for (const item of captures) {
       try {
-        const result = await client.uploadFile(config.deviceToken, item.filePath);
+        const result = await client.uploadFile(config.deviceToken, item.filePath, type);
         await postCapture(result, item);
         uploaded.push({ ...item, url: result.url, filename: result.filename });
       } finally {
@@ -74,7 +74,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       const captures = capturesForSession(allCaptures, telemetry);
       await uploadCaptures(captures, async (result, item) => {
         await client.postScheduledScreenshot(config.deviceToken, result.url, result.filename, item);
-      });
+      }, 'screenshot');
       log(`Scheduled screenshot captured for ${captures.length} display(s)${telemetry.isRdp ? ' (RDP primary display only).' : '.'}`);
     } catch (e) {
       log(`Scheduled capture failed: ${e.message}`);
@@ -95,7 +95,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       const captures = capturesForSession(allCaptures, telemetry);
       await uploadCaptures(captures, async (result, item) => {
         await client.postLiveFrame(config.deviceToken, result.url, item);
-      });
+      }, 'live');
     } catch (e) {
       log(`Live frame failed: ${e.message}`);
     }
