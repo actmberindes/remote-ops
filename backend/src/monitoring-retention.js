@@ -3,8 +3,10 @@ import path from 'node:path';
 
 /**
  * Removes monitoring files that have exceeded their configured retention.
- * Database-backed cleanup remains responsible for removing old records; this
- * sweep additionally removes orphaned files that are no longer referenced.
+ * New monitoring files are explicitly named live-* or screenshot-* so their
+ * retention type is never ambiguous. Legacy files without a prefix are treated
+ * as Live View files during the migration because old Live View history may
+ * already have been purged from the database.
  */
 export function purgeMonitoringFiles({ monitoringUploadsDir, liveViewDays = 3, screenshotDays = 3, screenshots = [], liveFrames = [], liveFrameHistory = [] }) {
   if (!monitoringUploadsDir || !fs.existsSync(monitoringUploadsDir)) return { deleted: 0 };
@@ -21,7 +23,7 @@ export function purgeMonitoringFiles({ monitoringUploadsDir, liveViewDays = 3, s
     if (!frame?.url) continue;
     const ts = new Date(frame.capturedAt).getTime();
     const existing = liveByUrl.get(frame.url);
-    if (!existing || (!Number.isNaN(ts) && ts < existing)) liveByUrl.set(frame.url, ts);
+    if (existing === undefined || (!Number.isNaN(ts) && ts < existing)) liveByUrl.set(frame.url, ts);
   }
 
   let deleted = 0;
@@ -48,16 +50,27 @@ export function purgeMonitoringFiles({ monitoringUploadsDir, liveViewDays = 3, s
       const url = `/uploads/monitoring/${relative}`;
       const screenshotTs = screenshotByUrl.get(url);
       const liveTs = liveByUrl.get(url);
+      const basename = path.basename(relative).toLowerCase();
 
       let shouldDelete = false;
       if (screenshotTs !== undefined) {
+        // A file referenced by a screenshot record always follows the
+        // independent screenshot retention period.
         shouldDelete = !Number.isNaN(screenshotTs) && screenshotTs <= screenshotCutoff;
       } else if (liveTs !== undefined) {
         shouldDelete = !Number.isNaN(liveTs) && liveTs <= liveCutoff;
+      } else if (basename.startsWith('screenshot-')) {
+        // Future screenshot uploads are explicitly classified by filename.
+        shouldDelete = stat.mtimeMs <= screenshotCutoff;
+      } else if (basename.startsWith('live-')) {
+        // Future Live View uploads are explicitly classified by filename.
+        shouldDelete = stat.mtimeMs <= liveCutoff;
       } else {
-        // Orphaned monitoring file: use filesystem modification time so files
-        // left behind after DB cleanup are still subject to retention.
-        shouldDelete = stat.mtimeMs <= Math.min(liveCutoff, screenshotCutoff);
+        // Legacy files were uploaded before monitoring uploads had a type marker.
+        // Existing screenshot records above are protected by their 3-day rule;
+        // remaining legacy files are the old Live View capture pool and use the
+        // 5-minute Live View retention.
+        shouldDelete = stat.mtimeMs <= liveCutoff;
       }
 
       if (!shouldDelete) continue;
