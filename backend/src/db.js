@@ -19,7 +19,6 @@ const defaultData = {
     screenshotRetentionDays: 3,
     liveViewRetentionDays: LIVE_VIEW_RETENTION_DAYS,
     webUsageRetentionDays: 7,
-    legacyMonitoringFilesMigrated: false,
   },
   idSeq: 1000, ticketSeq: 0, assetTagSeq: 0,
 };
@@ -57,7 +56,6 @@ if (db.data.agentConfig && db.data.agentConfig.screenshotRetentionDays === 7) db
 if (db.data.agentConfig && db.data.agentConfig.screenshotRetentionDays === undefined) db.data.agentConfig.screenshotRetentionDays = 3;
 if (db.data.agentConfig && (db.data.agentConfig.liveViewRetentionDays === undefined || db.data.agentConfig.liveViewRetentionDays === 3)) db.data.agentConfig.liveViewRetentionDays = LIVE_VIEW_RETENTION_DAYS;
 if (db.data.agentConfig && db.data.agentConfig.webUsageRetentionDays === undefined) db.data.agentConfig.webUsageRetentionDays = 7;
-if (db.data.agentConfig && db.data.agentConfig.legacyMonitoringFilesMigrated === undefined) db.data.agentConfig.legacyMonitoringFilesMigrated = false;
 await db.write();
 
 export function nextId() {
@@ -80,23 +78,26 @@ function assetTypePrefix(type) {
   if (ASSET_TAG_PREFIXES[normalized]) return ASSET_TAG_PREFIXES[normalized];
   const compact = normalized.replace(/[^a-z0-9]/g, '');
   if (compact.includes('desktop')) return 'DT';
-  if (compact.includes('laptop')) return 'LP';
+  if (compact.includes('laptop') || compact.includes('notebook')) return 'LP';
   if (compact.includes('server')) return 'SRV';
   if (compact.includes('monitor')) return 'MON';
   if (compact.includes('printer')) return 'PRN';
-  if (compact.includes('phone')) return 'PH';
-  if (compact.includes('tablet')) return 'TAB';
   if (compact.includes('router')) return 'RTR';
   if (compact.includes('switch')) return 'SWT';
-  if (compact.includes('firewall')) return 'FW';
   if (compact.includes('keyboard')) return 'KB';
   if (compact.includes('mouse')) return 'MSE';
   if (compact.includes('headset')) return 'HS';
-  if (compact.includes('dock')) return 'DK';
-  return 'AST';
+  const letters = String(type || '').toUpperCase().replace(/[^A-Z]/g, '');
+  return (letters.slice(0, 3) || 'AST');
 }
 
 export function nextAssetTag(type) {
+  const prefix = assetTypePrefix(type);
+  let tag;
+  do {
+    const suffix = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+    tag = `${prefix}${suffix}`;
+  } while (db.data.assets.some(a => a.assetTag === tag));
   db.data.assetTagSeq = (db.data.assetTagSeq || 0) + 1;
-  return `${assetTypePrefix(type)}-${String(db.data.assetTagSeq).padStart(5, '0')}`;
+  return tag;
 }
