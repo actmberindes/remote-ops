@@ -89,9 +89,13 @@ app.use('/api/activity', activityRouter);
 async function runMonitoringRetention() {
   const liveViewDays = Number(db.data.agentConfig.liveViewRetentionDays);
   const screenshotDays = Number(db.data.agentConfig.screenshotRetentionDays);
-  const liveFrames = db.data.liveFrames || [];
-  const liveFrameHistory = db.data.liveFrameHistory || [];
-  const screenshots = db.data.screenshots || [];
+
+  // Snapshot the records BEFORE purgeOldActivity() removes expired DB entries.
+  // The filesystem sweep needs these records to distinguish Live View frames
+  // from screenshots, since both file types share backend/uploads/monitoring.
+  const liveFrames = [...(db.data.liveFrames || [])];
+  const liveFrameHistory = [...(db.data.liveFrameHistory || [])];
+  const screenshots = [...(db.data.screenshots || [])];
 
   console.log(
     `[retention] Sweep started | Live View: ${liveViewDays} days (${(liveViewDays * 24 * 60).toFixed(2)} min) | ` +
@@ -105,9 +109,9 @@ async function runMonitoringRetention() {
     monitoringUploadsDir: `${uploadsDir}/monitoring`,
     liveViewDays,
     screenshotDays,
-    screenshots: db.data.screenshots,
-    liveFrames: db.data.liveFrames,
-    liveFrameHistory: db.data.liveFrameHistory,
+    screenshots,
+    liveFrames,
+    liveFrameHistory,
   });
 
   if (result.deleted > 0) {
