@@ -87,19 +87,44 @@ app.use('/api/activity', multiDisplayActivityRouter);
 app.use('/api/activity', activityRouter);
 
 async function runMonitoringRetention() {
+  const liveViewDays = Number(db.data.agentConfig.liveViewRetentionDays);
+  const screenshotDays = Number(db.data.agentConfig.screenshotRetentionDays);
+  const liveFrames = db.data.liveFrames || [];
+  const liveFrameHistory = db.data.liveFrameHistory || [];
+  const screenshots = db.data.screenshots || [];
+
+  console.log(
+    `[retention] Sweep started | Live View: ${liveViewDays} days (${(liveViewDays * 24 * 60).toFixed(2)} min) | ` +
+    `Screenshots: ${screenshotDays} days | liveFrames: ${liveFrames.length} | ` +
+    `liveFrameHistory: ${liveFrameHistory.length} | screenshots: ${screenshots.length}`
+  );
+
   purgeOldActivity();
-  purgeMonitoringFiles({
+
+  const result = purgeMonitoringFiles({
     monitoringUploadsDir: `${uploadsDir}/monitoring`,
-    liveViewDays: db.data.agentConfig.liveViewRetentionDays,
-    screenshotDays: db.data.agentConfig.screenshotRetentionDays,
+    liveViewDays,
+    screenshotDays,
     screenshots: db.data.screenshots,
     liveFrames: db.data.liveFrames,
     liveFrameHistory: db.data.liveFrameHistory,
   });
+
+  if (result.deleted > 0) {
+    console.log(`[retention] Deleted ${result.deleted} monitoring file(s).`);
+  } else {
+    console.log('[retention] No monitoring files deleted.');
+  }
+
   await db.write();
 }
 
 try {
+  console.log(
+    `[retention] Config loaded | Live View retention: ${Number(db.data.agentConfig.liveViewRetentionDays)} days ` +
+    `(${(Number(db.data.agentConfig.liveViewRetentionDays) * 24 * 60).toFixed(2)} min) | ` +
+    `Screenshot retention: ${Number(db.data.agentConfig.screenshotRetentionDays)} days`
+  );
   await runMonitoringRetention();
 } catch (err) {
   console.error(`Initial monitoring retention cleanup failed: ${err.message}`);
