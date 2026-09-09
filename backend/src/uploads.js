@@ -10,9 +10,12 @@ import { db } from './db.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const uploadsDir = path.join(__dirname, '..', 'uploads');
 export const monitoringUploadsDir = path.join(uploadsDir, 'monitoring');
+export const liveMonitoringUploadsDir = path.join(monitoringUploadsDir, 'live');
+export const screenshotMonitoringUploadsDir = path.join(monitoringUploadsDir, 'screenshots');
 
 fs.mkdirSync(uploadsDir, { recursive: true });
-fs.mkdirSync(monitoringUploadsDir, { recursive: true });
+fs.mkdirSync(liveMonitoringUploadsDir, { recursive: true });
+fs.mkdirSync(screenshotMonitoringUploadsDir, { recursive: true });
 
 function createStorage(destinationDir, monitoringType = null) {
   return multer.diskStorage({
@@ -35,15 +38,6 @@ const upload = multer({
   fileFilter,
 });
 
-const monitoringUpload = multer({
-  storage: createStorage(monitoringUploadsDir),
-  limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const isImage = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.mimetype);
-    cb(null, isImage);
-  },
-});
-
 export const uploadsRouter = Router();
 uploadsRouter.use(requireAuthOrDevice(db));
 
@@ -57,16 +51,14 @@ uploadsRouter.post('/', upload.single('file'), (req, res) => {
   });
 });
 
-// Monitoring captures use one physical directory, but filenames are now explicitly
-// prefixed as live-* or screenshot-* so retention never has to guess their type.
+// Monitoring captures are physically separated so retention can never confuse
+// Live View frames with scheduled screenshots.
 uploadsRouter.post('/monitoring', (req, res, next) => {
   const type = req.query.type === 'live' ? 'live' : 'screenshot';
+  const destinationDir = type === 'live' ? liveMonitoringUploadsDir : screenshotMonitoringUploadsDir;
   req.monitoringType = type;
-  next();
-}, (req, res, next) => {
-  const type = req.monitoringType || 'screenshot';
   const dynamicUpload = multer({
-    storage: createStorage(monitoringUploadsDir, type),
+    storage: createStorage(destinationDir, type),
     limits: { fileSize: 10 * 1024 * 1024 },
     fileFilter: (innerReq, file, cb) => {
       const isImage = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.mimetype);
@@ -77,7 +69,7 @@ uploadsRouter.post('/monitoring', (req, res, next) => {
 }, (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No monitoring image uploaded, or file type not allowed.' });
   res.status(201).json({
-    url: `/uploads/monitoring/${req.file.filename}`,
+    url: `/uploads/monitoring/${req.monitoringType === 'live' ? 'live' : 'screenshots'}/${req.file.filename}`,
     filename: req.file.originalname,
     mimeType: req.file.mimetype,
     size: req.file.size,
