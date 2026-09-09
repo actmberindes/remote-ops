@@ -6,6 +6,8 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbFile = path.join(__dirname, '..', 'data', 'db.json');
 
+const LIVE_VIEW_RETENTION_DAYS = 5 / (24 * 60); // 5 minutes
+
 const defaultData = {
   users: [], applications: [], timeSessions: [], notifications: [],
   tickets: [], ticketMessages: [], ticketAttachments: [],
@@ -15,7 +17,7 @@ const defaultData = {
     screenshotIntervalMinutes: 10,
     liveViewFrameIntervalSeconds: 5,
     screenshotRetentionDays: 3,
-    liveViewRetentionDays: 3,
+    liveViewRetentionDays: LIVE_VIEW_RETENTION_DAYS,
     webUsageRetentionDays: 7,
   },
   idSeq: 1000, ticketSeq: 0, assetTagSeq: 0,
@@ -52,7 +54,7 @@ for (const device of db.data.devices) {
 if (db.data.agentConfig && db.data.agentConfig.screenshotRetentionDays === 30 && !db.data.agentConfig.liveViewRetentionDays) db.data.agentConfig.screenshotRetentionDays = 7;
 if (db.data.agentConfig && db.data.agentConfig.screenshotRetentionDays === 7) db.data.agentConfig.screenshotRetentionDays = 3;
 if (db.data.agentConfig && db.data.agentConfig.screenshotRetentionDays === undefined) db.data.agentConfig.screenshotRetentionDays = 3;
-if (db.data.agentConfig && db.data.agentConfig.liveViewRetentionDays === undefined) db.data.agentConfig.liveViewRetentionDays = 3;
+if (db.data.agentConfig && (db.data.agentConfig.liveViewRetentionDays === undefined || db.data.agentConfig.liveViewRetentionDays === 3)) db.data.agentConfig.liveViewRetentionDays = LIVE_VIEW_RETENTION_DAYS;
 if (db.data.agentConfig && db.data.agentConfig.webUsageRetentionDays === undefined) db.data.agentConfig.webUsageRetentionDays = 7;
 await db.write();
 
