@@ -60,6 +60,71 @@ function applyGridSize(card, value) {
   });
 }
 
+function captionNodeForImage(img) {
+  const button = img.closest('button');
+  if (!button) return null;
+  return button.children.length > 1 ? button.children[1] : null;
+}
+
+function prepareCaption(caption) {
+  if (!caption || caption.dataset.remoteopsCaptionPrepared === 'true') return;
+  caption.dataset.remoteopsCaptionPrepared = 'true';
+  caption.dataset.remoteopsOriginalText = textOf(caption);
+  // Do not show the registered-owner label while we resolve the current Windows user.
+  caption.style.visibility = 'hidden';
+}
+
+function displayNameForScreenshot(screenshot, caption) {
+  const explicit = screenshot?.displayName || screenshot?.display || screenshot?.displayId;
+  if (explicit) return String(explicit).toUpperCase().replace(/^DISPLAY\s*/i, 'DISPLAY');
+
+  const source = `${screenshot?.filename || ''} ${caption?.dataset.remoteopsOriginalText || ''}`;
+  const match = source.match(/DISPLAY\s*\d+/i);
+  return match ? match[0].replace(/\s+/g, '').toUpperCase() : '';
+}
+
+function updateScreenshotLabels(cards, screenshots, devices) {
+  const screenshotByUrl = new Map(
+    (Array.isArray(screenshots) ? screenshots : []).map(item => [normalizePath(item.url), item])
+  );
+  const deviceById = new Map(
+    (Array.isArray(devices) ? devices : []).map(device => [String(device.id), device])
+  );
+
+  for (const card of cards) {
+    for (const img of card.querySelectorAll('img')) {
+      const caption = captionNodeForImage(img);
+      if (caption) prepareCaption(caption);
+
+      const screenshot = screenshotByUrl.get(normalizePath(img.currentSrc || img.src));
+      if (!screenshot) continue;
+
+      const device = deviceById.get(String(screenshot.deviceId));
+      const currentUser = device?.currentDomainUser || device?.domainUser || '';
+      const time = screenshot.capturedAt ? new Date(screenshot.capturedAt).toLocaleTimeString() : '';
+      const label = currentUser || screenshot.employeeName || 'Unknown user';
+      const display = displayNameForScreenshot(screenshot, caption);
+      const parts = [label, display, time].filter(Boolean);
+
+      if (caption) {
+        caption.textContent = parts.join(' · ');
+        caption.style.visibility = 'visible';
+      }
+      img.alt = parts.join(' — ');
+    }
+  }
+}
+
+function normalizePath(value) {
+  if (!value) return '';
+  try {
+    const url = new URL(value, window.location.origin);
+    return url.pathname.replace(/\\/g, '/');
+  } catch (_) {
+    return String(value).split('?')[0].replace(/\\/g, '/');
+  }
+}
+
 function ensureSlider(card) {
   const input = [...card.querySelectorAll('input[type="range"]')].find(candidate => {
     return /Screenshot tile size/i.test(candidate.getAttribute('aria-label') || '')
@@ -82,46 +147,6 @@ function ensureSlider(card) {
   applyGridSize(card, safeSize(localStorage.getItem(SIZE_KEY)));
 }
 
-function normalizePath(value) {
-  if (!value) return '';
-  try {
-    const url = new URL(value, window.location.origin);
-    return url.pathname.replace(/\\/g, '/');
-  } catch (_) {
-    return String(value).split('?')[0].replace(/\\/g, '/');
-  }
-}
-
-function captionNodeForImage(img) {
-  const button = img.closest('button');
-  if (!button) return null;
-  return button.children.length > 1 ? button.children[1] : null;
-}
-
-function updateScreenshotLabels(cards, screenshots, devices) {
-  const screenshotByUrl = new Map(
-    (Array.isArray(screenshots) ? screenshots : []).map(item => [normalizePath(item.url), item])
-  );
-  const deviceById = new Map(
-    (Array.isArray(devices) ? devices : []).map(device => [String(device.id), device])
-  );
-
-  for (const card of cards) {
-    for (const img of card.querySelectorAll('img')) {
-      const screenshot = screenshotByUrl.get(normalizePath(img.currentSrc || img.src));
-      if (!screenshot) continue;
-
-      const device = deviceById.get(String(screenshot.deviceId));
-      const currentUser = device?.currentDomainUser || device?.domainUser || '';
-      const time = screenshot.capturedAt ? new Date(screenshot.capturedAt).toLocaleTimeString() : '';
-      const label = currentUser || screenshot.employeeName || 'Unknown user';
-      const caption = captionNodeForImage(img);
-      if (caption) caption.textContent = time ? `${label} · ${time}` : label;
-      img.alt = `${label}${time ? ` — ${time}` : ''}`;
-    }
-  }
-}
-
 async function refresh() {
   if (requestInFlight) return;
   const cards = screenshotCards();
@@ -129,7 +154,11 @@ async function refresh() {
 
   requestInFlight = true;
   try {
-    cards.forEach(ensureSlider);
+    cards.forEach(card => {
+      card.querySelectorAll('img').forEach(img => prepareCaption(captionNodeForImage(img)));
+      ensureSlider(card);
+    });
+
     const [screenshots, devices] = await Promise.all([
       getJson('/activity/screenshots?limit=200'),
       getJson('/agent/devices'),
@@ -137,7 +166,8 @@ async function refresh() {
     updateScreenshotLabels(cards, screenshots, devices);
     cards.forEach(card => applyGridSize(card, safeSize(localStorage.getItem(SIZE_KEY))));
   } catch (_) {
-    // The main application remains functional if this UI-only enhancement cannot refresh.
+    // Keep the owner label hidden rather than flashing the wrong identity.
+    // The next refresh will retry the current-user lookup.
   } finally {
     requestInFlight = false;
   }
@@ -150,6 +180,7 @@ function start() {
 
   const observer = new MutationObserver(() => {
     screenshotCards().forEach(card => {
+      card.querySelectorAll('img').forEach(img => prepareCaption(captionNodeForImage(img)));
       ensureSlider(card);
       applyGridSize(card, safeSize(localStorage.getItem(SIZE_KEY)));
     });
