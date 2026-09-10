@@ -63,22 +63,49 @@ function applyGridSize(card, value) {
 function captionNodeForImage(img) {
   const button = img.closest('button');
   if (!button) return null;
-  return button.children.length > 1 ? button.children[1] : null;
+  return button.querySelector('[data-remoteops-screenshot-caption]') || button.children[1] || null;
 }
 
-function prepareCaption(caption) {
+function prepareCaption(caption, img) {
   if (!caption || caption.dataset.remoteopsCaptionPrepared === 'true') return;
+
   caption.dataset.remoteopsCaptionPrepared = 'true';
   caption.dataset.remoteopsOriginalText = textOf(caption);
-  // Do not show the registered-owner label while we resolve the current Windows user.
-  caption.style.visibility = 'hidden';
+  caption.dataset.remoteopsCaptionClass = caption.className || '';
+
+  // Remove the legacy registered-owner caption entirely. We recreate only the
+  // resolved current-user caption after the monitoring data is available.
+  caption.remove();
 }
 
-function displayNameForScreenshot(screenshot, caption) {
+function createResolvedCaption(img, templateCaption = null) {
+  const button = img.closest('button');
+  if (!button) return null;
+
+  let caption = button.querySelector('[data-remoteops-screenshot-caption]');
+  if (caption) return caption;
+
+  caption = document.createElement('div');
+  caption.dataset.remoteopsScreenshotCaption = 'true';
+  caption.className = templateCaption?.dataset?.remoteopsCaptionClass || '';
+  img.insertAdjacentElement('afterend', caption);
+  return caption;
+}
+
+function getCaptionTemplateData(img) {
+  const button = img.closest('button');
+  if (!button) return { originalText: '', className: '' };
+  return {
+    originalText: button.dataset.remoteopsOriginalCaption || '',
+    className: button.dataset.remoteopsCaptionClass || '',
+  };
+}
+
+function displayNameForScreenshot(screenshot, originalText = '') {
   const explicit = screenshot?.displayName || screenshot?.display || screenshot?.displayId;
   if (explicit) return String(explicit).toUpperCase().replace(/^DISPLAY\s*/i, 'DISPLAY');
 
-  const source = `${screenshot?.filename || ''} ${caption?.dataset.remoteopsOriginalText || ''}`;
+  const source = `${screenshot?.filename || ''} ${originalText}`;
   const match = source.match(/DISPLAY\s*\d+/i);
   return match ? match[0].replace(/\s+/g, '').toUpperCase() : '';
 }
@@ -93,8 +120,8 @@ function updateScreenshotLabels(cards, screenshots, devices) {
 
   for (const card of cards) {
     for (const img of card.querySelectorAll('img')) {
-      const caption = captionNodeForImage(img);
-      if (caption) prepareCaption(caption);
+      const button = img.closest('button');
+      if (!button) continue;
 
       const screenshot = screenshotByUrl.get(normalizePath(img.currentSrc || img.src));
       if (!screenshot) continue;
@@ -103,13 +130,12 @@ function updateScreenshotLabels(cards, screenshots, devices) {
       const currentUser = device?.currentDomainUser || device?.domainUser || '';
       const time = screenshot.capturedAt ? new Date(screenshot.capturedAt).toLocaleTimeString() : '';
       const label = currentUser || screenshot.employeeName || 'Unknown user';
-      const display = displayNameForScreenshot(screenshot, caption);
+      const originalText = button.dataset.remoteopsOriginalCaption || '';
+      const display = displayNameForScreenshot(screenshot, originalText);
       const parts = [label, display, time].filter(Boolean);
 
-      if (caption) {
-        caption.textContent = parts.join(' · ');
-        caption.style.visibility = 'visible';
-      }
+      const caption = createResolvedCaption(img);
+      if (caption) caption.textContent = parts.join(' · ');
       img.alt = parts.join(' — ');
     }
   }
@@ -147,6 +173,19 @@ function ensureSlider(card) {
   applyGridSize(card, safeSize(localStorage.getItem(SIZE_KEY)));
 }
 
+function removeLegacyCaptions(card) {
+  card.querySelectorAll('img').forEach(img => {
+    const button = img.closest('button');
+    if (!button) return;
+    const caption = button.querySelector('[data-remoteops-screenshot-caption]') || button.children[1];
+    if (!caption || caption.dataset.remoteopsScreenshotCaption === 'true') return;
+
+    button.dataset.remoteopsOriginalCaption = textOf(caption);
+    button.dataset.remoteopsCaptionClass = caption.className || '';
+    caption.remove();
+  });
+}
+
 async function refresh() {
   if (requestInFlight) return;
   const cards = screenshotCards();
@@ -155,7 +194,7 @@ async function refresh() {
   requestInFlight = true;
   try {
     cards.forEach(card => {
-      card.querySelectorAll('img').forEach(img => prepareCaption(captionNodeForImage(img)));
+      removeLegacyCaptions(card);
       ensureSlider(card);
     });
 
@@ -166,8 +205,7 @@ async function refresh() {
     updateScreenshotLabels(cards, screenshots, devices);
     cards.forEach(card => applyGridSize(card, safeSize(localStorage.getItem(SIZE_KEY))));
   } catch (_) {
-    // Keep the owner label hidden rather than flashing the wrong identity.
-    // The next refresh will retry the current-user lookup.
+    // Keep the legacy caption removed. The next refresh retries the lookup.
   } finally {
     requestInFlight = false;
   }
@@ -180,7 +218,7 @@ function start() {
 
   const observer = new MutationObserver(() => {
     screenshotCards().forEach(card => {
-      card.querySelectorAll('img').forEach(img => prepareCaption(captionNodeForImage(img)));
+      removeLegacyCaptions(card);
       ensureSlider(card);
       applyGridSize(card, safeSize(localStorage.getItem(SIZE_KEY)));
     });
