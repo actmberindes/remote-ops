@@ -28,21 +28,43 @@ function getMachineId() {
   return match ? match[1].trim() : os.hostname();
 }
 
+function isServiceIdentity(value) {
+  return /^(NT AUTHORITY\\)?(SYSTEM|LOCAL SERVICE|NETWORK SERVICE)$/i.test(String(value || '').trim());
+}
+
 function getInteractiveUser() {
   if (process.platform !== 'win32') {
     try { return os.userInfo().username || ''; } catch (_) { return ''; }
   }
 
-  // Prefer the Windows session identity reported by whoami.exe. The agent is
-  // expected to run in the signed-in user's interactive session, including RDP.
+  // Prefer whoami.exe when the agent is running in the interactive user's
+  // session. This normally returns DOMAIN\\username for both console and RDP.
   const processUser = run('whoami.exe', []);
-  if (processUser && !/^(NT AUTHORITY\\)?(SYSTEM|LOCAL SERVICE|NETWORK SERVICE)$/i.test(processUser)) {
+  if (processUser && !isServiceIdentity(processUser)) {
     return processUser;
   }
 
-  // Fall back to the environment identity when whoami.exe is unavailable.
+  // If the agent is elevated or running as a service, whoami may report the
+  // service account instead of the person currently using the workstation.
+  // `query user` reports the interactive Windows sessions directly.
+  const queryUser = run('query.exe', ['user']);
+  if (queryUser) {
+    const lines = queryUser.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    for (const line of lines) {
+      if (/^USERNAME\s+/i.test(line)) continue;
+
+      // The active session line begins with the username (possibly prefixed by
+      // >), followed by session name, session ID, state, idle time, and logon.
+      const match = line.match(/^>?\s*(\S+)\s+\S+\s+\d+\s+(ACTIVE|DISC|DISCONNECTED)\b/i);
+      if (match && match[1] && !isServiceIdentity(match[1])) {
+        return match[1];
+      }
+    }
+  }
+
+  // Last fallback for a normal interactive process.
   const envUsername = String(process.env.USERNAME || '').trim();
-  if (envUsername) {
+  if (envUsername && !isServiceIdentity(envUsername)) {
     const envDomain = String(process.env.USERDOMAIN || '').trim();
     return envDomain ? `${envDomain}\\${envUsername}` : envUsername;
   }
