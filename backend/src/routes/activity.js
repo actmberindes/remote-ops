@@ -103,13 +103,30 @@ export function purgeOldActivity() {
 }
 
 activityRouter.post('/screenshots', requireDevice(db), async (req, res) => {
-  const { url, filename, capturedAt } = req.body || {};
+  const {
+    url,
+    filename,
+    capturedAt,
+    displayId,
+    displayName,
+    displayIndex,
+    domainUser
+  } = req.body || {};
   if (!url) return res.status(400).json({ error: 'url is required (upload the file to /api/uploads/monitoring first).' });
 
-  const entry = {
-    id: nextId(), employeeId: req.device.employeeId, deviceId: req.device.id,
-    url, filename: filename || '', capturedAt: capturedAt || new Date().toISOString(), type: 'scheduled',
-  };
+ const entry = {
+  id: nextId(),
+  employeeId: req.device.employeeId,
+  deviceId: req.device.id,
+  url,
+  filename: filename || '',
+  displayId: displayId ?? null,
+  displayName: displayName ?? null,
+  displayIndex: displayIndex ?? null,
+  domainUser: domainUser || req.device.domainUser || null,
+  capturedAt: capturedAt || new Date().toISOString(),
+  type: 'scheduled',
+};
 
   db.data.screenshots.push(entry);
   purgeOldActivity();

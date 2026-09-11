@@ -63,8 +63,14 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       const allCaptures = await capture.captureFullAll();
       const captures = capturesForSession(allCaptures, telemetry);
       await uploadCaptures(captures, async (result, item) => {
-        await client.postScheduledScreenshot(config.deviceToken, result.url, result.filename, item);
-      }, 'screenshot');
+  await client.postScheduledScreenshot(
+    config.deviceToken,
+    result.url,
+    result.filename,
+    item,
+    telemetry
+  );
+}, 'screenshot');
       log(`Scheduled screenshot captured for ${captures.length} display(s)${telemetry.isRdp ? ' (RDP primary display only).' : '.'}`);
     } catch (e) {
       log(`Scheduled capture failed: ${e.message}`);

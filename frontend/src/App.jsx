@@ -2553,8 +2553,37 @@ function EmployeeSchedule() {
 }
 
 /* ============================== SCREENSHOT EVIDENCE (thumbnail + zoom modal) ============================== */
+function getScreenshotDisplayLabel(screenshot) {
+  if (!screenshot) return '';
 
-function ScreenshotEvidence({ url, filename, label = 'Speedtest Evidence', variant = 'inline', caption }) {
+  const currentUser =
+    screenshot.domainUser ||
+    screenshot.currentDomainUser ||
+    screenshot.employeeName ||
+    'Unknown user';
+
+  const display =
+    screenshot.displayName ||
+    (screenshot.displayIndex
+      ? `DISPLAY${screenshot.displayIndex}`
+      : screenshot.displayId
+        ? `DISPLAY${screenshot.displayId}`
+        : '');
+
+  const normalizedDisplay = String(display)
+    .replace(/^DISPLAY\s*/i, 'DISPLAY')
+    .toUpperCase();
+
+  const time = screenshot.capturedAt
+    ? new Date(screenshot.capturedAt).toLocaleTimeString()
+    : '';
+
+  return [currentUser, normalizedDisplay, time]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function ScreenshotEvidence({ url, filename, label = 'Speedtest Evidence', variant = 'inline', caption, viewerTitle }) {
   const [open, setOpen] = useState(false);
   const [zoomed, setZoomed] = useState(false);
   const hasRealFile = !!url && url.startsWith('/uploads/');
@@ -2594,7 +2623,9 @@ function ScreenshotEvidence({ url, filename, label = 'Speedtest Evidence', varia
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setOpen(false)}>
           <div className="card p-0 overflow-hidden max-w-3xl w-full max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
-              <span className="font-display font-bold text-sm truncate">{filename || label}</span>
+              <span className="font-display font-bold text-sm truncate">
+                {viewerTitle || caption || filename || label}
+              </span>
               <div className="flex items-center gap-1.5 shrink-0">
                 {hasRealFile && (
                   <>
@@ -4813,12 +4844,9 @@ function ScreenshotsSection({
               <ScreenshotEvidence
                 url={s.url}
                 variant="tile"
-                filename={`${s.employeeName} — ${new Date(
-                  s.capturedAt
-                ).toLocaleString()}`}
-                caption={`${s.employeeName} · ${new Date(
-                  s.capturedAt
-                ).toLocaleTimeString()}`}
+                filename={s.filename || getScreenshotDisplayLabel(s)}
+                caption={getScreenshotDisplayLabel(s)}
+                viewerTitle={getScreenshotDisplayLabel(s)}
               />
 
               <div className="absolute top-2 right-2 z-10">
