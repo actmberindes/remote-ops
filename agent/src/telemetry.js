@@ -40,25 +40,11 @@ function getInteractiveUser() {
     return processUser;
   }
 
-  // Fallback to the environment identity when whoami.exe is unavailable.
+  // Fall back to the environment identity when whoami.exe is unavailable.
   const envUsername = String(process.env.USERNAME || '').trim();
   if (envUsername) {
     const envDomain = String(process.env.USERDOMAIN || '').trim();
     return envDomain ? `${envDomain}\\${envUsername}` : envUsername;
-  }
-
-  // Last-resort fallback: query the interactive sessions directly. This is
-  // useful if the process environment does not contain USERNAME/USERDOMAIN.
-  const queryUser = run('query', ['user']);
-  if (queryUser) {
-    const lines = queryUser.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-    for (const line of lines) {
-      if (/^USERNAME\s+/i.test(line)) continue;
-      if (/^(?:services|console|rdp-tcp|>)/i.test(line)) continue;
-
-      const match = line.match(/^>?(\S+)\s+/);
-      if (match && match[1]) return match[1];
-    }
   }
 
   return '';
