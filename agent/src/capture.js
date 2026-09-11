@@ -35,6 +35,8 @@ async function captureAll(prefix) {
     captures.push({
       filePath,
       displayId: String(display.id ?? displayIndex),
+      // Keep the raw display name for diagnostics, but the UI should use displayIndex
+      // so Windows names such as \\.\DISPLAY1 are never rendered or duplicated.
       displayName: display.name || `Display ${displayIndex}`,
       displayIndex,
     });
@@ -43,17 +45,14 @@ async function captureAll(prefix) {
   return captures;
 }
 
-// Full-quality capture for the scheduled screenshot log. One image is captured per display.
 async function captureFullAll() {
   return captureAll('full');
 }
 
-// Frequent near-live capture. One image is captured per display.
 async function captureLiveAll() {
   return captureAll('live');
 }
 
-// Compatibility helpers: retain the original single-path API for older callers.
 async function captureFull() {
   const captures = await captureFullAll();
   return captures[0]?.filePath;
