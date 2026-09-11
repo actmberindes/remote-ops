@@ -2563,12 +2563,7 @@ function getScreenshotDisplayLabel(screenshot) {
     'Unknown user';
 
   const display =
-    screenshot.displayName ||
-    (screenshot.displayIndex
-      ? `DISPLAY${screenshot.displayIndex}`
-      : screenshot.displayId
-        ? `DISPLAY${screenshot.displayId}`
-        : '');
+    screenshot.displayName;
 
   const normalizedDisplay = String(display)
     .replace(/^DISPLAY\s*/i, 'DISPLAY')
@@ -2578,7 +2573,7 @@ function getScreenshotDisplayLabel(screenshot) {
     ? new Date(screenshot.capturedAt).toLocaleTimeString()
     : '';
 
-  return [currentUser, normalizedDisplay, time]
+  return [currentUser, time]
     .filter(Boolean)
     .join(' · ');
 }
