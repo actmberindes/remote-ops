@@ -35,9 +35,9 @@ async function captureAll(prefix) {
     captures.push({
       filePath,
       displayId: String(display.id ?? displayIndex),
-      // Keep the raw display name for diagnostics, but the UI should use displayIndex
-      // so Windows names such as \\.\DISPLAY1 are never rendered or duplicated.
-      displayName: display.name || `Display ${displayIndex}`,
+      // Use the stable display index for the visible label. Do not expose the
+      // Windows device path (for example \\.\DISPLAY1) to the UI.
+      displayName: `Display ${displayIndex}`,
       displayIndex,
     });
   }
