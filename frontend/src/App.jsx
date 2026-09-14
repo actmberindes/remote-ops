@@ -2558,9 +2558,7 @@ function getScreenshotDisplayLabel(screenshot) {
 
   const currentUser =
     screenshot.domainUser ||
-    screenshot.currentDomainUser ||
-    screenshot.employeeName ||
-    'Unknown user';
+    screenshot.currentDomainUser;
 
   const display =
     screenshot.displayName;
@@ -2573,7 +2571,7 @@ function getScreenshotDisplayLabel(screenshot) {
     ? new Date(screenshot.capturedAt).toLocaleTimeString()
     : '';
 
-  return [currentUser, time]
+  return [currentUser, normalizedDisplay, time]
     .filter(Boolean)
     .join(' · ');
 }
