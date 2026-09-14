@@ -156,6 +156,27 @@ export const api = {
       const qs = params.toString();
       return request(`/activity/screenshots${qs ? `?${qs}` : ''}`);
     },
+    screenshotsPage: ({
+      page = 1,
+      pageSize = 60,
+      employeeId,
+      date
+    } = {}) => {
+      const params = new URLSearchParams();
+
+      params.set('page', page);
+      params.set('pageSize', pageSize);
+
+      if (employeeId) {
+        params.set('employeeId', employeeId);
+      }
+
+      if (date) {
+        params.set('date', date);
+      }
+
+      return request(`/screenshots-page?${params.toString()}`);
+    },
     deleteScreenshot: (id) => request(`/activity/screenshots/${id}`, { method: 'DELETE' }),
     deleteScreenshotsBulk: (ids) => request('/activity/screenshots/delete-bulk', { method: 'POST', body: { ids } }),
     webUsage: ({ employeeId, date } = {}) => {

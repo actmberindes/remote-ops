@@ -4577,17 +4577,34 @@ function ScreenshotsSection({
   const [selectedIds, setSelectedIds] = useState([]);
   const [deleting, setDeleting] = useState(false);
 
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    pageSize: 60,
+    total: 0,
+    totalPages: 1
+  });
+
   const load = async () => {
     setLoading(true);
 
     try {
-      const data = await api.activity.screenshots({
+      const data = await api.activity.screenshotsPage({
+        page,
+        pageSize: limit || 60,
         employeeId: employeeFilter || undefined,
-        date: dateFilter || undefined,
-        limit: limit || 60
+        date: dateFilter || undefined
       });
 
-      setShots(data);
+      setShots(data.items || []);
+
+      setPagination({
+        page: data.page || page,
+        pageSize: data.pageSize || (limit || 60),
+        total: data.total || 0,
+        totalPages: data.totalPages || 1
+      });
+
       setSelectedIds([]);
     } catch (e) {
       addToast(e.message, 'error');
@@ -4598,7 +4615,7 @@ function ScreenshotsSection({
 
   useEffect(() => {
     load();
-  }, [employeeFilter, dateFilter]);
+  }, [employeeFilter, dateFilter, page]);
 
   const allVisibleSelected =
     shots.length > 0 &&
@@ -4637,6 +4654,10 @@ function ScreenshotsSection({
       setShots(prev =>
         prev.filter(s => s.id !== shot.id)
       );
+      setPagination(prev => ({
+        ...prev,
+        total: Math.max(0, prev.total - 1)
+      }));
 
       setSelectedIds(prev =>
         prev.filter(id => id !== shot.id)
@@ -4674,6 +4695,10 @@ function ScreenshotsSection({
       );
 
       setSelectedIds([]);
+      setPagination(prev => ({
+        ...prev,
+        total: Math.max(0, prev.total - result.deleted)
+      }));
 
       addToast(
         `${result.deleted} screenshot${
@@ -4725,9 +4750,10 @@ function ScreenshotsSection({
               <select
                 className={`${inputCls} h-9`}
                 value={employeeFilter}
-                onChange={e =>
-                  setEmployeeFilter(e.target.value)
-                }
+                onChange={e => {
+                  setEmployeeFilter(e.target.value);
+                  setPage(1);
+                }}
               >
                 <option value="">All Employees</option>
 
@@ -4748,9 +4774,10 @@ function ScreenshotsSection({
                 type="date"
                 className={`${inputCls} h-9`}
                 value={dateFilter}
-                onChange={e =>
-                  setDateFilter(e.target.value)
-                }
+                onChange={e => {
+                  setDateFilter(e.target.value);
+                  setPage(1);
+                }}
               />
             </div>
 
@@ -4759,6 +4786,7 @@ function ScreenshotsSection({
                 onClick={() => {
                   setEmployeeFilter('');
                   setDateFilter('');
+                  setPage(1);
                 }}
                 className="h-9 px-3 rounded-lg text-xs font-bold border border-[var(--border)] hover-surface"
               >
@@ -4813,48 +4841,98 @@ function ScreenshotsSection({
           No screenshots match this filter.
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {shots.map(s => (
-            <div
-              key={s.id}
-              className={`relative rounded-lg border transition-all ${
-                selectedIds.includes(s.id)
-                  ? 'border-[var(--accent)] ring-1 ring-[var(--accent)]'
-                  : 'border-[var(--border)]'
-              }`}
-            >
-              <div className="absolute top-2 left-2 z-10">
-                <input
-                  type="checkbox"
-                  checked={selectedIds.includes(s.id)}
-                  onChange={() =>
-                    toggleSelected(s.id)
-                  }
-                  className="w-4 h-4"
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {shots.map(s => (
+              <div
+                key={s.id}
+                className={`relative rounded-lg border transition-all ${
+                  selectedIds.includes(s.id)
+                    ? 'border-[var(--accent)] ring-1 ring-[var(--accent)]'
+                    : 'border-[var(--border)]'
+                }`}
+              >
+                <div className="absolute top-2 left-2 z-10">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(s.id)}
+                    onChange={() =>
+                      toggleSelected(s.id)
+                    }
+                    className="w-4 h-4"
+                  />
+                </div>
+
+                <ScreenshotEvidence
+                  url={s.url}
+                  variant="tile"
+                  filename={s.filename || getScreenshotDisplayLabel(s)}
+                  caption={getScreenshotDisplayLabel(s)}
+                  viewerTitle={getScreenshotDisplayLabel(s)}
                 />
+
+                <div className="absolute top-2 right-2 z-10">
+                  <button
+                    onClick={() => deleteSingle(s)}
+                    disabled={deleting}
+                    className="p-1.5 rounded-lg bg-black/60 text-white hover:bg-[var(--danger)] transition-colors"
+                    title="Delete Screenshot"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {pagination.totalPages > 1 && (
+            <div className="flex items-center justify-between mt-5 pt-4 border-t border-[var(--border)]">
+              <div className="text-[10px] text-muted">
+                Showing{' '}
+                {pagination.total === 0
+                  ? 0
+                  : ((pagination.page - 1) * pagination.pageSize) + 1}
+                –
+                {Math.min(
+                  pagination.page * pagination.pageSize,
+                  pagination.total
+                )}{' '}
+                of {pagination.total}
               </div>
 
-              <ScreenshotEvidence
-                url={s.url}
-                variant="tile"
-                filename={s.filename || getScreenshotDisplayLabel(s)}
-                caption={getScreenshotDisplayLabel(s)}
-                viewerTitle={getScreenshotDisplayLabel(s)}
-              />
-
-              <div className="absolute top-2 right-2 z-10">
+              <div className="flex items-center gap-1.5">
                 <button
-                  onClick={() => deleteSingle(s)}
-                  disabled={deleting}
-                  className="p-1.5 rounded-lg bg-black/60 text-white hover:bg-[var(--danger)] transition-colors"
-                  title="Delete Screenshot"
+                  onClick={() =>
+                    setPage(prev => Math.max(1, prev - 1))
+                  }
+                  disabled={pagination.page <= 1 || loading}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-[var(--border)] hover-surface disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <Trash2 size={13} />
+                  <ChevronLeft size={14} />
+                </button>
+
+                <span className="px-2 text-xs font-semibold">
+                  Page {pagination.page} of {pagination.totalPages}
+                </span>
+
+                <button
+                  onClick={() =>
+                    setPage(prev =>
+                      Math.min(pagination.totalPages, prev + 1)
+                    )
+                  }
+                  disabled={
+                    pagination.page >= pagination.totalPages ||
+                    loading
+                  }
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-[var(--border)] hover-surface disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight size={14} />
                 </button>
               </div>
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </Card>
   );
