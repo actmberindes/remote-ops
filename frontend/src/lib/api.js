@@ -39,17 +39,32 @@ async function requestAllDateFilteredScreenshots({ employeeId, date }) {
 }
 
 export const api = {
-  getToken, setToken,
+  getToken,
+  setToken,
   managers: () => request('/auth/managers', { auth: false }),
   login: (email, password) => request('/auth/login', { method: 'POST', body: { email, password }, auth: false }),
   register: (form) => request('/auth/register', { method: 'POST', body: form, auth: false }),
   me: () => request('/auth/me'),
   users: {
-    list: () => request('/users'), create: (form) => request('/users', { method: 'POST', body: form }), update: (id, form) => request(`/users/${id}`, { method: 'PUT', body: form }), remove: (id) => request(`/users/${id}`, { method: 'DELETE' }), setMyStatus: (status) => request('/users/me/status', { method: 'PATCH', body: { status } }),
+    list: () => request('/users'),
+    create: (form) => request('/users', { method: 'POST', body: form }),
+    update: (id, form) => request(`/users/${id}`, { method: 'PUT', body: form }),
+    remove: (id) => request(`/users/${id}`, { method: 'DELETE' }),
+    setMyStatus: (status) => request('/users/me/status', { method: 'PATCH', body: { status } }),
   },
-  applications: { list: () => request('/applications'), create: (form) => request('/applications', { method: 'POST', body: form }), patch: (id, body) => request(`/applications/${id}`, { method: 'PATCH', body }) },
-  timeSessions: { list: () => request('/time-sessions'), create: (body) => request('/time-sessions', { method: 'POST', body }) },
-  notifications: { list: () => request('/notifications'), markAllRead: () => request('/notifications/mark-all-read', { method: 'POST' }) },
+  applications: {
+    list: () => request('/applications'),
+    create: (form) => request('/applications', { method: 'POST', body: form }),
+    patch: (id, body) => request(`/applications/${id}`, { method: 'PATCH', body }),
+  },
+  timeSessions: {
+    list: () => request('/time-sessions'),
+    create: (body) => request('/time-sessions', { method: 'POST', body }),
+  },
+  notifications: {
+    list: () => request('/notifications'),
+    markAllRead: () => request('/notifications/mark-all-read', { method: 'POST' }),
+  },
   uploads: {
     upload: async (file) => {
       const headers = {}; const token = getToken(); if (token) headers.Authorization = `Bearer ${token}`;
@@ -61,10 +76,27 @@ export const api = {
     fileUrl: (path) => (path && path.startsWith('/uploads/') ? `${API_URL.replace(/\/api$/, '')}${path}` : path),
   },
   tickets: {
-    list: () => request('/tickets'), get: (id) => request(`/tickets/${id}`), create: (body) => request('/tickets', { method: 'POST', body }), addMessage: (id, body) => request(`/tickets/${id}/messages`, { method: 'POST', body }), close: (id) => request(`/tickets/${id}/close`, { method: 'PATCH' }), update: (id, body) => request(`/tickets/${id}`, { method: 'PATCH', body }), assignAsset: (id, assetId) => request(`/tickets/${id}/assign-asset`, { method: 'POST', body: { assetId } }),
+    list: () => request('/tickets'),
+    get: (id) => request(`/tickets/${id}`),
+    create: (body) => request('/tickets', { method: 'POST', body }),
+    addMessage: (id, body) => request(`/tickets/${id}/messages`, { method: 'POST', body }),
+    close: (id) => request(`/tickets/${id}/close`, { method: 'PATCH' }),
+    update: (id, body) => request(`/tickets/${id}`, { method: 'PATCH', body }),
+    assignAsset: (id, assetId) => request(`/tickets/${id}/assign-asset`, { method: 'POST', body: { assetId } }),
   },
   assets: {
-    list: () => request('/assets'), create: (body) => request('/assets', { method: 'POST', body }), clone: (id) => request(`/assets/${id}/clone`, { method: 'POST' }), update: (id, body) => request(`/assets/${id}`, { method: 'PUT', body }), remove: (id) => request(`/assets/${id}`, { method: 'DELETE' }), assign: (id, employeeId, serialNumber) => request(`/assets/${id}/assign`, { method: 'POST', body: { employeeId, ...(serialNumber ? { serialNumber } : {}) }), componentOptions: (type) => request(`/assets/component-options/${encodeURIComponent(type)}`), assignComponent: (id, parentAssetId, serialNumber) => request(`/assets/${id}/assign-component`, { method: 'POST', body: { parentAssetId, ...(serialNumber ? { serialNumber } : {}) }), bulkAssign: (id, employeeIds) => request(`/assets/${id}/bulk-assign`, { method: 'POST', body: { employeeIds } }), return: (id, employeeId, extra = {}) => request(`/assets/${id}/return`, { method: 'POST', body: { ...(employeeId !== undefined ? { employeeId } : {}), ...extra } }), retire: (id) => request(`/assets/${id}/retire`, { method: 'POST', body: undefined }), history: (id) => request(`/assets/${id}/history`),
+    list: () => request('/assets'),
+    create: (body) => request('/assets', { method: 'POST', body }),
+    clone: (id) => request(`/assets/${id}/clone`, { method: 'POST' }),
+    update: (id, body) => request(`/assets/${id}`, { method: 'PUT', body }),
+    remove: (id) => request(`/assets/${id}`, { method: 'DELETE' }),
+    assign: (id, employeeId, serialNumber) => request(`/assets/${id}/assign`, { method: 'POST', body: { employeeId, ...(serialNumber ? { serialNumber } : {}) } }),
+    componentOptions: (type) => request(`/assets/component-options/${encodeURIComponent(type)}`),
+    assignComponent: (id, parentAssetId, serialNumber) => request(`/assets/${id}/assign-component`, { method: 'POST', body: { parentAssetId, ...(serialNumber ? { serialNumber } : {}) } }),
+    bulkAssign: (id, employeeIds) => request(`/assets/${id}/bulk-assign`, { method: 'POST', body: { employeeIds } }),
+    return: (id, employeeId, extra = {}) => request(`/assets/${id}/return`, { method: 'POST', body: { ...(employeeId !== undefined ? { employeeId } : {}), ...extra } }),
+    retire: (id) => request(`/assets/${id}/retire`, { method: 'POST' }),
+    history: (id) => request(`/assets/${id}/history`),
     printTag: async (id) => { const token = getToken(); const res = await fetch(`${API_URL}/asset-tags/${id}/print`, { headers: token ? { Authorization: `Bearer ${token}` } : {} }); const html = await res.text(); if (!res.ok) { let message = `Request failed (${res.status})`; try { const data = JSON.parse(html); message = data.error || message; } catch (_) {} throw new Error(message); } return html; },
   },
   activity: {
@@ -72,13 +104,21 @@ export const api = {
     liveHistory: ({ employeeId, date, limit } = {}) => { const params = new URLSearchParams(); if (employeeId) params.set('employeeId', employeeId); if (date) params.set('date', date); if (limit) params.set('limit', limit); const qs = params.toString(); return request(`/activity/live-history${qs ? `?${qs}` : ''}`); },
     screenshots: ({ employeeId, date, limit } = {}) => { if (date) return requestAllDateFilteredScreenshots({ employeeId, date }); const params = new URLSearchParams(); if (employeeId) params.set('employeeId', employeeId); if (limit) params.set('limit', limit); const qs = params.toString(); return request(`/activity/screenshots${qs ? `?${qs}` : ''}`); },
     screenshotsPage: ({ page = 1, pageSize = 60, employeeId, date } = {}) => { const params = new URLSearchParams(); params.set('page', page); params.set('pageSize', pageSize); if (employeeId) params.set('employeeId', employeeId); if (date) params.set('date', date); return request(`/activity/screenshots-page?${params.toString()}`); },
-    deleteScreenshot: (id) => request(`/activity/screenshots/${id}`, { method: 'DELETE' }), deleteScreenshotsBulk: (ids) => request('/activity/screenshots/delete-bulk', { method: 'POST', body: { ids } }),
+    deleteScreenshot: (id) => request(`/activity/screenshots/${id}`, { method: 'DELETE' }),
+    deleteScreenshotsBulk: (ids) => request('/activity/screenshots/delete-bulk', { method: 'POST', body: { ids } }),
     webUsage: ({ employeeId, date } = {}) => { const params = new URLSearchParams(); if (employeeId) params.set('employeeId', employeeId); if (date) params.set('date', date); const qs = params.toString(); return request(`/activity/web-usage${qs ? `?${qs}` : ''}`); },
   },
   agent: {
-    registerDevice: (body) => request('/agent/devices/register', { method: 'POST', body }), devices: () => request('/agent/devices'), myDevices: () => request('/agent/my-devices'), deviceHistory: (id) => request(`/agent/devices/${id}/history`), deviceDetails: (id) => request(`/agent/devices/${id}/details`),
+    registerDevice: (body) => request('/agent/devices/register', { method: 'POST', body }),
+    devices: () => request('/agent/devices'),
+    myDevices: () => request('/agent/my-devices'),
+    deviceHistory: (id) => request(`/agent/devices/${id}/history`),
+    deviceDetails: (id) => request(`/agent/devices/${id}/details`),
     deviceScreenshots: ({ id, page = 1, pageSize = 20, date, domainUser } = {}) => { const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) }); if (date) params.set('date', date); if (domainUser) params.set('domainUser', domainUser); return request(`/agent/devices/${id}/screenshots?${params.toString()}`); },
     deviceScreenshotUsers: (id) => request(`/agent/devices/${id}/screenshot-users`),
-    revokeDevice: (id) => request(`/agent/devices/${id}/revoke`, { method: 'PATCH' }), deleteDevice: (id) => request(`/agent/devices/${id}`, { method: 'DELETE' }), getConfig: () => request('/agent/config-admin'), updateConfig: (body) => request('/agent/config', { method: 'PUT', body }),
+    revokeDevice: (id) => request(`/agent/devices/${id}/revoke`, { method: 'PATCH' }),
+    deleteDevice: (id) => request(`/agent/devices/${id}`, { method: 'DELETE' }),
+    getConfig: () => request('/agent/config-admin'),
+    updateConfig: (body) => request('/agent/config', { method: 'PUT', body }),
   },
 };
