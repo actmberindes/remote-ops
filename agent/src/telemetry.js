@@ -28,6 +28,16 @@ function getMachineId() {
   return match ? match[1].trim() : os.hostname();
 }
 
+function getPrimaryIPv4() {
+  const interfaces = os.networkInterfaces();
+  for (const entries of Object.values(interfaces)) {
+    for (const entry of entries || []) {
+      if (entry.family === 'IPv4' && !entry.internal && entry.address) return entry.address;
+    }
+  }
+  return '';
+}
+
 function isServiceIdentity(value) {
   return /^(NT AUTHORITY\\)?(SYSTEM|LOCAL SERVICE|NETWORK SERVICE)$/i.test(String(value || '').trim());
 }
@@ -37,32 +47,19 @@ function getInteractiveUser() {
     try { return os.userInfo().username || ''; } catch (_) { return ''; }
   }
 
-  // Prefer whoami.exe when the agent is running in the interactive user's
-  // session. This normally returns DOMAIN\\username for both console and RDP.
   const processUser = run('whoami.exe', []);
-  if (processUser && !isServiceIdentity(processUser)) {
-    return processUser;
-  }
+  if (processUser && !isServiceIdentity(processUser)) return processUser;
 
-  // If the agent is elevated or running as a service, whoami may report the
-  // service account instead of the person currently using the workstation.
-  // `query user` reports the interactive Windows sessions directly.
   const queryUser = run('query.exe', ['user']);
   if (queryUser) {
     const lines = queryUser.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
     for (const line of lines) {
       if (/^USERNAME\s+/i.test(line)) continue;
-
-      // The active session line begins with the username (possibly prefixed by
-      // >), followed by session name, session ID, state, idle time, and logon.
       const match = line.match(/^>?\s*(\S+)\s+\S+\s+\d+\s+(ACTIVE|DISC|DISCONNECTED)\b/i);
-      if (match && match[1] && !isServiceIdentity(match[1])) {
-        return match[1];
-      }
+      if (match && match[1] && !isServiceIdentity(match[1])) return match[1];
     }
   }
 
-  // Last fallback for a normal interactive process.
   const envUsername = String(process.env.USERNAME || '').trim();
   if (envUsername && !isServiceIdentity(envUsername)) {
     const envDomain = String(process.env.USERDOMAIN || '').trim();
@@ -74,9 +71,6 @@ function getInteractiveUser() {
 
 function getConnectionType() {
   if (process.platform !== 'win32') return { isRdp: false, sessionName: null };
-
-  // SESSIONNAME is populated per interactive Windows session. RDP sessions use
-  // names such as RDP-Tcp#4, while a locally signed-in console uses Console.
   const sessionName = String(process.env.SESSIONNAME || '').trim() || null;
   const isRdp = /^RDP-Tcp#/i.test(sessionName || '');
   return { isRdp, sessionName };
@@ -86,7 +80,6 @@ function getIdentity() {
   const hostname = process.env.COMPUTERNAME || os.hostname();
   const interactiveUser = getInteractiveUser();
   const connection = getConnectionType();
-
   const match = interactiveUser.match(/^([^\\]+)\\(.+)$/);
   const domain = match ? match[1] : null;
   const username = match ? match[2] : (interactiveUser || null);
@@ -98,6 +91,8 @@ function getIdentity() {
     domain,
     domainUser,
     username,
+    ipAddress: getPrimaryIPv4() || null,
+    operatingSystem: `${os.platform()} ${os.release()}`,
     isRdp: connection.isRdp,
     sessionName: connection.sessionName,
   };
@@ -123,7 +118,6 @@ public static class IdleNative {
 function getDeviceState() {
   const identity = getIdentity();
   const idleSeconds = getIdleSeconds();
-
   if (!identity.domainUser) return { ...identity, state: 'logged-out', idleSeconds };
   if (idleSeconds >= 300) return { ...identity, state: 'idle', idleSeconds };
   return { ...identity, state: 'active', idleSeconds };
