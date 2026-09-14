@@ -237,7 +237,14 @@ activityRouter.get('/screenshots', requireAuth(db), requireRole('Admin', 'Manage
   if (date) list = list.filter(s => s.capturedAt.slice(0, 10) === date);
   list.sort((a, b) => (a.capturedAt < b.capturedAt ? 1 : -1));
   const cap = Math.min(Number(limit) || 30, 200);
-  res.json(list.slice(0, cap).map(s => ({ ...s, employeeName: userName(s.employeeId) })));
+  res.json(list.slice(0, cap).map(s => {
+    const device = db.data.devices.find(d => d.id === s.deviceId);
+    return {
+      ...s,
+      employeeName: userName(s.employeeId),
+      domainUser: s.domainUser || device?.domainUser || null,
+    };
+  }));
 });
 
 activityRouter.delete('/screenshots/:id', requireAuth(db), requireRole('Admin', 'Manager'), async (req, res) => {
