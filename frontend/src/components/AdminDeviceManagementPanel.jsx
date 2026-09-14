@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Copy, Monitor, RefreshCw, ShieldOff, Trash2, UserPlus, Wifi, WifiOff, Radio } from 'lucide-react';
 import { api } from '../lib/api.js';
+import DeviceDetailsPage from './DeviceDetailsPage.jsx';
 
 function statusTone(status) {
   return {
@@ -30,6 +31,11 @@ function connectionLabel(device) {
   return '—';
 }
 
+function hashDeviceId() {
+  const match = window.location.hash.match(/^#\/device\/(\d+)$/);
+  return match ? Number(match[1]) : null;
+}
+
 export default function AdminDeviceManagementPanel({ users = [], addToast }) {
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -39,6 +45,7 @@ export default function AdminDeviceManagementPanel({ users = [], addToast }) {
   const [deviceName, setDeviceName] = useState('');
   const [deviceType, setDeviceType] = useState('desktop-agent');
   const [enrollment, setEnrollment] = useState(null);
+  const [selectedDeviceId, setSelectedDeviceId] = useState(() => hashDeviceId());
 
   const employees = useMemo(
     () => users.filter(u => u.role === 'Employee'),
@@ -61,6 +68,22 @@ export default function AdminDeviceManagementPanel({ users = [], addToast }) {
     const timer = setInterval(load, 15000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const syncHash = () => setSelectedDeviceId(hashDeviceId());
+    window.addEventListener('hashchange', syncHash);
+    return () => window.removeEventListener('hashchange', syncHash);
+  }, []);
+
+  const openDevice = device => {
+    window.location.hash = `/device/${device.id}`;
+    setSelectedDeviceId(device.id);
+  };
+
+  const closeDevice = () => {
+    if (window.location.hash) window.history.pushState({}, '', `${window.location.pathname}${window.location.search}`);
+    setSelectedDeviceId(null);
+  };
 
   const register = async e => {
     e.preventDefault();
@@ -104,6 +127,7 @@ export default function AdminDeviceManagementPanel({ users = [], addToast }) {
       await api.agent.deleteDevice(device.id);
       setDevices(prev => prev.filter(d => d.id !== device.id));
       setEnrollment(current => current?.id === device.id ? null : current);
+      if (selectedDeviceId === device.id) closeDevice();
       addToast?.('Device deleted permanently.', 'success');
     } catch (e) {
       addToast?.(e.message, 'error');
@@ -115,6 +139,10 @@ export default function AdminDeviceManagementPanel({ users = [], addToast }) {
     await navigator.clipboard.writeText(enrollment.enrollmentCode);
     addToast?.('Enrollment code copied.', 'success');
   };
+
+  if (selectedDeviceId) {
+    return <DeviceDetailsPage deviceId={selectedDeviceId} onBack={closeDevice} />;
+  }
 
   return (
     <div className="flex flex-col gap-5 w-full">
@@ -129,64 +157,32 @@ export default function AdminDeviceManagementPanel({ users = [], addToast }) {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={load} className="p-2 rounded-lg hover-surface" title="Refresh">
-              <RefreshCw size={14} />
-            </button>
-            <button
-              onClick={() => setFormOpen(v => !v)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold accent-bg-solid shadow-sm"
-            >
-              <UserPlus size={14} /> Register Device
-            </button>
+            <button onClick={load} className="p-2 rounded-lg hover-surface" title="Refresh"><RefreshCw size={14} /></button>
+            <button onClick={() => setFormOpen(v => !v)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold accent-bg-solid shadow-sm"><UserPlus size={14} /> Register Device</button>
           </div>
         </div>
 
         {formOpen && (
           <form onSubmit={register} className="mb-5 p-4 rounded-xl border border-[var(--border)]" style={{ background: 'var(--bg)' }}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <label className="text-xs font-semibold">
-                Registration Owner
-                <select
-                  className="w-full mt-1 rounded-lg px-3 py-2 input-surface text-xs"
-                  value={employeeId}
-                  onChange={e => setEmployeeId(e.target.value)}
-                >
+              <label className="text-xs font-semibold">Registration Owner
+                <select className="w-full mt-1 rounded-lg px-3 py-2 input-surface text-xs" value={employeeId} onChange={e => setEmployeeId(e.target.value)}>
                   <option value="">Select employee…</option>
                   {employees.map(e => <option key={e.id} value={e.id}>{e.name} — {e.department}</option>)}
                 </select>
                 <span className="block text-[10px] font-normal text-muted mt-1">Used for device inventory. Current usage can switch between employees.</span>
               </label>
-
-              <label className="text-xs font-semibold">
-                Device Name
-                <input
-                  className="w-full mt-1 rounded-lg px-3 py-2 input-surface text-xs"
-                  placeholder="e.g. 88F-WS031"
-                  value={deviceName}
-                  onChange={e => setDeviceName(e.target.value)}
-                />
+              <label className="text-xs font-semibold">Device Name
+                <input className="w-full mt-1 rounded-lg px-3 py-2 input-surface text-xs" placeholder="e.g. 88F-WS031" value={deviceName} onChange={e => setDeviceName(e.target.value)} />
               </label>
-
-              <label className="text-xs font-semibold">
-                Device Type
-                <select
-                  className="w-full mt-1 rounded-lg px-3 py-2 input-surface text-xs"
-                  value={deviceType}
-                  onChange={e => setDeviceType(e.target.value)}
-                >
+              <label className="text-xs font-semibold">Device Type
+                <select className="w-full mt-1 rounded-lg px-3 py-2 input-surface text-xs" value={deviceType} onChange={e => setDeviceType(e.target.value)}>
                   <option value="desktop-agent">Desktop Agent</option>
                   <option value="browser-extension">Browser Extension</option>
                 </select>
               </label>
             </div>
-
-            <button
-              type="submit"
-              disabled={saving || !employeeId || !deviceName.trim()}
-              className="mt-3 px-4 py-2 rounded-lg text-xs font-bold accent-bg-solid"
-            >
-              {saving ? 'Registering…' : 'Create Enrollment Code'}
-            </button>
+            <button type="submit" disabled={saving || !employeeId || !deviceName.trim()} className="mt-3 px-4 py-2 rounded-lg text-xs font-bold accent-bg-solid">{saving ? 'Registering…' : 'Create Enrollment Code'}</button>
           </form>
         )}
 
@@ -196,94 +192,42 @@ export default function AdminDeviceManagementPanel({ users = [], addToast }) {
               <div>
                 <div className="text-[10px] uppercase tracking-wider font-bold text-muted">Enrollment Code</div>
                 <div className="text-2xl font-bold mono tracking-[0.25em] mt-1">{enrollment.enrollmentCode}</div>
-                <div className="text-[10px] text-muted mt-1">
-                  Expires {new Date(enrollment.enrollmentExpiresAt).toLocaleString()}
-                </div>
+                <div className="text-[10px] text-muted mt-1">Expires {new Date(enrollment.enrollmentExpiresAt).toLocaleString()}</div>
               </div>
-              <button onClick={copyCode} className="p-2 rounded-lg hover-surface" title="Copy code">
-                <Copy size={16} />
-              </button>
+              <button onClick={copyCode} className="p-2 rounded-lg hover-surface" title="Copy code"><Copy size={16} /></button>
             </div>
-            <div className="text-xs text-muted mt-3">
-              Use this code only on the intended physical device during the IT enrollment process.
-            </div>
+            <div className="text-xs text-muted mt-3">Use this code only on the intended physical device during the IT enrollment process.</div>
           </div>
         )}
 
-        {loading ? (
-          <div className="py-8 text-center text-sm text-muted">Loading devices…</div>
-        ) : devices.length === 0 ? (
-          <div className="py-8 text-center text-sm text-muted">No managed devices registered.</div>
-        ) : (
+        {loading ? <div className="py-8 text-center text-sm text-muted">Loading devices…</div> : devices.length === 0 ? <div className="py-8 text-center text-sm text-muted">No managed devices registered.</div> : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="font-bold text-muted uppercase tracking-wider border-b border-[var(--border)]">
-                  <th className="pb-2.5 px-2">Device</th>
-                  <th className="pb-2.5 px-2">Registered To</th>
-                  <th className="pb-2.5 px-2">Current User</th>
-                  <th className="pb-2.5 px-2">Session</th>
-                  <th className="pb-2.5 px-2">Status</th>
-                  <th className="pb-2.5 px-2">Last Seen</th>
-                  <th className="pb-2.5 px-2">Agent</th>
-                  <th className="pb-2.5 px-2 text-right">Actions</th>
-                </tr>
-              </thead>
+              <thead><tr className="font-bold text-muted uppercase tracking-wider border-b border-[var(--border)]">
+                <th className="pb-2.5 px-2">Device</th><th className="pb-2.5 px-2">Registered To</th><th className="pb-2.5 px-2">Current User</th><th className="pb-2.5 px-2">Session</th><th className="pb-2.5 px-2">Status</th><th className="pb-2.5 px-2">Last Seen</th><th className="pb-2.5 px-2">Agent</th><th className="pb-2.5 px-2 text-right">Actions</th>
+              </tr></thead>
               <tbody className="divide-y divide-[var(--border)]">
                 {devices.map(d => {
                   const tone = statusTone(d.status);
                   const isRdp = d.isRdp || d.connectionType === 'RDP';
-                  return (
-                    <tr key={d.id} className="hover:bg-[var(--bg)] transition-colors">
-                      <td className="py-3 px-2">
-                        <div className="font-semibold">{d.deviceName}</div>
+                  return <tr key={d.id} className="hover:bg-[var(--bg)] transition-colors">
+                    <td className="py-3 px-2">
+                      <button type="button" onClick={() => openDevice(d)} className="text-left group">
+                        <div className="font-semibold group-hover:accent-text transition-colors underline-offset-2 group-hover:underline">{d.deviceName}</div>
                         <div className="text-[10px] text-muted mono mt-0.5">{d.hostname || 'Hostname pending'}</div>
-                      </td>
-                      <td className="py-3 px-2">
-                        <div className="font-semibold">{d.registeredEmployeeName || d.employeeName}</div>
-                        <div className="text-[10px] text-muted">Original registration owner</div>
-                      </td>
-                      <td className="py-3 px-2">
-                        {d.currentEmployeeName ? (
-                          <>
-                            <div className="font-semibold">{d.currentEmployeeName}</div>
-                            <div className="text-[10px] text-muted mono">{d.currentDomainUser || d.domainUser || '—'}</div>
-                          </>
-                        ) : (
-                          <span className="text-muted">No user</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-2">
-                        <span className="inline-flex items-center gap-1.5 font-semibold" style={{ color: isRdp ? 'var(--warning)' : 'var(--text-muted)' }}>
-                          {isRdp ? <Radio size={13} /> : <Wifi size={13} />}
-                          {connectionLabel(d)}
-                        </span>
-                        {isRdp && d.sessionName && <div className="text-[9px] text-muted mono mt-0.5">{d.sessionName}</div>}
-                      </td>
-                      <td className="py-3 px-2">
-                        <span className="inline-flex items-center gap-1.5 font-semibold" style={{ color: tone }}>
-                          <span className="rounded-full" style={{ width: 7, height: 7, background: tone }} />
-                          {statusLabel(d.status)}
-                        </span>
-                      </td>
-                      <td className="py-3 px-2 text-muted whitespace-nowrap">
-                        {d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString() : 'Never'}
-                      </td>
-                      <td className="py-3 px-2 text-muted">{d.agentVersion || '—'}</td>
-                      <td className="py-3 px-2 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          {!d.revoked && (
-                            <button onClick={() => revoke(d)} className="p-1.5 rounded-lg hover-surface text-muted hover:text-[var(--danger)]" title="Revoke">
-                              <ShieldOff size={14} />
-                            </button>
-                          )}
-                          <button onClick={() => remove(d)} className="p-1.5 rounded-lg hover-surface text-muted hover:text-[var(--danger)]" title="Delete">
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
+                      </button>
+                    </td>
+                    <td className="py-3 px-2"><div className="font-semibold">{d.registeredEmployeeName || d.employeeName}</div><div className="text-[10px] text-muted">Original registration owner</div></td>
+                    <td className="py-3 px-2">{d.currentEmployeeName ? <><div className="font-semibold">{d.currentEmployeeName}</div><div className="text-[10px] text-muted mono">{d.currentDomainUser || d.domainUser || '—'}</div></> : <span className="text-muted">No user</span>}</td>
+                    <td className="py-3 px-2"><span className="inline-flex items-center gap-1.5 font-semibold" style={{ color: isRdp ? 'var(--warning)' : 'var(--text-muted)' }}>{isRdp ? <Radio size={13} /> : <Wifi size={13} />}{connectionLabel(d)}</span>{isRdp && d.sessionName && <div className="text-[9px] text-muted mono mt-0.5">{d.sessionName}</div>}</td>
+                    <td className="py-3 px-2"><span className="inline-flex items-center gap-1.5 font-semibold" style={{ color: tone }}><span className="rounded-full" style={{ width: 7, height: 7, background: tone }} />{statusLabel(d.status)}</span></td>
+                    <td className="py-3 px-2 text-muted whitespace-nowrap">{d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString() : 'Never'}</td>
+                    <td className="py-3 px-2 text-muted">{d.agentVersion || '—'}</td>
+                    <td className="py-3 px-2 text-right"><div className="flex items-center justify-end gap-1">
+                      {!d.revoked && <button onClick={() => revoke(d)} className="p-1.5 rounded-lg hover-surface text-muted hover:text-[var(--danger)]" title="Revoke"><ShieldOff size={14} /></button>}
+                      <button onClick={() => remove(d)} className="p-1.5 rounded-lg hover-surface text-muted hover:text-[var(--danger)]" title="Delete"><Trash2 size={14} /></button>
+                    </div></td>
+                  </tr>;
                 })}
               </tbody>
             </table>
