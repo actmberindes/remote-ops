@@ -20,6 +20,12 @@ function scopedEmployeeIds(user) {
   return new Set([user.id]);
 }
 
+function currentDomainUser(item) {
+  if (item.domainUser) return item.domainUser;
+  const device = db.data.devices.find(device => Number(device.id) === Number(item.deviceId));
+  return device?.domainUser || null;
+}
+
 screenshotPaginationRouter.get('/screenshots-page', requireAuth(db), requireRole('Admin', 'Manager'), (req, res) => {
   purgeOldActivity();
 
@@ -44,6 +50,7 @@ screenshotPaginationRouter.get('/screenshots-page', requireAuth(db), requireRole
   const items = list.slice(offset, offset + pageSize).map(item => ({
     ...item,
     employeeName: `${userName(item.employeeId)}${item.displayName ? ` · ${item.displayName}` : ''}`,
+    domainUser: currentDomainUser(item),
   }));
 
   res.json({
