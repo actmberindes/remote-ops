@@ -175,7 +175,7 @@ export const api = {
         params.set('date', date);
       }
 
-      return request(`/screenshots-page?${params.toString()}`);
+      return request(`/activity/screenshots-page?${params.toString()}`);
     },
     deleteScreenshot: (id) => request(`/activity/screenshots/${id}`, { method: 'DELETE' }),
     deleteScreenshotsBulk: (ids) => request('/activity/screenshots/delete-bulk', { method: 'POST', body: { ids } }),
