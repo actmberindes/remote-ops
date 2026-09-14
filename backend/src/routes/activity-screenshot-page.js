@@ -20,6 +20,12 @@ function userName(id) {
   return user ? user.name : 'Unknown Employee';
 }
 
+function currentDomainUser(item) {
+  if (item.domainUser) return item.domainUser;
+  const device = db.data.devices.find(device => Number(device.id) === Number(item.deviceId));
+  return device?.domainUser || null;
+}
+
 screenshotPageRouter.get('/screenshots-page', requireAuth(db), requireRole('Admin', 'Manager'), (req, res) => {
   purgeOldActivity();
 
@@ -42,6 +48,7 @@ screenshotPageRouter.get('/screenshots-page', requireAuth(db), requireRole('Admi
   const items = list.slice(start, start + pageSize).map(item => ({
     ...item,
     employeeName: `${userName(item.employeeId)}${item.displayName ? ` · ${item.displayName}` : ''}`,
+    domainUser: currentDomainUser(item),
   }));
 
   res.json({
