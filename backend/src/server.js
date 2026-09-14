@@ -11,6 +11,7 @@ import { assetsRouter } from './routes/assets.js';
 import { assetTagsRouter } from './routes/asset-tags.js';
 import { uploadsRouter, uploadsDir } from './uploads.js';
 import { agentRouter } from './routes/agent.js';
+import { agentMonitoringRouter } from './routes/agent-monitoring.js';
 import { activityRouter, purgeOldActivity } from './routes/activity.js';
 import { multiDisplayActivityRouter } from './routes/activity-multi-display.js';
 import { screenshotPaginationRouter } from './routes/activity-screenshot-pagination.js';
@@ -19,14 +20,7 @@ import { db, nextAssetTag } from './db.js';
 import { purgeMonitoringFiles } from './monitoring-retention.js';
 
 const app = express();
-
-const allowedOrigins = new Set(
-  (process.env.CORS_ORIGINS || 'http://192.168.1.2:5173,http://localhost:5173')
-    .split(',')
-    .map(origin => origin.trim())
-    .filter(Boolean)
-);
-
+const allowedOrigins = new Set((process.env.CORS_ORIGINS || 'http://192.168.1.2:5173,http://localhost:5173').split(',').map(origin => origin.trim()).filter(Boolean));
 const corsOptions = {
   origin(origin, callback) {
     if (!origin || allowedOrigins.has(origin)) return callback(null, true);
@@ -36,33 +30,24 @@ const corsOptions = {
   allowedHeaders: ['Content-Type', 'Authorization'],
   optionsSuccessStatus: 204,
 };
-
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 app.use(express.json());
 app.use('/uploads', express.static(uploadsDir));
-
 app.get('/api/health', (req, res) => res.json({ ok: true, service: 'remote-ops-backend' }));
-
 app.use('/api/auth', authRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/applications', applicationsRouter);
 app.use('/api/time-sessions', timeSessionsRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/tickets', ticketsRouter);
-
 app.use('/api/assets', (req, res, next) => {
   if (req.method !== 'POST' || !req.body?.type) return next();
   const originalJson = res.json.bind(res);
   res.json = (body) => {
     if (body?.id && body?.assetTag) {
       const asset = db.data.assets.find(a => a.id === Number(body.id));
-      if (asset) {
-        const tag = nextAssetTag(req.body.type);
-        asset.assetTag = tag;
-        void db.write();
-        body = { ...body, assetTag: tag };
-      }
+      if (asset) { const tag = nextAssetTag(req.body.type); asset.assetTag = tag; void db.write(); body = { ...body, assetTag: tag }; }
     }
     return originalJson(body);
   };
@@ -72,15 +57,8 @@ app.use('/api/assets', assetsRouter);
 app.use('/api/asset-tags', assetTagsRouter);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/agent', agentRouter);
-
-// Live View timelapse/video generation has been removed from the portal.
-// Keep the old route blocked so stale clients cannot generate new videos.
-app.use('/api/activity/live-video', (req, res) => {
-  res.status(410).json({ error: 'Live View Timelapse video generation has been removed.' });
-});
-
-// Multi-display activity endpoints must run before the legacy single-display
-// activity router so the same URLs can transparently support multiple screens.
+app.use('/api/agent', agentMonitoringRouter);
+app.use('/api/activity/live-video', (req, res) => res.status(410).json({ error: 'Live View Timelapse video generation has been removed.' }));
 app.use('/api/activity', screenshotPaginationRouter);
 app.use('/api/activity', screenshotFeedRouter);
 app.use('/api/activity', multiDisplayActivityRouter);
@@ -89,69 +67,23 @@ app.use('/api/activity', activityRouter);
 async function runMonitoringRetention() {
   const liveViewDays = Number(db.data.agentConfig.liveViewRetentionDays);
   const screenshotDays = Number(db.data.agentConfig.screenshotRetentionDays);
-
-  // Snapshot the records BEFORE purgeOldActivity() removes expired DB entries.
-  // The filesystem sweep needs these records to distinguish Live View frames
-  // from screenshots, since both file types share backend/uploads/monitoring.
   const liveFrames = [...(db.data.liveFrames || [])];
   const liveFrameHistory = [...(db.data.liveFrameHistory || [])];
   const screenshots = [...(db.data.screenshots || [])];
-
-  console.log(
-    `[retention] Sweep started | Live View: ${liveViewDays} days (${(liveViewDays * 24 * 60).toFixed(2)} min) | ` +
-    `Screenshots: ${screenshotDays} days | liveFrames: ${liveFrames.length} | ` +
-    `liveFrameHistory: ${liveFrameHistory.length} | screenshots: ${screenshots.length}`
-  );
-
+  console.log(`[retention] Sweep started | Live View: ${liveViewDays} days (${(liveViewDays * 24 * 60).toFixed(2)} min) | Screenshots: ${screenshotDays} days | liveFrames: ${liveFrames.length} | liveFrameHistory: ${liveFrameHistory.length} | screenshots: ${screenshots.length}`);
   purgeOldActivity();
-
-  const result = purgeMonitoringFiles({
-    monitoringUploadsDir: `${uploadsDir}/monitoring`,
-    liveViewDays,
-    screenshotDays,
-    screenshots,
-    liveFrames,
-    liveFrameHistory,
-  });
-
-  if (result.deleted > 0) {
-    console.log(`[retention] Deleted ${result.deleted} monitoring file(s).`);
-  } else {
-    console.log('[retention] No monitoring files deleted.');
-  }
-
+  const result = purgeMonitoringFiles({ monitoringUploadsDir: `${uploadsDir}/monitoring`, liveViewDays, screenshotDays, screenshots, liveFrames, liveFrameHistory });
+  if (result.deleted > 0) console.log(`[retention] Deleted ${result.deleted} monitoring file(s).`);
+  else console.log('[retention] No monitoring files deleted.');
   await db.write();
 }
-
 try {
-  console.log(
-    `[retention] Config loaded | Live View retention: ${Number(db.data.agentConfig.liveViewRetentionDays)} days ` +
-    `(${(Number(db.data.agentConfig.liveViewRetentionDays) * 24 * 60).toFixed(2)} min) | ` +
-    `Screenshot retention: ${Number(db.data.agentConfig.screenshotRetentionDays)} days`
-  );
+  console.log(`[retention] Config loaded | Live View retention: ${Number(db.data.agentConfig.liveViewRetentionDays)} days (${(Number(db.data.agentConfig.liveViewRetentionDays) * 24 * 60).toFixed(2)} min) | Screenshot retention: ${Number(db.data.agentConfig.screenshotRetentionDays)} days`);
   await runMonitoringRetention();
-} catch (err) {
-  console.error(`Initial monitoring retention cleanup failed: ${err.message}`);
-}
-
-// Run frequently so Live View files do not depend on the next frame arriving.
-// Screenshot records still use their independent 3-day retention setting.
+} catch (err) { console.error(`Initial monitoring retention cleanup failed: ${err.message}`); }
 const RETENTION_SWEEP_MS = 30 * 1000;
-setInterval(async () => {
-  try {
-    await runMonitoringRetention();
-  } catch (err) {
-    console.error(`Monitoring retention sweep failed: ${err.message}`);
-  }
-}, RETENTION_SWEEP_MS).unref();
-
-app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({ error: 'Something went wrong on the server.' });
-});
-
+setInterval(async () => { try { await runMonitoringRetention(); } catch (err) { console.error(`Monitoring retention sweep failed: ${err.message}`); } }, RETENTION_SWEEP_MS).unref();
+app.use((err, req, res, next) => { console.error(err); res.status(500).json({ error: 'Something went wrong on the server.' }); });
 const PORT = process.env.PORT || 4000;
 const HOST = process.env.HOST || '0.0.0.0';
-app.listen(PORT, HOST, () => {
-  console.log(`Remote Ops backend listening on http://${HOST}:${PORT}`);
-});
+app.listen(PORT, HOST, () => console.log(`Remote Ops backend listening on http://${HOST}:${PORT}`));
