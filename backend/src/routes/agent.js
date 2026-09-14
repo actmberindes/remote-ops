@@ -271,6 +271,46 @@ agentRouter.get('/devices/:id/history', requireAuth(db), requireRole('Admin'), (
   res.json({ device: publicDevice(device), history });
 });
 
+agentRouter.get('/devices/:id/details', requireAuth(db), requireRole('Admin'), (req, res) => {
+  const id = Number(req.params.id);
+  const device = db.data.devices.find(d => d.id === id);
+  if (!device) return res.status(404).json({ error: 'Device not found.' });
+
+  const history = (db.data.deviceStateHistory || [])
+    .filter(item => Number(item.deviceId) === id)
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, 5000)
+    .map(item => ({
+      ...item,
+      domainUser: item.domainUser || device.domainUser || null,
+    }));
+
+  const screenshots = (db.data.screenshots || [])
+    .filter(item => Number(item.deviceId) === id)
+    .sort((a, b) => new Date(b.capturedAt).getTime() - new Date(a.capturedAt).getTime())
+    .slice(0, 1000)
+    .map(item => ({
+      ...item,
+      domainUser: item.domainUser || device.domainUser || null,
+    }));
+
+  const liveFrames = (db.data.liveFrameHistory || [])
+    .filter(item => Number(item.deviceId) === id)
+    .sort((a, b) => new Date(b.capturedAt).getTime() - new Date(a.capturedAt).getTime())
+    .slice(0, 500)
+    .map(item => ({
+      ...item,
+      domainUser: item.domainUser || device.domainUser || null,
+    }));
+
+  res.json({
+    device: publicDevice(device),
+    history,
+    screenshots,
+    liveFrames,
+  });
+});
+
 agentRouter.patch('/devices/:id/revoke', requireAuth(db), requireRole('Admin'), async (req, res) => {
   const id = Number(req.params.id); const device = db.data.devices.find(d => d.id === id);
   if (!device) return res.status(404).json({ error: 'Device not found.' });
