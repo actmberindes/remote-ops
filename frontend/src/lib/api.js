@@ -119,12 +119,12 @@ export const api = {
     clone: (id) => request(`/assets/${id}/clone`, { method: 'POST' }),
     update: (id, body) => request(`/assets/${id}`, { method: 'PUT', body }),
     remove: (id) => request(`/assets/${id}`, { method: 'DELETE' }),
-    assign: (id, employeeId, serialNumber) => request(`/assets/${id}/assign`, { method: 'POST', body: { employeeId, ...(serialNumber ? { serialNumber } : {}) } }),
+    assign: (id, employeeId, serialNumber) => request(`/assets/${id}/assign`, { method: 'POST', body: { employeeId, ...(serialNumber ? { serialNumber } : {}) }),
     componentOptions: (type) => request(`/assets/component-options/${encodeURIComponent(type)}`),
-    assignComponent: (id, parentAssetId, serialNumber) => request(`/assets/${id}/assign-component`, { method: 'POST', body: { parentAssetId, ...(serialNumber ? { serialNumber } : {}) } }),
-    bulkAssign: (id, employeeIds) => request(`/assets/${id}/bulk-assign`, { method: 'POST', body: { employeeIds } }),
-    return: (id, employeeId, extra = {}) => request(`/assets/${id}/return`, { method: 'POST', body: { ...(employeeId !== undefined ? { employeeId } : {}), ...extra } }),
-    retire: (id) => request(`/assets/${id}/retire`, { method: 'POST' }),
+    assignComponent: (id, parentAssetId, serialNumber) => request(`/assets/${id}/assign-component`, { method: 'POST', body: { parentAssetId, ...(serialNumber ? { serialNumber } : {}) }),
+    bulkAssign: (id, employeeIds) => request(`/assets/${id}/bulk-assign`, { method: 'POST', body: { employeeIds }),
+    return: (id, employeeId, extra = {}) => request(`/assets/${id}/return`, { method: 'POST', body: { ...(employeeId !== undefined ? { employeeId } : {}), ...extra }),
+    retire: (id) => request(`/assets/${id}/retire`, { method: 'POST', body: undefined }),
     history: (id) => request(`/assets/${id}/history`),
     printTag: async (id) => {
       const token = getToken();
@@ -156,25 +156,12 @@ export const api = {
       const qs = params.toString();
       return request(`/activity/screenshots${qs ? `?${qs}` : ''}`);
     },
-    screenshotsPage: ({
-      page = 1,
-      pageSize = 60,
-      employeeId,
-      date
-    } = {}) => {
+    screenshotsPage: ({ page = 1, pageSize = 60, employeeId, date } = {}) => {
       const params = new URLSearchParams();
-
       params.set('page', page);
       params.set('pageSize', pageSize);
-
-      if (employeeId) {
-        params.set('employeeId', employeeId);
-      }
-
-      if (date) {
-        params.set('date', date);
-      }
-
+      if (employeeId) params.set('employeeId', employeeId);
+      if (date) params.set('date', date);
       return request(`/activity/screenshots-page?${params.toString()}`);
     },
     deleteScreenshot: (id) => request(`/activity/screenshots/${id}`, { method: 'DELETE' }),
@@ -192,6 +179,7 @@ export const api = {
     devices: () => request('/agent/devices'),
     myDevices: () => request('/agent/my-devices'),
     deviceHistory: (id) => request(`/agent/devices/${id}/history`),
+    deviceDetails: (id) => request(`/agent/devices/${id}/details`),
     revokeDevice: (id) => request(`/agent/devices/${id}/revoke`, { method: 'PATCH' }),
     deleteDevice: (id) => request(`/agent/devices/${id}`, { method: 'DELETE' }),
     getConfig: () => request('/agent/config-admin'),
