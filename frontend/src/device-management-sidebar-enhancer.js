@@ -4,6 +4,7 @@ import { api } from './lib/api.js';
 import DeviceManagementRoute from './components/DeviceManagementRoute.jsx';
 
 const HASH = '#/device-management';
+const DEVICE_HASH = /^#\/device\/\d+$/;
 let role = null;
 let navButton = null;
 let mount = null;
@@ -12,23 +13,18 @@ let savedMainChildren = [];
 let active = false;
 
 function getMain() { return document.querySelector('main'); }
+function isDeviceRoute() { return window.location.hash === HASH || DEVICE_HASH.test(window.location.hash); }
 
 function enforceMain() {
   if (!active || !mount?.isConnected) return;
   const main = getMain();
   if (!main) return;
-  [...main.children].forEach(node => {
-    if (node !== mount) node.style.display = 'none';
-  });
+  [...main.children].forEach(node => { if (node !== mount) node.style.display = 'none'; });
 }
 
 function restoreMain() {
   const main = getMain();
-  if (main) {
-    savedMainChildren.forEach(({ node, display }) => {
-      if (node && node.isConnected) node.style.display = display;
-    });
-  }
+  if (main) savedMainChildren.forEach(({ node, display }) => { if (node && node.isConnected) node.style.display = display; });
   savedMainChildren = [];
   if (mount?.isConnected) mount.remove();
   if (root) { root.unmount(); root = null; }
@@ -55,7 +51,7 @@ function showPage() {
 }
 
 function syncRoute() {
-  if (window.location.hash === HASH) showPage();
+  if (isDeviceRoute()) showPage();
   else if (active) restoreMain();
 }
 
@@ -85,10 +81,7 @@ function hideEmbeddedDevicePanel() {
     if (card.closest('[data-remoteops-device-management]')) return;
     if (card.dataset.remoteopsEmbeddedDevicePanel === 'hidden') return;
     const heading = [...card.querySelectorAll('h3,h2,div')].find(el => (el.textContent || '').trim() === 'Device Management');
-    if (heading) {
-      card.dataset.remoteopsEmbeddedDevicePanel = 'hidden';
-      card.style.display = 'none';
-    }
+    if (heading) { card.dataset.remoteopsEmbeddedDevicePanel = 'hidden'; card.style.display = 'none'; }
   });
 }
 
@@ -100,12 +93,7 @@ async function start() {
     hideEmbeddedDevicePanel();
     syncRoute();
   } catch (_) {}
-  const observer = new MutationObserver(() => {
-    addNavButton();
-    hideEmbeddedDevicePanel();
-    syncRoute();
-    enforceMain();
-  });
+  const observer = new MutationObserver(() => { addNavButton(); hideEmbeddedDevicePanel(); syncRoute(); enforceMain(); });
   observer.observe(document.body, { childList: true, subtree: true });
   window.addEventListener('hashchange', syncRoute);
 }
