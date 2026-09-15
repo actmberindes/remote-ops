@@ -55,25 +55,59 @@ function syncRoute() {
   else if (active) restoreMain();
 }
 
+function getCurrentUser(response) {
+  return response?.user || response || null;
+}
+
+function findSidebar() {
+  const containers = [
+    ...document.querySelectorAll('aside.sidebar, aside, [role="navigation"], nav')
+  ];
+
+  const matched = containers.find(container =>
+    /Dashboard|User Management|Applications|Tickets/i.test(container.textContent || '')
+  );
+
+  if (matched) return matched;
+
+  const menuButton = [...document.querySelectorAll('button, a')].find(el =>
+    /^(Dashboard|User Management|Applications & Schedules|Tickets)$/i.test((el.textContent || '').trim())
+  );
+
+  return menuButton?.closest('aside, nav, [role="navigation"]') || null;
+}
+
 function addNavButton() {
   if (!role || !['Admin', 'Manager'].includes(role)) return;
   if (navButton?.isConnected) return;
+
+  const nav = findSidebar();
+  if (!nav) return;
+
   navButton = document.createElement('button');
   navButton.type = 'button';
-  navButton.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-left hover-surface transition-colors';
+  navButton.dataset.remoteopsDeviceManagementNav = 'true';
+  navButton.className = 'nav-item w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all hover-surface text-muted';
   navButton.innerHTML = '<span class="text-base leading-none">▣</span><span>Device Management</span>';
   navButton.title = role === 'Manager' ? 'Device Management (Read-only)' : 'Device Management';
+
   navButton.addEventListener('click', event => {
     event.preventDefault();
     event.stopPropagation();
     window.location.hash = HASH;
     showPage();
   });
-  const nav = [...document.querySelectorAll('nav')].find(el => /User Management|Dashboard|Tickets/i.test(el.textContent || '')) || document.querySelector('nav');
-  if (!nav) { navButton = null; return; }
-  const userButton = [...nav.querySelectorAll('button,a')].find(el => /User Management/i.test(el.textContent || ''));
-  if (userButton?.parentElement) userButton.parentElement.insertAdjacentElement('afterend', navButton);
-  else nav.appendChild(navButton);
+
+  const userButton = [...nav.querySelectorAll('button,a')].find(el =>
+    /User Management/i.test(el.textContent || '')
+  );
+  const anchor = userButton?.closest('.nav-item') || userButton?.parentElement;
+
+  if (anchor?.parentElement) {
+    anchor.parentElement.insertAdjacentElement('afterend', navButton);
+  } else {
+    nav.appendChild(navButton);
+  }
 }
 
 function hideEmbeddedDevicePanel() {
@@ -87,13 +121,20 @@ function hideEmbeddedDevicePanel() {
 
 async function start() {
   try {
-    const me = await api.me();
+    const meResponse = await api.me();
+    const me = getCurrentUser(meResponse);
     role = me?.role || null;
     addNavButton();
     hideEmbeddedDevicePanel();
     syncRoute();
   } catch (_) {}
-  const observer = new MutationObserver(() => { addNavButton(); hideEmbeddedDevicePanel(); syncRoute(); enforceMain(); });
+
+  const observer = new MutationObserver(() => {
+    addNavButton();
+    hideEmbeddedDevicePanel();
+    syncRoute();
+    enforceMain();
+  });
   observer.observe(document.body, { childList: true, subtree: true });
   window.addEventListener('hashchange', syncRoute);
 }
