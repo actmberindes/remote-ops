@@ -11,8 +11,9 @@ export default function DeviceManagementRoute() {
   useEffect(() => {
     let active = true;
     api.me()
-      .then(async currentUser => {
+      .then(async response => {
         if (!active) return;
+        const currentUser = response?.user || response;
         setMe(currentUser);
         if (currentUser?.role === 'Admin') {
           const userList = await api.users.list();
