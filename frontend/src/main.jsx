@@ -13,6 +13,7 @@ import './monitoring-rdp-label-enhancer.js';
 import './live-view-status-fullscreen-enhancer.js';
 import './screenshot-user-slider-enhancer.js';
 import './device-details-ui-enhancer.js';
+import './device-management-sidebar-enhancer.js';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
