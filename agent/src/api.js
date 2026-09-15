@@ -36,20 +36,36 @@ function createClient(apiUrl) {
     authorizeQuit: (deviceToken, code) => request(apiUrl, '/agent/quit-authorize', { method: 'POST', token: deviceToken, body: { code } }),
     uploadFile: (deviceToken, filePath, type = 'screenshot') => request(apiUrl, `/uploads/monitoring?type=${type === 'live' ? 'live' : 'screenshot'}`, { method: 'POST', token: deviceToken, isMultipart: true, filePath }),
     postScheduledScreenshot: (deviceToken, url, filename, display = {}, telemetry = {}) =>
-  request(apiUrl, '/activity/screenshots', {
-    method: 'POST',
-    token: deviceToken,
-    body: {
-      url,
-      filename,
-      displayId: display.displayId ?? null,
-      displayName: display.displayName ?? null,
-      displayIndex: display.displayIndex ?? null,
-      domainUser: telemetry.domainUser ?? null,
-      capturedAt: new Date().toISOString()
-    }
-  }),
-    postLiveFrame: (deviceToken, url, display = {}) => request(apiUrl, '/activity/live-frame', { method: 'POST', token: deviceToken, body: { url, displayId: display.displayId ?? null, displayName: display.displayName ?? null, displayIndex: display.displayIndex ?? null, capturedAt: new Date().toISOString() } }),
+      request(apiUrl, '/activity/screenshots', {
+        method: 'POST',
+        token: deviceToken,
+        body: {
+          url,
+          filename,
+          displayId: display.displayId ?? null,
+          displayName: display.displayName ?? null,
+          displayIndex: display.displayIndex ?? null,
+          domainUser: telemetry.domainUser ?? null,
+          sessionId: telemetry.sessionId ?? null,
+          sessionLocked: telemetry.sessionLocked === true,
+          capturedAt: new Date().toISOString(),
+        },
+      }),
+    postLiveFrame: (deviceToken, url, display = {}, telemetry = {}) =>
+      request(apiUrl, '/activity/live-frame', {
+        method: 'POST',
+        token: deviceToken,
+        body: {
+          url,
+          displayId: display.displayId ?? null,
+          displayName: display.displayName ?? null,
+          displayIndex: display.displayIndex ?? null,
+          domainUser: telemetry.domainUser ?? null,
+          sessionId: telemetry.sessionId ?? null,
+          sessionLocked: telemetry.sessionLocked === true,
+          capturedAt: new Date().toISOString(),
+        },
+      }),
     postWebUsage: (deviceToken, entries) => request(apiUrl, '/activity/web-usage', { method: 'POST', token: deviceToken, body: { entries } }),
   };
 }
