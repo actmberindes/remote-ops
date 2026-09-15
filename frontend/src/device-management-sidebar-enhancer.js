@@ -13,16 +13,26 @@ let active = false;
 
 function getMain() { return document.querySelector('main'); }
 
-function restoreMain() {
+function enforceMain() {
+  if (!active || !mount?.isConnected) return;
   const main = getMain();
   if (!main) return;
-  savedMainChildren.forEach(({ node, display }) => {
-    if (node && node.isConnected) node.style.display = display;
+  [...main.children].forEach(node => {
+    if (node !== mount) node.style.display = 'none';
   });
+}
+
+function restoreMain() {
+  const main = getMain();
+  if (main) {
+    savedMainChildren.forEach(({ node, display }) => {
+      if (node && node.isConnected) node.style.display = display;
+    });
+  }
   savedMainChildren = [];
   if (mount?.isConnected) mount.remove();
-  mount = null;
   if (root) { root.unmount(); root = null; }
+  mount = null;
   active = false;
   if (navButton) navButton.dataset.active = 'false';
 }
@@ -30,7 +40,7 @@ function restoreMain() {
 function showPage() {
   const main = getMain();
   if (!main) return;
-  if (active && mount?.isConnected) return;
+  if (active && mount?.isConnected) { enforceMain(); return; }
   restoreMain();
   savedMainChildren = [...main.children].map(node => ({ node, display: node.style.display }));
   savedMainChildren.forEach(({ node }) => { node.style.display = 'none'; });
@@ -52,9 +62,6 @@ function syncRoute() {
 function addNavButton() {
   if (!role || !['Admin', 'Manager'].includes(role)) return;
   if (navButton?.isConnected) return;
-  const nav = [...document.querySelectorAll('nav')].find(el => /User Management|Dashboard|Tickets/i.test(el.textContent || '')) || document.querySelector('nav');
-  if (!nav) return;
-
   navButton = document.createElement('button');
   navButton.type = 'button';
   navButton.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-left hover-surface transition-colors';
@@ -66,18 +73,22 @@ function addNavButton() {
     window.location.hash = HASH;
     showPage();
   });
-
+  const nav = [...document.querySelectorAll('nav')].find(el => /User Management|Dashboard|Tickets/i.test(el.textContent || '')) || document.querySelector('nav');
+  if (!nav) { navButton = null; return; }
   const userButton = [...nav.querySelectorAll('button,a')].find(el => /User Management/i.test(el.textContent || ''));
   if (userButton?.parentElement) userButton.parentElement.insertAdjacentElement('afterend', navButton);
   else nav.appendChild(navButton);
 }
 
 function hideEmbeddedDevicePanel() {
-  document.querySelectorAll('[data-remoteops-device-management]').forEach(() => {});
   document.querySelectorAll('.card').forEach(card => {
     if (card.closest('[data-remoteops-device-management]')) return;
+    if (card.dataset.remoteopsEmbeddedDevicePanel === 'hidden') return;
     const heading = [...card.querySelectorAll('h3,h2,div')].find(el => (el.textContent || '').trim() === 'Device Management');
-    if (heading) card.dataset.remoteopsEmbeddedDevicePanel = 'hidden';
+    if (heading) {
+      card.dataset.remoteopsEmbeddedDevicePanel = 'hidden';
+      card.style.display = 'none';
+    }
   });
 }
 
@@ -89,11 +100,11 @@ async function start() {
     hideEmbeddedDevicePanel();
     syncRoute();
   } catch (_) {}
-
   const observer = new MutationObserver(() => {
     addNavButton();
     hideEmbeddedDevicePanel();
     syncRoute();
+    enforceMain();
   });
   observer.observe(document.body, { childList: true, subtree: true });
   window.addEventListener('hashchange', syncRoute);
