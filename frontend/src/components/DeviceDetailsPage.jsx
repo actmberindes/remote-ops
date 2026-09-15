@@ -5,16 +5,31 @@ import { api } from '../lib/api.js';
 
 const tabs = ['Activity Logs', 'Screenshots', 'Live View'];
 function fmtDateTime(value) { return value ? new Date(value).toLocaleString() : '—'; }
-function statusColor(status) { return status === 'active' ? 'var(--success)' : status === 'idle' ? 'var(--warning)' : status === 'offline' ? 'var(--danger)' : 'var(--neutral)'; }
+function relativeTime(value) {
+  if (!value) return 'Never';
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return 'Unknown';
+  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (seconds < 10) return 'Just now';
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+function statusColor(status) { return status === 'active' ? 'var(--success)' : status === 'idle' ? 'var(--warning)' : status === 'offline' || status === 'logged-out' ? 'var(--danger)' : 'var(--neutral)'; }
+function statusLabel(status) { return status === 'logged-out' ? 'Offline / Logged out' : status ? status.replace(/-/g, ' ') : 'Unknown'; }
 function domainUserOf(item) { return item?.domainUser || item?.currentDomainUser || 'Unknown user'; }
 function displayLabel(item) { return String(item?.displayName || `DISPLAY${item?.displayIndex ?? ''}`).replace(/^DISPLAY\s*/i, 'DISPLAY').toUpperCase(); }
 function screenshotLabel(item) { return `${domainUserOf(item)} · ${displayLabel(item)} · ${new Date(item.capturedAt).toLocaleTimeString()}`; }
 
 function DeviceInfo({ device }) {
-  const online = device?.status !== 'offline' && device?.status !== 'revoked' && device?.status !== 'pending';
+  const online = device?.status === 'active' || device?.status === 'idle';
+  const status = device?.status || 'unknown';
   return <div className="card p-4"><div className="flex items-center gap-2 mb-3"><Monitor size={16} className="accent-text" /><div className="font-display font-bold text-sm">Device Info</div></div><div className="grid grid-cols-2 md:grid-cols-6 gap-3 text-xs">
-    {[['Device Name', device?.deviceName || '—'], ['OS', device?.os || device?.operatingSystem || 'Windows'], ['IP Address', device?.ipAddress || device?.ip || '—'], ['Last Domain User Log', device?.domainUser || device?.currentDomainUser || '—'], ['Agent Version', device?.agentVersion || '—'], ['Last Heartbeat', device?.lastSeenAt ? fmtDateTime(device.lastSeenAt) : '—']].map(([label, value]) => <div key={label} className="min-w-0"><div className="text-[10px] text-muted uppercase tracking-wider font-bold">{label}</div><div className="font-semibold mt-1 truncate" title={String(value)}>{value}</div></div>)}
-  </div><div className="mt-3 pt-3 border-t border-[var(--border)] flex flex-wrap items-center gap-3 text-[10px] text-muted"><span className="inline-flex items-center gap-1.5" style={{ color: online ? 'var(--success)' : 'var(--danger)' }}>{online ? <Wifi size={12} /> : <WifiOff size={12} />}{device?.status || 'unknown'}</span>{device?.hostname && <span className="mono">{device.hostname}</span>}{device?.domain && <span className="mono">{device.domain}</span>}{device?.sessionName && <span className="mono">Session: {device.sessionName}</span>}</div></div>;
+    {[['Device Name', device?.deviceName || '—'], ['OS', device?.os || device?.operatingSystem || 'Windows'], ['IP Address', device?.ipAddress || device?.ip || '—'], ['Last Domain User Log', device?.domainUser || device?.currentDomainUser || '—'], ['Agent Version', device?.agentVersion || '—'], ['Last Heartbeat', device?.lastSeenAt ? relativeTime(device.lastSeenAt) : 'Never']].map(([label, value]) => <div key={label} className="min-w-0"><div className="text-[10px] text-muted uppercase tracking-wider font-bold">{label}</div><div className="font-semibold mt-1 truncate" title={label === 'Last Heartbeat' ? fmtDateTime(device?.lastSeenAt) : String(value)}>{value}</div>{label === 'Last Heartbeat' && device?.lastSeenAt && <div className="text-[9px] text-muted mt-0.5 truncate">{fmtDateTime(device.lastSeenAt)}</div>}</div>)}
+  </div><div className="mt-3 pt-3 border-t border-[var(--border)] flex flex-wrap items-center gap-3 text-[10px] text-muted"><span className="inline-flex items-center gap-1.5 font-semibold capitalize" style={{ color: online ? 'var(--success)' : 'var(--danger)' }}>{online ? <Wifi size={12} /> : <WifiOff size={12} />}{statusLabel(status)}</span>{device?.hostname && <span className="mono">{device.hostname}</span>}{device?.domain && <span className="mono">{device.domain}</span>}{device?.sessionName && <span className="mono">Session: {device.sessionName}</span>}{device?.isRdp && <span className="px-1.5 py-0.5 rounded bg-[var(--surface-2)]">RDP</span>}</div></div>;
 }
 
 function DailyStatusChart({ history }) {
@@ -27,7 +42,7 @@ function HourlyActivityChart({ history }) {
   return <div className="card p-4 min-w-0"><div className="mb-3"><div className="font-display font-bold text-sm">Hourly Workstation Activity</div><div className="text-[10px] text-muted">100% = Active · 0% = Idle (based on workstation idle state)</div></div><div className="h-56"><ResponsiveContainer width="100%" height="100%"><BarChart data={data}><CartesianGrid strokeDasharray="3 3" stroke="var(--border)" /><XAxis dataKey="label" tick={{ fontSize: 9 }} interval={1} /><YAxis domain={[0, 100]} tickFormatter={v => `${v}%`} tick={{ fontSize: 10 }} /><Tooltip formatter={value => [`${value}%`, 'Active']} /><Bar dataKey="percent" name="Active %" fill="var(--success)" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer></div></div>;
 }
 
-function ActivityTimeline({ history, domainUser }) { const rows = history.filter(item => !domainUser || domainUserOf(item) === domainUser).slice(0, 100); return <div className="card p-4"><div className="flex items-center gap-2 mb-3"><Clock3 size={15} className="accent-text" /><div className="font-display font-bold text-sm">Activity Timeline</div></div>{rows.length ? <div className="divide-y divide-[var(--border)]">{rows.map(item => <div key={item.id} className="py-2.5 flex flex-wrap items-center gap-3 text-xs"><span className="text-muted whitespace-nowrap">{fmtDateTime(item.timestamp)}</span><span className="mono font-semibold">{item.domainUser || '—'}</span><span className="inline-flex items-center gap-1.5 font-semibold" style={{ color: statusColor(item.to) }}><span className="w-1.5 h-1.5 rounded-full" style={{ background: statusColor(item.to) }} />{item.from || '—'} → {item.to || '—'}</span></div>)}</div> : <div className="py-8 text-center text-xs text-muted">No activity records for this filter.</div>}</div>; }
+function ActivityTimeline({ history, domainUser }) { const rows = history.filter(item => !domainUser || domainUserOf(item) === domainUser).slice(0, 100); return <div className="card p-4"><div className="flex items-center justify-between gap-3 mb-3"><div className="flex items-center gap-2"><Clock3 size={15} className="accent-text" /><div className="font-display font-bold text-sm">Activity Timeline</div></div><div className="text-[10px] text-muted">{rows.length} record{rows.length === 1 ? '' : 's'}</div></div>{rows.length ? <div className="divide-y divide-[var(--border)]">{rows.map(item => { const color = statusColor(item.to); return <div key={item.id} className="py-2.5 flex flex-wrap items-center gap-3 text-xs"><div className="min-w-[155px]"><div className="font-semibold">{fmtDateTime(item.timestamp)}</div><div className="text-[9px] text-muted">{relativeTime(item.timestamp)}</div></div><span className="mono font-semibold truncate max-w-[260px]" title={item.domainUser || 'No domain user'}>{item.domainUser || 'No domain user'}</span><span className="inline-flex items-center gap-1.5 font-semibold px-2 py-1 rounded-full bg-[var(--surface-2)]" style={{ color }}><span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />{statusLabel(item.to)}{item.from ? <span className="opacity-60 font-normal">from {statusLabel(item.from)}</span> : null}</span></div>; })}</div> : <div className="py-8 text-center text-xs text-muted">No activity records for this filter.</div>}</div>; }
 
 function ScreenshotViewer({ item, onClose }) { if (!item) return null; const url = api.uploads.fileUrl(item.url); const label = screenshotLabel(item); return <div className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}><div className="card p-0 overflow-hidden w-full max-w-6xl max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}><div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--border)]"><div className="font-display font-bold text-sm truncate">{label}</div><div className="flex items-center gap-1"><a href={url} download={item.filename || 'screenshot'} className="p-1.5 rounded-lg hover-surface" title="Download"><Download size={16} /></a><button onClick={onClose} className="p-1.5 rounded-lg hover-surface" title="Close"><X size={16} /></button></div></div><div className="flex-1 min-h-0 overflow-auto flex items-center justify-center p-4 bg-black"><img src={url} alt={label} className="max-w-full max-h-[78vh] object-contain" /></div></div></div>; }
 
@@ -41,31 +56,10 @@ function ScreenshotTab({ deviceId, date, setDate, domainUser, setDomainUser, ref
 function LiveViewTab({ device, frames, domainUser, setDomainUser }) {
   const users = [...new Set(frames.map(domainUserOf).filter(Boolean))].sort();
   const list = frames.filter(item => !domainUser || domainUserOf(item) === domainUser);
-  const displays = [...new Set(list.map(displayLabel))].sort((a, b) => {
-    const na = Number(a.replace(/\D/g, ''));
-    const nb = Number(b.replace(/\D/g, ''));
-    return (Number.isFinite(na) ? na : 999) - (Number.isFinite(nb) ? nb : 999) || a.localeCompare(b);
-  });
-  const [selectedDisplay, setSelectedDisplay] = useState('');
+  const latest = list[0];
+  const online = device?.status === 'active' || device?.status === 'idle';
 
-  useEffect(() => {
-    if (!displays.length) {
-      if (selectedDisplay) setSelectedDisplay('');
-      return;
-    }
-    if (!displays.includes(selectedDisplay)) setSelectedDisplay(displays[0]);
-  }, [displays.join('|'), selectedDisplay]);
-
-  const selectedFrames = list.filter(item => displayLabel(item) === selectedDisplay);
-  const latest = selectedFrames[0];
-
-  return <div className="space-y-4"><div className="card p-4 flex flex-wrap items-end gap-3">
-    <label className="text-xs font-semibold"><span className="block text-[10px] text-muted uppercase mb-1">Domain User</span><select value={domainUser} onChange={e => setDomainUser(e.target.value)} className="input-surface rounded-lg px-3 py-2 text-xs"><option value="">All domain users</option>{users.map(user => <option key={user} value={user}>{user}</option>)}</select></label>
-    <label className="text-xs font-semibold"><span className="block text-[10px] text-muted uppercase mb-1">Display</span><select value={selectedDisplay} onChange={e => setSelectedDisplay(e.target.value)} disabled={!displays.length} className="input-surface rounded-lg px-3 py-2 text-xs"><option value="">{displays.length ? 'Select display…' : 'No displays available'}</option>{displays.map(display => <option key={display} value={display}>{display}</option>)}</select></label>
-    <div className="text-[10px] text-muted">{displays.length ? `${displays.length} display${displays.length === 1 ? '' : 's'} detected` : 'No Live View frames available'} · Auto-refreshes every 10 seconds.</div>
-  </div>
-  {latest?.url ? <div className="card p-3"><div className="flex items-center justify-between gap-3 mb-2"><div className="text-xs font-semibold">{domainUserOf(latest)} · {displayLabel(latest)} · {fmtDateTime(latest.capturedAt)}</div><span className="text-[10px] text-muted">Latest frame for selected display</span></div><img src={api.uploads.fileUrl(latest.url)} alt={`${device.deviceName} ${displayLabel(latest)}`} className="w-full max-h-[70vh] object-contain rounded-lg bg-black" /></div> : <div className="card py-12 text-center text-xs text-muted">{selectedDisplay ? `No Live View frame is available for ${selectedDisplay}.` : 'No Live View frame is available for this device.'}</div>}
-  </div>;
+  return <div className="space-y-4"><div className="card p-4 flex flex-wrap items-end gap-3"><label className="text-xs font-semibold"><span className="block text-[10px] text-muted uppercase mb-1">Domain User</span><select value={domainUser} onChange={e => setDomainUser(e.target.value)} className="input-surface rounded-lg px-3 py-2 text-xs"><option value="">All domain users</option>{users.map(user => <option key={user} value={user}>{user}</option>)}</select></label><div className="text-[10px] text-muted">Auto-refreshes every 10 seconds while this tab is open.</div></div>{!online ? <div className="card py-12 text-center"><div className="text-sm font-semibold">Live View unavailable</div><div className="text-xs text-muted mt-1">This device is currently {statusLabel(device?.status)}. No new Live View frames are being sent.</div></div> : latest?.url ? <div className="card p-3"><div className="flex items-center justify-between gap-3 mb-2"><div className="text-xs font-semibold">{domainUserOf(latest)} · {fmtDateTime(latest.capturedAt)}</div><span className="text-[10px] text-muted">{displayLabel(latest)}</span></div><img src={api.uploads.fileUrl(latest.url)} alt={device.deviceName} className="w-full max-h-[70vh] object-contain rounded-lg bg-black" /></div> : <div className="card py-12 text-center text-xs text-muted">No Live View frame is available for this device.</div>}</div>;
 }
 
 export default function DeviceDetailsPage({ deviceId, onBack }) {
