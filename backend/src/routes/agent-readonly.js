@@ -58,6 +58,9 @@ function publicDevice(device) {
     currentEmployeeId: current?.id || null,
     currentEmployeeName: current?.name || null,
     currentDomainUser: device.domainUser || null,
+    lastDomainUser: device.lastDomainUser || null,
+    currentSessionId: device.currentSessionId ?? null,
+    currentSessionLocked: device.currentSessionLocked === true,
     connectionType: device.isRdp ? 'RDP' : (device.domainUser ? 'Local' : null),
     isRdp: device.isRdp === true,
     sessionName: device.sessionName || null,
@@ -78,6 +81,13 @@ function findDevice(req, res) {
   return device;
 }
 
+function sessionsForDevice(deviceId) {
+  return (db.data.deviceSessions || [])
+    .filter(session => Number(session.deviceId) === Number(deviceId))
+    .sort((a, b) => new Date(b.startedAt || 0).getTime() - new Date(a.startedAt || 0).getTime())
+    .slice(0, 200);
+}
+
 agentReadonlyRouter.get('/devices', ...access, (req, res) => {
   const items = db.data.devices.filter(d => allowedDevice(req.user, d)).map(publicDevice);
   res.json(items);
@@ -91,7 +101,7 @@ agentReadonlyRouter.get('/devices/:id/history', ...access, (req, res) => {
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .slice(0, 5000)
     .map(item => ({ ...item, domainUser: item.domainUser || null }));
-  res.json({ device: publicDevice(device), history });
+  res.json({ device: publicDevice(device), history, sessions: sessionsForDevice(device.id) });
 });
 
 agentReadonlyRouter.get('/devices/:id/details', ...access, (req, res) => {
@@ -106,11 +116,11 @@ agentReadonlyRouter.get('/devices/:id/details', ...access, (req, res) => {
     .filter(item => Number(item.deviceId) === Number(device.id))
     .sort((a, b) => new Date(b.capturedAt).getTime() - new Date(a.capturedAt).getTime())
     .slice(0, 1000)
-    .map(item => ({ ...item, domainUser: item.domainUser || device.domainUser || null }));
+    .map(item => ({ ...item, domainUser: item.domainUser || null }));
   const liveFrames = (db.data.liveFrameHistory || [])
     .filter(item => Number(item.deviceId) === Number(device.id))
     .sort((a, b) => new Date(b.capturedAt).getTime() - new Date(a.capturedAt).getTime())
     .slice(0, 500)
-    .map(item => ({ ...item, domainUser: item.domainUser || device.domainUser || null }));
-  res.json({ device: publicDevice(device), history, screenshots, liveFrames });
+    .map(item => ({ ...item, domainUser: item.domainUser || null }));
+  res.json({ device: publicDevice(device), history, sessions: sessionsForDevice(device.id), screenshots, liveFrames });
 });
