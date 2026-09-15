@@ -26,7 +26,7 @@ function getMachineId() {
     'MachineGuid',
   ]);
 
-  const match = output.match(/MachineGuid\s+REG_SZ\s+(.+)/i);
+  const match = output.match(/MachineGuid\\s+REG_SZ\\s+(.+)/i);
   return match ? match[1].trim() : os.hostname();
 }
 
@@ -93,12 +93,62 @@ function getWtsLockInfo(sessionId) {
     return { locked: lockStateCache.locked, checked: lockStateCache.checked };
   }
 
-  // WTSQuerySessionInformation(WTSSessionInfoEx) exposes SessionFlags directly.
-  // Microsoft documents 0 as locked and 1 as unlocked on supported Windows versions.
-  // The extra Reserved DWORD matches the native WTSINFOEX layout used by Windows.
-  const script = `Add-Type -ErrorAction Stop -TypeDefinition @'\nusing System;\nusing System.Runtime.InteropServices;\n\npublic enum WtsInfoClass { WTSSessionInfoEx = 25 }\n\n[StructLayout(LayoutKind.Sequential)]\npublic struct WtsInfoExLevel1 {\n  public UInt32 SessionId;\n  public Int32 SessionState;\n  public Int32 SessionFlags;\n}\n\n[StructLayout(LayoutKind.Sequential)]\npublic struct WtsInfoExLevel {\n  public WtsInfoExLevel1 Level1;\n}\n\n[StructLayout(LayoutKind.Sequential)]\npublic struct WtsInfoEx {\n  public UInt32 Level;\n  public UInt32 Reserved;\n  public WtsInfoExLevel Data;\n}\n\npublic static class WtsNative {\n  [DllImport(\"wtsapi32.dll\", SetLastError = true)]\n  public static extern bool WTSQuerySessionInformationW(\n    IntPtr hServer,\n    UInt32 sessionId,\n    WtsInfoClass infoClass,\n    out IntPtr buffer,\n    out UInt32 bytesReturned);\n\n  [DllImport(\"wtsapi32.dll\")]\n  public static extern void WTSFreeMemory(IntPtr buffer);\n}\n'@; $buffer = [IntPtr]::Zero; $bytes = 0; $ok = [WtsNative]::WTSQuerySessionInformationW([IntPtr]::Zero, ${numericSessionId}, [WtsInfoClass]::WTSSessionInfoEx, [ref]$buffer, [ref]$bytes); if ($ok -and $buffer -ne [IntPtr]::Zero -and $bytes -ge 12) { try { $info = [Runtime.InteropServices.Marshal]::PtrToStructure($buffer, [type][WtsInfoEx]); Write-Output (\"$($info.Level)|$($info.Data.Level1.SessionFlags)|$($info.Data.Level1.SessionState)\") } finally { [WtsNative]::WTSFreeMemory($buffer) } }`;
+  // Keep the PowerShell source as a plain string plus concatenation. This avoids
+  // JavaScript template interpolation inside the embedded PowerShell script and
+  // prevents runtime errors such as "$script is not defined" in packaged builds.
+  const script = [
+    "Add-Type -ErrorAction Stop -TypeDefinition @'",
+    'using System;',
+    'using System.Runtime.InteropServices;',
+    '',
+    'public enum WtsInfoClass { WTSSessionInfoEx = 25 }',
+    '',
+    '[StructLayout(LayoutKind.Sequential)]',
+    'public struct WtsInfoExLevel1 {',
+    '  public UInt32 SessionId;',
+    '  public Int32 SessionState;',
+    '  public Int32 SessionFlags;',
+    '}',
+    '',
+    '[StructLayout(LayoutKind.Sequential)]',
+    'public struct WtsInfoExLevel {',
+    '  public WtsInfoExLevel1 Level1;',
+    '}',
+    '',
+    '[StructLayout(LayoutKind.Sequential)]',
+    'public struct WtsInfoEx {',
+    '  public UInt32 Level;',
+    '  public UInt32 Reserved;',
+    '  public WtsInfoExLevel Data;',
+    '}',
+    '',
+    'public static class WtsNative {',
+    '  [DllImport("wtsapi32.dll", SetLastError = true)]',
+    '  public static extern bool WTSQuerySessionInformationW(',
+    '    IntPtr hServer,',
+    '    UInt32 sessionId,',
+    '    WtsInfoClass infoClass,',
+    '    out IntPtr buffer,',
+    '    out UInt32 bytesReturned);',
+    '',
+    '  [DllImport("wtsapi32.dll")]',
+    '  public static extern void WTSFreeMemory(IntPtr buffer);',
+    '}',
+    "'@;",
+    '$buffer = [IntPtr]::Zero;',
+    '$bytes = 0;',
+    '$ok = [WtsNative]::WTSQuerySessionInformationW([IntPtr]::Zero, ' + String(numericSessionId) + ', [WtsInfoClass]::WTSSessionInfoEx, [ref]$buffer, [ref]$bytes);',
+    'if ($ok -and $buffer -ne [IntPtr]::Zero -and $bytes -ge 12) {',
+    '  try {',
+    '    $info = [Runtime.InteropServices.Marshal]::PtrToStructure($buffer, [type][WtsInfoEx]);',
+    '    Write-Output ($info.Level.ToString() + "|" + $info.Data.Level1.SessionFlags.ToString() + "|" + $info.Data.Level1.SessionState.ToString());',
+    '  } finally {',
+    '    [WtsNative]::WTSFreeMemory($buffer);',
+    '  }',
+    '}',
+  ].join('\n');
 
-  const output = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', $script]);
+  const output = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script]);
   let locked = null;
   let checked = false;
 
@@ -124,8 +174,18 @@ function getEventLockState(sessionId) {
   if (process.platform !== 'win32' || !Number.isFinite(Number(sessionId))) return null;
 
   const numericSessionId = Number(sessionId);
-  const script = `$events = @(Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = @(4800,4801) } -MaxEvents 40 -ErrorAction Stop); foreach ($event in $events) { [xml]$xml = $event.ToXml(); $session = ($xml.Event.EventData.Data | Where-Object { $_.Name -eq 'SessionId' } | Select-Object -First 1).'#text'; if ($session) { Write-Output (\"$($event.Id)|$($event.TimeCreated.ToUniversalTime().ToString('o'))|$session\") } }`;
-  const output = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', $script]);
+  const script = [
+    "$events = @(Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = @(4800,4801) } -MaxEvents 40 -ErrorAction Stop);",
+    'foreach ($event in $events) {',
+    '  [xml]$xml = $event.ToXml();',
+    "  $session = ($xml.Event.EventData.Data | Where-Object { $_.Name -eq 'SessionId' } | Select-Object -First 1).'#text';",
+    '  if ($session) {',
+    '    Write-Output ($event.Id.ToString() + "|" + $event.TimeCreated.ToUniversalTime().ToString(\'o\') + "|" + $session);',
+    '  }',
+    '}',
+  ].join('\n');
+
+  const output = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script]);
   if (!output) return null;
 
   const events = output.split(/\r?\n/)
@@ -164,11 +224,8 @@ function getActiveSession() {
     lockInfo: getWtsLockInfo(session.sessionId),
   }));
 
-  // When multiple users remain signed in, Windows marks the previous user's
-  // session as disconnected. When the foreground user is locked, WTS still
-  // reports that session as active, but SessionFlags tells us it is locked.
-  // Prefer an active + unlocked user session so a disconnected/locked user can
-  // never win the current-user selection.
+  // Prefer an active + unlocked user session. This prevents a locked session
+  // from being selected while another interactive session is available.
   const unlocked = enriched.filter(session => session.lockInfo.locked === false);
   const candidates = unlocked.length ? unlocked : enriched;
   return candidates.find(session => session.current) || candidates[0] || null;
@@ -263,8 +320,22 @@ function getIdentity() {
 function getIdleSeconds() {
   if (process.platform !== 'win32') return 0;
 
-  const script = `Add-Type @"\nusing System;\nusing System.Runtime.InteropServices;\npublic static class IdleNative {\n  [StructLayout(LayoutKind.Sequential)] public struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }\n  [DllImport("user32.dll")] public static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);\n  [DllImport("kernel32.dll")] public static extern uint GetTickCount();\n}\n"@; $info = New-Object IdleNative+LASTINPUTINFO; $info.cbSize = [Runtime.InteropServices.Marshal]::SizeOf($info); if([IdleNative]::GetLastInputInfo([ref]$info)){ [math]::Round((([IdleNative]::GetTickCount() - $info.dwTime) / 1000), 0) }`;
-  const output = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', $script]);
+  const script = [
+    'Add-Type @"',
+    'using System;',
+    'using System.Runtime.InteropServices;',
+    'public static class IdleNative {',
+    '  [StructLayout(LayoutKind.Sequential)] public struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }',
+    '  [DllImport("user32.dll")] public static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);',
+    '  [DllImport("kernel32.dll")] public static extern uint GetTickCount();',
+    '}',
+    '"@;',
+    '$info = New-Object IdleNative+LASTINPUTINFO;',
+    '$info.cbSize = [Runtime.InteropServices.Marshal]::SizeOf($info);',
+    'if([IdleNative]::GetLastInputInfo([ref]$info)){ [math]::Round((([IdleNative]::GetTickCount() - $info.dwTime) / 1000), 0) }',
+  ].join('\n');
+
+  const output = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script]);
   const value = Number(output);
   return Number.isFinite(value) ? value : 0;
 }
