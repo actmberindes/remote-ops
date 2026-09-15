@@ -11,6 +11,8 @@ import {
 import { api, getToken, setToken } from './lib/api.js';
 import WebUsageWidget from './components/WebUsageWidget.jsx';
 import AdminDeviceManagementPanel from './components/AdminDeviceManagementPanel.jsx';
+import ManagerDeviceManagementPage from './components/ManagerDeviceManagementPage.jsx';
+import DeviceDetailsPage from './components/DeviceDetailsPage.jsx';
 import LiveViewVideoPlayer from './components/LiveViewVideoPlayer.jsx';
 
 /* ============================== CONSTANTS ============================== */
@@ -529,6 +531,7 @@ const NAV_BY_ROLE = {
     { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { key: 'applications', label: 'Applications & Schedules', icon: ClipboardList },
     { key: 'users', label: 'User Management', icon: UserCog },
+    { key: 'device-management', label: 'Device Management', icon: Laptop },
     { key: 'tickets', label: 'Tickets', icon: Ticket },
     { key: 'assets', label: 'Assets', icon: Package },
     { key: 'live-view', label: 'Live View', icon: Radio },
@@ -539,6 +542,7 @@ const NAV_BY_ROLE = {
   Manager: [
     { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { key: 'applications', label: 'Applications & Schedules', icon: ClipboardList },
+    { key: 'device-management', label: 'Device Management', icon: Laptop },
     { key: 'tickets', label: 'Tickets', icon: Ticket },
     { key: 'assets', label: 'Assigned Assets', icon: Package },
     { key: 'live-view', label: 'Live View', icon: Radio },
@@ -1476,10 +1480,6 @@ function AdminUserManagement() {
       <UserFormModal isOpen={Boolean(editingUser)} onClose={() => setEditingUser(null)} user={editingUser} onSaved={handleSaved} />
       <UserFormModal isOpen={creating} onClose={() => setCreating(false)} user={null} onSaved={handleSaved} />
     </Card>
-    <AdminDeviceManagementPanel
-      users={users}
-      addToast={addToast}
-    />
     </div>
   );
 }
@@ -5239,12 +5239,23 @@ function WebUsagePage({
 }
 
 /* ============================== LAYOUT GUARD & ENTRYPOINT ============================== */
+function AdminDeviceManagementPage() {
+  const { users, addToast } = useApp();
+
+  return (
+    <AdminDeviceManagementPanel
+      users={users}
+      addToast={addToast}
+    />
+  );
+}
 
 const PAGES = {
   admin: {
     dashboard: AdminDashboard,
     applications: AdminApplicationsAndSchedules,
     users: AdminUserManagement,
+    'device-management': AdminDeviceManagementPage,
     tickets: AdminTickets,
     assets: AdminAssets,
     'live-view': AdminLiveView,
@@ -5256,6 +5267,7 @@ const PAGES = {
   manager: {
     dashboard: ManagerDashboard,
     applications: ManagerApplicationsAndSchedules,
+    'device-management': ManagerDeviceManagementPage,
     tickets: ManagerTickets,
     assets: ManagerAssetsReadOnly,
     'live-view': ManagerLiveView,
