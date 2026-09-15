@@ -93,6 +93,29 @@ function getActiveSession() {
   return active.find(session => session.current) || active[0];
 }
 
+function qualifyInteractiveUser(username) {
+  const normalized = String(username || '').trim();
+  if (!normalized) return '';
+  if (normalized.includes('\\')) return normalized;
+
+  // Win32_ComputerSystem.UserName returns DOMAIN\\username for the interactive
+  // workstation user on normal Windows workstations. Only use it when the user
+  // name matches the active session we already identified.
+  const systemUser = run('powershell.exe', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    '(Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue).UserName',
+  ]);
+
+  if (systemUser && /\\/.test(systemUser)) {
+    const systemUsername = systemUser.split('\\').pop().trim().toLowerCase();
+    if (systemUsername === normalized.toLowerCase()) return systemUser;
+  }
+
+  return normalized;
+}
+
 function getLockedState(sessionId) {
   if (process.platform !== 'win32' || !Number.isFinite(Number(sessionId))) {
     return false;
@@ -163,7 +186,7 @@ function getInteractiveUser() {
   const activeSession = getActiveSession();
   if (activeSession?.username) {
     const normalized = activeSession.username.trim();
-    if (!isServiceIdentity(normalized)) return normalized;
+    if (!isServiceIdentity(normalized)) return qualifyInteractiveUser(normalized);
   }
 
   const processUser = run('whoami.exe', []);
@@ -202,7 +225,7 @@ function getIdentity() {
   return {
     machineId: getMachineId(),
     hostname,
-    domain: sessionLocked ? null : domain,
+    domain,
     domainUser: sessionLocked ? null : domainUser,
     username: sessionLocked ? null : username,
     ipAddress: getPrimaryIPv4() || null,
