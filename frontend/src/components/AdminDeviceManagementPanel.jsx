@@ -31,11 +31,6 @@ function connectionLabel(device) {
   return '—';
 }
 
-function hashDeviceId() {
-  const match = window.location.hash.match(/^#\/device\/(\d+)$/);
-  return match ? Number(match[1]) : null;
-}
-
 export default function AdminDeviceManagementPanel({ users = [], addToast }) {
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -45,7 +40,7 @@ export default function AdminDeviceManagementPanel({ users = [], addToast }) {
   const [deviceName, setDeviceName] = useState('');
   const [deviceType, setDeviceType] = useState('desktop-agent');
   const [enrollment, setEnrollment] = useState(null);
-  const [selectedDeviceId, setSelectedDeviceId] = useState(() => hashDeviceId());
+  const [selectedDeviceId, setSelectedDeviceId] = useState(null);
 
   const employees = useMemo(
     () => users.filter(u => u.role === 'Employee'),
@@ -69,19 +64,11 @@ export default function AdminDeviceManagementPanel({ users = [], addToast }) {
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    const syncHash = () => setSelectedDeviceId(hashDeviceId());
-    window.addEventListener('hashchange', syncHash);
-    return () => window.removeEventListener('hashchange', syncHash);
-  }, []);
-
   const openDevice = device => {
-    window.location.hash = `/device/${device.id}`;
     setSelectedDeviceId(device.id);
   };
 
   const closeDevice = () => {
-    if (window.location.hash) window.history.pushState({}, '', `${window.location.pathname}${window.location.search}`);
     setSelectedDeviceId(null);
   };
 
