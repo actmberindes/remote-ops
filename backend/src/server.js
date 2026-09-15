@@ -10,6 +10,7 @@ import { ticketsRouter } from './routes/tickets.js';
 import { assetsRouter } from './routes/assets.js';
 import { assetTagsRouter } from './routes/asset-tags.js';
 import { uploadsRouter, uploadsDir } from './uploads.js';
+import { agentReadonlyRouter } from './routes/agent-readonly.js';
 import { agentRouter } from './routes/agent.js';
 import { agentMonitoringRouter } from './routes/agent-monitoring.js';
 import { activityRouter, purgeOldActivity } from './routes/activity.js';
@@ -56,6 +57,7 @@ app.use('/api/assets', (req, res, next) => {
 app.use('/api/assets', assetsRouter);
 app.use('/api/asset-tags', assetTagsRouter);
 app.use('/api/uploads', uploadsRouter);
+app.use('/api/agent', agentReadonlyRouter);
 app.use('/api/agent', agentRouter);
 app.use('/api/agent', agentMonitoringRouter);
 app.use('/api/activity/live-video', (req, res) => res.status(410).json({ error: 'Live View Timelapse video generation has been removed.' }));
