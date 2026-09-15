@@ -18,7 +18,9 @@ function domainUserOf(item, device) {
   return item?.domainUser || item?.currentDomainUser || device?.domainUser || null;
 }
 
-agentMonitoringRouter.get('/devices/:id/screenshots', requireAuth(db), requireRole('Admin'), (req, res) => {
+const monitoringAccess = [requireAuth(db), requireRole('Admin', 'Manager')];
+
+agentMonitoringRouter.get('/devices/:id/screenshots', ...monitoringAccess, (req, res) => {
   const device = deviceOr404(req, res);
   if (!device) return;
 
@@ -50,7 +52,7 @@ agentMonitoringRouter.get('/devices/:id/screenshots', requireAuth(db), requireRo
   });
 });
 
-agentMonitoringRouter.get('/devices/:id/screenshot-users', requireAuth(db), requireRole('Admin'), (req, res) => {
+agentMonitoringRouter.get('/devices/:id/screenshot-users', ...monitoringAccess, (req, res) => {
   const device = deviceOr404(req, res);
   if (!device) return;
 
