@@ -108,8 +108,6 @@ function serializeFrame(frame, fallbackIndex = 1) {
     displayIndex: Number(frame?.displayIndex) || fallbackIndex,
     frameUrl: frame?.url || null,
     capturedAt: frame?.capturedAt || null,
-    domainUser: frame?.domainUser || null,
-    sessionId: frame?.sessionId ?? null,
   };
 }
 
@@ -119,43 +117,20 @@ function scopedEmployeeIds(user) {
   return new Set([user.id]);
 }
 
-function validateCaptureSession(device, body) {
-  const sessionId = body.sessionId === null || body.sessionId === undefined || body.sessionId === ''
-    ? null
-    : Number(body.sessionId);
-  const domainUser = body.domainUser ? String(body.domainUser).trim() : '';
-
-  if (body.sessionLocked === true || !domainUser || sessionId === null || !Number.isFinite(sessionId)) {
-    return { ok: false, status: 409, error: 'Monitoring capture rejected because there is no unlocked interactive Windows session.' };
-  }
-
-  if (device.currentSessionId === null || device.currentSessionId === undefined || Number(device.currentSessionId) !== sessionId) {
-    return { ok: false, status: 409, error: 'Monitoring capture rejected because the Windows user session changed before upload.' };
-  }
-
-  if (!device.domainUser || String(device.domainUser).trim().toLowerCase() !== domainUser.toLowerCase()) {
-    return { ok: false, status: 409, error: 'Monitoring capture rejected because the current Windows user changed before upload.' };
-  }
-
-  return { ok: true, sessionId, domainUser };
-}
-
 multiDisplayActivityRouter.post('/live-frame', requireDevice(db), async (req, res) => {
-  const { url, capturedAt, displayId = null, displayName = null, displayIndex = 1, domainUser = null, sessionId = null, sessionLocked = false } = req.body || {};
+  const { url, capturedAt, displayId = null, displayName = null, displayIndex = 1 } = req.body || {};
   if (!url) return res.status(400).json({ error: 'url is required.' });
 
-  const validation = validateCaptureSession(req.device, { domainUser, sessionId, sessionLocked });
-  if (!validation.ok) return res.status(validation.status).json({ error: validation.error });
-
   const ts = capturedAt || new Date().toISOString();
-  const employee = resolveCurrentEmployee(validation.domainUser);
-  const employeeId = employee?.id || req.device.employeeId;
+  const employeeId = currentEmployeeIdForDevice(req.device) || req.device.employeeId;
   const rdp = deviceIsRdp(req.device);
   const normalizedIndex = rdp ? 1 : Math.max(1, Number(displayIndex) || 1);
   const normalizedId = rdp ? '\\\\.\\DISPLAY1' : (displayId ? String(displayId) : `display-${normalizedIndex}`);
   const normalizedName = rdp ? '\\\\.\\DISPLAY1' : (displayName ? String(displayName) : `Display ${normalizedIndex}`);
   const frames = db.data.liveFrames || (db.data.liveFrames = []);
 
+  // When a device transitions from local multi-monitor mode to RDP mode,
+  // discard stale secondary live frames so they cannot reappear in Live View.
   if (rdp) {
     db.data.liveFrames = frames.filter(frame => {
       if (frame.deviceId !== req.device.id) return true;
@@ -165,6 +140,7 @@ multiDisplayActivityRouter.post('/live-frame', requireDevice(db), async (req, re
 
   const activeFrames = db.data.liveFrames;
   const existing = activeFrames.find(frame => frame.deviceId === req.device.id && displayKey(frame) === normalizedId);
+
   const nextFrame = {
     employeeId,
     deviceId: req.device.id,
@@ -173,8 +149,6 @@ multiDisplayActivityRouter.post('/live-frame', requireDevice(db), async (req, re
     displayId: normalizedId,
     displayName: normalizedName,
     displayIndex: normalizedIndex,
-    domainUser: validation.domainUser,
-    sessionId: validation.sessionId,
   };
 
   if (existing) Object.assign(existing, nextFrame);
@@ -188,16 +162,12 @@ multiDisplayActivityRouter.post('/live-frame', requireDevice(db), async (req, re
 });
 
 multiDisplayActivityRouter.post('/screenshots', requireDevice(db), async (req, res) => {
-  const { url, filename, capturedAt, displayId = null, displayName = null, displayIndex = 1, domainUser = null, sessionId = null, sessionLocked = false } = req.body || {};
+  const { url, filename, capturedAt, displayId = null, displayName = null, displayIndex = 1 } = req.body || {};
   if (!url) return res.status(400).json({ error: 'url is required (upload the file to /api/uploads/monitoring first).' });
-
-  const validation = validateCaptureSession(req.device, { domainUser, sessionId, sessionLocked });
-  if (!validation.ok) return res.status(validation.status).json({ error: validation.error });
 
   const rdp = deviceIsRdp(req.device);
   const normalizedIndex = rdp ? 1 : Math.max(1, Number(displayIndex) || 1);
-  const employee = resolveCurrentEmployee(validation.domainUser);
-  const currentEmployeeId = employee?.id || req.device.employeeId;
+  const currentEmployeeId = currentEmployeeIdForDevice(req.device) || req.device.employeeId;
   const entry = {
     id: nextId(),
     employeeId: currentEmployeeId,
@@ -209,8 +179,6 @@ multiDisplayActivityRouter.post('/screenshots', requireDevice(db), async (req, r
     displayId: rdp ? '\\\\.\\DISPLAY1' : (displayId ? String(displayId) : `display-${normalizedIndex}`),
     displayName: rdp ? '\\\\.\\DISPLAY1' : (displayName ? String(displayName) : `Display ${normalizedIndex}`),
     displayIndex: normalizedIndex,
-    domainUser: validation.domainUser,
-    sessionId: validation.sessionId,
   };
 
   db.data.screenshots.push(entry);
@@ -237,8 +205,8 @@ multiDisplayActivityRouter.get('/live-view', requireAuth(db), requireRole('Admin
 
   const result = [...chosen.entries()].map(([employeeId, device]) => {
     const emp = db.data.users.find(u => u.id === employeeId);
-    const currentFrames = latestFramesForDevice(device.id).filter(frame => frame.employeeId === employeeId && String(frame.domainUser || '').toLowerCase() === String(device.domainUser || '').toLowerCase());
-    const historyFrames = latestHistoryFramesForDevice(device.id, employeeId).filter(frame => String(frame.domainUser || '').toLowerCase() === String(device.domainUser || '').toLowerCase());
+    const currentFrames = latestFramesForDevice(device.id).filter(frame => frame.employeeId === employeeId);
+    const historyFrames = latestHistoryFramesForDevice(device.id, employeeId);
     const usableFrames = currentFrames.length > 0 ? currentFrames : historyFrames;
     const allDisplays = usableFrames.map((frame, index) => serializeFrame(frame, index + 1));
     const rdp = deviceIsRdp(device);

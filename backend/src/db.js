@@ -12,7 +12,7 @@ const defaultData = {
   users: [], applications: [], timeSessions: [], notifications: [],
   tickets: [], ticketMessages: [], ticketAttachments: [],
   assets: [], assetAssignments: [], assetLogs: [],
-  devices: [], pairingCodes: [], deviceStateHistory: [], deviceSessions: [], screenshots: [], liveFrames: [], liveFrameHistory: [], webUsageLogs: [],
+  devices: [], pairingCodes: [], deviceStateHistory: [], screenshots: [], liveFrames: [], liveFrameHistory: [], webUsageLogs: [],
   agentConfig: {
     screenshotIntervalMinutes: 10,
     liveViewFrameIntervalSeconds: 5,
@@ -29,7 +29,6 @@ for (const key of Object.keys(defaultData)) {
   if (db.data[key] === undefined) db.data[key] = defaultData[key];
 }
 if (!Array.isArray(db.data.deviceStateHistory)) db.data.deviceStateHistory = [];
-if (!Array.isArray(db.data.deviceSessions)) db.data.deviceSessions = [];
 
 function employeeIdForDomainUser(domainUser) {
   const normalized = String(domainUser || '').trim().toLowerCase();
@@ -51,9 +50,6 @@ for (const device of db.data.devices) {
   if (device.agentVersion === undefined) device.agentVersion = null;
   if (device.currentEmployeeId === undefined) device.currentEmployeeId = employeeIdForDomainUser(device.domainUser);
   if (device.currentSessionStartedAt === undefined) device.currentSessionStartedAt = null;
-  if (device.currentSessionId === undefined) device.currentSessionId = null;
-  if (device.currentSessionLocked === undefined) device.currentSessionLocked = false;
-  if (device.lastDomainUser === undefined) device.lastDomainUser = device.domainUser || null;
 }
 if (db.data.agentConfig && db.data.agentConfig.screenshotRetentionDays === 30 && !db.data.agentConfig.liveViewRetentionDays) db.data.agentConfig.screenshotRetentionDays = 7;
 if (db.data.agentConfig && db.data.agentConfig.screenshotRetentionDays === 7) db.data.agentConfig.screenshotRetentionDays = 3;

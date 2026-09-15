@@ -13,6 +13,9 @@ function canView(user, device) {
   const team = teamIdsOf(user.id);
   return team.has(device.employeeId) || team.has(device.currentEmployeeId);
 }
+function domainUserOf(item, device) {
+  return item?.domainUser || item?.currentDomainUser || device?.domainUser || null;
+}
 function deviceOr404(req, res) {
   const id = Number(req.params.id);
   const device = db.data.devices.find(item => Number(item.id) === id);
@@ -28,9 +31,7 @@ agentMonitoringReadonlyRouter.get('/devices/:id/screenshots', ...access, (req, r
   const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
   const date = String(req.query.date || '').trim();
   const domainUser = String(req.query.domainUser || '').trim();
-  let list = (db.data.screenshots || [])
-    .filter(item => Number(item.deviceId) === Number(device.id))
-    .map(item => ({ ...item, domainUser: item.domainUser || null }));
+  let list = (db.data.screenshots || []).filter(item => Number(item.deviceId) === Number(device.id)).map(item => ({ ...item, domainUser: domainUserOf(item, device) }));
   if (date) list = list.filter(item => String(item.capturedAt || '').slice(0, 10) === date);
   if (domainUser) list = list.filter(item => item.domainUser === domainUser);
   list.sort((a, b) => new Date(b.capturedAt || 0).getTime() - new Date(a.capturedAt || 0).getTime());
@@ -44,11 +45,6 @@ agentMonitoringReadonlyRouter.get('/devices/:id/screenshots', ...access, (req, r
 agentMonitoringReadonlyRouter.get('/devices/:id/screenshot-users', ...access, (req, res) => {
   const device = deviceOr404(req, res);
   if (!device) return;
-  const users = [...new Set(
-    (db.data.screenshots || [])
-      .filter(item => Number(item.deviceId) === Number(device.id))
-      .map(item => item.domainUser || null)
-      .filter(Boolean)
-  )].sort((a, b) => a.localeCompare(b));
+  const users = [...new Set((db.data.screenshots || []).filter(item => Number(item.deviceId) === Number(device.id)).map(item => domainUserOf(item, device)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   res.json({ users });
 });
