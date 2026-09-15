@@ -11,100 +11,168 @@ let mount = null;
 let root = null;
 let savedMainChildren = [];
 let active = false;
+let leavingDeviceRoute = false;
 
-function getMain() { return document.querySelector('main'); }
-function isDeviceRoute() { return window.location.hash === HASH || DEVICE_HASH.test(window.location.hash); }
+function getMain() {
+  return document.querySelector('main');
+}
+
+function isDeviceRoute() {
+  return window.location.hash === HASH || DEVICE_HASH.test(window.location.hash);
+}
+
+function clearDeviceHash() {
+  if (!isDeviceRoute()) return;
+  window.history.replaceState(
+    {},
+    '',
+    `${window.location.pathname}${window.location.search}`
+  );
+}
 
 function enforceMain() {
   if (!active || !mount?.isConnected) return;
   const main = getMain();
   if (!main) return;
-  [...main.children].forEach(node => { if (node !== mount) node.style.display = 'none'; });
+  [...main.children].forEach(node => {
+    if (node !== mount) node.style.display = 'none';
+  });
 }
 
 function restoreMain() {
   const main = getMain();
-  if (main) savedMainChildren.forEach(({ node, display }) => { if (node && node.isConnected) node.style.display = display; });
+  if (main) {
+    savedMainChildren.forEach(({ node, display }) => {
+      if (node && node.isConnected) node.style.display = display;
+    });
+  }
+
   savedMainChildren = [];
+
   if (mount?.isConnected) mount.remove();
-  if (root) { root.unmount(); root = null; }
+  if (root) {
+    root.unmount();
+    root = null;
+  }
+
   mount = null;
   active = false;
+
   if (navButton) navButton.dataset.active = 'false';
+}
+
+function leaveDeviceManagement() {
+  if (!active && !isDeviceRoute()) return;
+  leavingDeviceRoute = true;
+  clearDeviceHash();
+  restoreMain();
+  queueMicrotask(() => {
+    leavingDeviceRoute = false;
+  });
 }
 
 function showPage() {
   const main = getMain();
   if (!main) return;
-  if (active && mount?.isConnected) { enforceMain(); return; }
+
+  if (active && mount?.isConnected) {
+    enforceMain();
+    return;
+  }
+
   restoreMain();
-  savedMainChildren = [...main.children].map(node => ({ node, display: node.style.display }));
-  savedMainChildren.forEach(({ node }) => { node.style.display = 'none'; });
+
+  savedMainChildren = [...main.children].map(node => ({
+    node,
+    display: node.style.display
+  }));
+
+  savedMainChildren.forEach(({ node }) => {
+    node.style.display = 'none';
+  });
+
   mount = document.createElement('div');
   mount.dataset.remoteopsDeviceManagement = 'true';
   mount.className = 'w-full';
   main.appendChild(mount);
+
   root = createRoot(mount);
   root.render(createElement(DeviceManagementRoute));
+
   active = true;
   if (navButton) navButton.dataset.active = 'true';
 }
 
 function syncRoute() {
-  if (isDeviceRoute()) showPage();
-  else if (active) restoreMain();
+  if (leavingDeviceRoute) return;
+
+  if (isDeviceRoute()) {
+    showPage();
+  } else if (active) {
+    restoreMain();
+  }
 }
 
-function getCurrentUser(response) {
-  return response?.user || response || null;
-}
+function sidebarClickHandler(event) {
+  if (!active) return;
 
-function findSidebar() {
-  const containers = [
-    ...document.querySelectorAll('aside.sidebar, aside, [role="navigation"], nav')
-  ];
+  const clickedNav = event.target?.closest?.('button, a');
+  if (!clickedNav || clickedNav === navButton || navButton?.contains(clickedNav)) {
+    return;
+  }
 
-  const matched = containers.find(container =>
-    /Dashboard|User Management|Applications|Tickets/i.test(container.textContent || '')
-  );
+  const sidebar = clickedNav.closest('.sidebar, aside, nav');
+  if (!sidebar) return;
 
-  if (matched) return matched;
-
-  const menuButton = [...document.querySelectorAll('button, a')].find(el =>
-    /^(Dashboard|User Management|Applications & Schedules|Tickets)$/i.test((el.textContent || '').trim())
-  );
-
-  return menuButton?.closest('aside, nav, [role="navigation"]') || null;
+  // Let the application's normal sidebar navigation proceed, but first
+  // remove our Device Management route and restore the original main view.
+  leaveDeviceManagement();
 }
 
 function addNavButton() {
   if (!role || !['Admin', 'Manager'].includes(role)) return;
   if (navButton?.isConnected) return;
 
-  const nav = findSidebar();
-  if (!nav) return;
-
   navButton = document.createElement('button');
   navButton.type = 'button';
+  navButton.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-left hover-surface transition-colors';
   navButton.dataset.remoteopsDeviceManagementNav = 'true';
-  navButton.className = 'nav-item w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all hover-surface text-muted';
   navButton.innerHTML = '<span class="text-base leading-none">▣</span><span>Device Management</span>';
-  navButton.title = role === 'Manager' ? 'Device Management (Read-only)' : 'Device Management';
+  navButton.title = role === 'Manager'
+    ? 'Device Management (Read-only)'
+    : 'Device Management';
 
   navButton.addEventListener('click', event => {
     event.preventDefault();
     event.stopPropagation();
+
+    clearDeviceHash();
     window.location.hash = HASH;
     showPage();
   });
 
-  const userButton = [...nav.querySelectorAll('button,a')].find(el =>
-    /User Management/i.test(el.textContent || '')
-  );
-  const anchor = userButton?.closest('.nav-item') || userButton?.parentElement;
+  // Prefer the application's existing sidebar/nav and place the new item
+  // directly after the User Management menu item.
+  const sidebar = document.querySelector('.sidebar') || document.querySelector('aside');
+  const nav = sidebar?.querySelector('nav') || sidebar || [...document.querySelectorAll('nav')]
+    .find(el => /User Management|Dashboard|Tickets/i.test(el.textContent || ''))
+    || document.querySelector('nav');
 
-  if (anchor?.parentElement) {
-    anchor.parentElement.insertAdjacentElement('afterend', navButton);
+  if (!nav) {
+    navButton = null;
+    return;
+  }
+
+  const userButton = [...nav.querySelectorAll('button, a')]
+    .find(el => /User Management/i.test(el.textContent || ''));
+
+  if (userButton) {
+    const userContainer = userButton.closest('div.flex, li') || userButton.parentElement;
+    if (userContainer?.parentElement) {
+      userContainer.parentElement.insertBefore(navButton, userContainer.nextSibling);
+    } else {
+      userButton.insertAdjacentElement('afterend', navButton);
+    }
   } else {
     nav.appendChild(navButton);
   }
@@ -114,20 +182,31 @@ function hideEmbeddedDevicePanel() {
   document.querySelectorAll('.card').forEach(card => {
     if (card.closest('[data-remoteops-device-management]')) return;
     if (card.dataset.remoteopsEmbeddedDevicePanel === 'hidden') return;
-    const heading = [...card.querySelectorAll('h3,h2,div')].find(el => (el.textContent || '').trim() === 'Device Management');
-    if (heading) { card.dataset.remoteopsEmbeddedDevicePanel = 'hidden'; card.style.display = 'none'; }
+
+    const heading = [...card.querySelectorAll('h3,h2,div')]
+      .find(el => (el.textContent || '').trim() === 'Device Management');
+
+    if (heading) {
+      card.dataset.remoteopsEmbeddedDevicePanel = 'hidden';
+      card.style.display = 'none';
+    }
   });
 }
 
 async function start() {
   try {
-    const meResponse = await api.me();
-    const me = getCurrentUser(meResponse);
-    role = me?.role || null;
+    const me = await api.me();
+    role = me?.user?.role || me?.role || null;
+
     addNavButton();
     hideEmbeddedDevicePanel();
     syncRoute();
-  } catch (_) {}
+  } catch (_) {
+    // Leave the application's native sidebar untouched if authentication
+    // cannot be resolved by the enhancer.
+  }
+
+  document.addEventListener('click', sidebarClickHandler, true);
 
   const observer = new MutationObserver(() => {
     addNavButton();
@@ -135,11 +214,19 @@ async function start() {
     syncRoute();
     enforceMain();
   });
-  observer.observe(document.body, { childList: true, subtree: true });
+
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+
   window.addEventListener('hashchange', syncRoute);
 }
 
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
-else start();
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', start, { once: true });
+} else {
+  start();
+}
 
 export {};
