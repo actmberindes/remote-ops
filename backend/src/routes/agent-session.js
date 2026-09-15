@@ -72,12 +72,30 @@ function syncSession(device, telemetry, now) {
     : Number(telemetry.sessionId);
   const incomingUser = telemetry.domainUser ? String(telemetry.domainUser).trim() : null;
   const previousSessionId = device.currentSessionId;
-  const previousUser = device.domainUser || null;
+  const previousUser = device.domainUser || device.lastDomainUser || null;
   const sameSession = incomingSessionId !== null &&
     previousSessionId !== null &&
     previousSessionId !== undefined &&
     Number(previousSessionId) === incomingSessionId &&
     String(previousUser || '').toLowerCase() === String(incomingUser || '').toLowerCase();
+
+  // Locking is not a user switch. Keep the same session record open so the
+  // subsequent unlock resumes the exact same Windows session.
+  if (telemetry.sessionLocked && previousSessionId !== null && previousSessionId !== undefined) {
+    const current = (db.data.deviceSessions || []).find(session =>
+      Number(session.deviceId) === Number(device.id) &&
+      Number(session.sessionId) === Number(previousSessionId) &&
+      !session.endedAt
+    );
+    if (current) {
+      current.lastSeenAt = now;
+      current.status = 'locked';
+    }
+    device.currentSessionLocked = true;
+    device.domainUser = null;
+    device.currentEmployeeId = null;
+    return;
+  }
 
   if (!sameSession && (previousSessionId !== null && previousSessionId !== undefined)) {
     closeCurrentSession(device, now, 'switched');
@@ -103,39 +121,22 @@ function syncSession(device, telemetry, now) {
         startedAt: now,
         lastSeenAt: now,
         endedAt: null,
-        status: telemetry.sessionLocked ? 'locked' : telemetry.state,
+        status: telemetry.state,
       };
       db.data.deviceSessions.push(session);
     } else {
       session.lastSeenAt = now;
-      session.status = telemetry.sessionLocked ? 'locked' : telemetry.state;
+      session.status = telemetry.state;
+      session.endedAt = null;
     }
 
     device.currentSessionId = incomingSessionId;
     device.currentSessionStartedAt = session.startedAt;
-    device.currentSessionLocked = telemetry.sessionLocked === true;
+    device.currentSessionLocked = false;
     device.lastDomainUser = incomingUser;
     device.domain = telemetry.domain ? String(telemetry.domain) : device.domain || null;
-    device.currentEmployeeId = telemetry.sessionLocked ? null : (resolveCurrentEmployee(incomingUser)?.id || null);
-    device.domainUser = telemetry.sessionLocked ? null : incomingUser;
-    return;
-  }
-
-  // A lock keeps the Windows session alive but there is no interactive desktop.
-  // Preserve the session ID and last user so the next heartbeat can resume it.
-  if (telemetry.sessionLocked && previousSessionId !== null && previousSessionId !== undefined) {
-    const current = (db.data.deviceSessions || []).find(session =>
-      Number(session.deviceId) === Number(device.id) &&
-      Number(session.sessionId) === Number(previousSessionId) &&
-      !session.endedAt
-    );
-    if (current) {
-      current.lastSeenAt = now;
-      current.status = 'locked';
-    }
-    device.currentSessionLocked = true;
-    device.domainUser = null;
-    device.currentEmployeeId = null;
+    device.currentEmployeeId = resolveCurrentEmployee(incomingUser)?.id || null;
+    device.domainUser = incomingUser;
     return;
   }
 
