@@ -20,12 +20,6 @@ function scopedEmployeeIds(user) {
   return new Set([user.id]);
 }
 
-function currentDomainUser(item) {
-  if (item.domainUser) return item.domainUser;
-  const device = db.data.devices.find(device => Number(device.id) === Number(item.deviceId));
-  return device?.domainUser || null;
-}
-
 screenshotPaginationRouter.get('/screenshots-page', requireAuth(db), requireRole('Admin', 'Manager'), (req, res) => {
   purgeOldActivity();
 
@@ -36,10 +30,8 @@ screenshotPaginationRouter.get('/screenshots-page', requireAuth(db), requireRole
   const page = Math.max(Number(req.query.page) || 1, 1);
 
   let list = db.data.screenshots.filter(item => !allowed || allowed.has(item.employeeId));
-
   if (employeeId) list = list.filter(item => item.employeeId === employeeId);
   if (date) list = list.filter(item => String(item.capturedAt || '').slice(0, 10) === date);
-
   list.sort((a, b) => (a.capturedAt < b.capturedAt ? 1 : -1));
 
   const total = list.length;
@@ -50,14 +42,8 @@ screenshotPaginationRouter.get('/screenshots-page', requireAuth(db), requireRole
   const items = list.slice(offset, offset + pageSize).map(item => ({
     ...item,
     employeeName: `${userName(item.employeeId)}${item.displayName ? ` · ${item.displayName}` : ''}`,
-    domainUser: currentDomainUser(item),
+    domainUser: item.domainUser || null,
   }));
 
-  res.json({
-    items,
-    total,
-    page: safePage,
-    pageSize,
-    totalPages,
-  });
+  res.json({ items, total, page: safePage, pageSize, totalPages });
 });
