@@ -1,0 +1,105 @@
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import { api } from './lib/api.js';
+import DeviceManagementRoute from './components/DeviceManagementRoute.jsx';
+
+const HASH = '#/device-management';
+let role = null;
+let navButton = null;
+let mount = null;
+let root = null;
+let savedMainChildren = [];
+let active = false;
+
+function getMain() { return document.querySelector('main'); }
+
+function restoreMain() {
+  const main = getMain();
+  if (!main) return;
+  savedMainChildren.forEach(({ node, display }) => {
+    if (node && node.isConnected) node.style.display = display;
+  });
+  savedMainChildren = [];
+  if (mount?.isConnected) mount.remove();
+  mount = null;
+  if (root) { root.unmount(); root = null; }
+  active = false;
+  if (navButton) navButton.dataset.active = 'false';
+}
+
+function showPage() {
+  const main = getMain();
+  if (!main) return;
+  if (active && mount?.isConnected) return;
+  restoreMain();
+  savedMainChildren = [...main.children].map(node => ({ node, display: node.style.display }));
+  savedMainChildren.forEach(({ node }) => { node.style.display = 'none'; });
+  mount = document.createElement('div');
+  mount.dataset.remoteopsDeviceManagement = 'true';
+  mount.className = 'w-full';
+  main.appendChild(mount);
+  root = createRoot(mount);
+  root.render(<DeviceManagementRoute />);
+  active = true;
+  if (navButton) navButton.dataset.active = 'true';
+}
+
+function syncRoute() {
+  if (window.location.hash === HASH) showPage();
+  else if (active) restoreMain();
+}
+
+function addNavButton() {
+  if (!role || !['Admin', 'Manager'].includes(role)) return;
+  if (navButton?.isConnected) return;
+  const nav = [...document.querySelectorAll('nav')].find(el => /User Management|Dashboard|Tickets/i.test(el.textContent || '')) || document.querySelector('nav');
+  if (!nav) return;
+
+  navButton = document.createElement('button');
+  navButton.type = 'button';
+  navButton.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-left hover-surface transition-colors';
+  navButton.innerHTML = '<span class="text-base leading-none">▣</span><span>Device Management</span>';
+  navButton.title = role === 'Manager' ? 'Device Management (Read-only)' : 'Device Management';
+  navButton.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    window.location.hash = HASH;
+    showPage();
+  });
+
+  const userButton = [...nav.querySelectorAll('button,a')].find(el => /User Management/i.test(el.textContent || ''));
+  if (userButton?.parentElement) userButton.parentElement.insertAdjacentElement('afterend', navButton);
+  else nav.appendChild(navButton);
+}
+
+function hideEmbeddedDevicePanel() {
+  document.querySelectorAll('[data-remoteops-device-management]').forEach(() => {});
+  document.querySelectorAll('.card').forEach(card => {
+    if (card.closest('[data-remoteops-device-management]')) return;
+    const heading = [...card.querySelectorAll('h3,h2,div')].find(el => (el.textContent || '').trim() === 'Device Management');
+    if (heading) card.dataset.remoteopsEmbeddedDevicePanel = 'hidden';
+  });
+}
+
+async function start() {
+  try {
+    const me = await api.me();
+    role = me?.role || null;
+    addNavButton();
+    hideEmbeddedDevicePanel();
+    syncRoute();
+  } catch (_) {}
+
+  const observer = new MutationObserver(() => {
+    addNavButton();
+    hideEmbeddedDevicePanel();
+    syncRoute();
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  window.addEventListener('hashchange', syncRoute);
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+else start();
+
+export {};
