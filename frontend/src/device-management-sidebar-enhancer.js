@@ -1,4 +1,3 @@
-import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { api } from './lib/api.js';
 import DeviceManagementRoute from './components/DeviceManagementRoute.jsx';
