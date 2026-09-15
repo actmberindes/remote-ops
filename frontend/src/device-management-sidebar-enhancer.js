@@ -1,4 +1,5 @@
 import { createRoot } from 'react-dom/client';
+import { createElement } from 'react';
 import { api } from './lib/api.js';
 import DeviceManagementRoute from './components/DeviceManagementRoute.jsx';
 
@@ -44,7 +45,7 @@ function showPage() {
   mount.className = 'w-full';
   main.appendChild(mount);
   root = createRoot(mount);
-  root.render(<DeviceManagementRoute />);
+  root.render(createElement(DeviceManagementRoute));
   active = true;
   if (navButton) navButton.dataset.active = 'true';
 }
