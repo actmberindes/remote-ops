@@ -19,6 +19,8 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
         hostname: telemetry.hostname,
         domain: telemetry.domain,
         domainUser: telemetry.domainUser,
+        sessionId: telemetry.sessionId,
+        sessionLocked: telemetry.sessionLocked,
         isRdp: telemetry.isRdp,
         sessionName: telemetry.sessionName,
         agentVersion: config.agentVersion,
@@ -28,8 +30,8 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       onDeviceStateChange?.(telemetry.state, telemetry);
       if (telemetry.state === 'active') log(`Heartbeat: Active — ${telemetry.domainUser || 'No user'}${telemetry.isRdp ? ' (RDP)' : ''}.`);
       else if (telemetry.state === 'idle') log(`Heartbeat: Idle — ${telemetry.domainUser || 'No user'} (5+ minutes)${telemetry.isRdp ? ' (RDP)' : ''}.`);
-      else if (telemetry.sessionLocked) log('Heartbeat: Workstation locked — monitoring paused until an interactive user unlocks the workstation.');
-      else log('Heartbeat: No logged-in Windows user.');
+      else if (telemetry.sessionLocked) log(`Heartbeat: Workstation locked — ${telemetry.domainUser || 'Previous user'} session ${telemetry.sessionId ?? 'unknown'}; monitoring paused.`);
+      else log('Heartbeat: No active interactive Windows user.');
     } catch (e) {
       onDeviceStateChange?.('offline');
       log(`Heartbeat failed: ${e.message}`);
@@ -50,15 +52,15 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
     return uploaded;
   }
 
-  function capturesForSession(captures, telemetry) {
-    if (!telemetry.isRdp) return captures;
-    return captures.filter(item => Number(item.displayIndex) === 1).slice(0, 1);
-  }
-
-  function sameInteractiveUser(a, b) {
+  function sameInteractiveSession(a, b) {
+    if (!a || !b || a.state === 'logged-out' || b.state === 'logged-out') return false;
+    if (a.sessionId !== null && a.sessionId !== undefined && b.sessionId !== null && b.sessionId !== undefined) {
+      return Number(a.sessionId) === Number(b.sessionId) &&
+        String(a.domainUser || '').toLowerCase() === String(b.domainUser || '').toLowerCase();
+    }
     return Boolean(
-      a?.domainUser &&
-      b?.domainUser &&
+      a.domainUser &&
+      b.domainUser &&
       String(a.domainUser).toLowerCase() === String(b.domainUser).toLowerCase()
     );
   }
@@ -68,27 +70,23 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
     const telemetry = getDeviceState();
     if (telemetry.state === 'logged-out') {
       log(telemetry.sessionLocked
-        ? 'Scheduled screenshot skipped: workstation is locked.'
-        : 'Scheduled screenshot skipped: no logged-in Windows user.');
+        ? `Scheduled screenshot skipped: workstation is locked (session ${telemetry.sessionId ?? 'unknown'}).`
+        : 'Scheduled screenshot skipped: no active interactive Windows user.');
       return;
     }
     try {
-      log(`Scheduled screenshot identity: ${telemetry.domainUser || 'No user'}${telemetry.isRdp ? ` (RDP ${telemetry.sessionName || ''})` : ''}.`);
-      const allCaptures = await capture.captureFullAll();
+      log(`Scheduled screenshot identity: ${telemetry.domainUser || 'No user'}${telemetry.sessionId !== null ? ` [session ${telemetry.sessionId}]` : ''}${telemetry.isRdp ? ` (RDP ${telemetry.sessionName || ''})` : ''}.`);
+      const captures = await capture.captureFullAll();
       const latestTelemetry = getDeviceState();
 
-      // A user can switch sessions or lock the workstation while the screenshot
-      // is being captured. Do not upload a frame taken across that transition.
-      if (
-        latestTelemetry.state === 'logged-out' ||
-        !sameInteractiveUser(telemetry, latestTelemetry)
-      ) {
-        log(`Scheduled screenshot discarded: interactive user changed from ${telemetry.domainUser || 'none'} to ${latestTelemetry.domainUser || 'none'}.`);
-        allCaptures.forEach(item => capture.cleanup(item.filePath));
+      // Never upload a capture if the interactive session changed or became locked
+      // while the screenshot was being taken.
+      if (!sameInteractiveSession(telemetry, latestTelemetry)) {
+        log(`Scheduled screenshot discarded: session changed from ${telemetry.domainUser || 'none'}#${telemetry.sessionId ?? 'unknown'} to ${latestTelemetry.domainUser || 'none'}#${latestTelemetry.sessionId ?? 'unknown'}.`);
+        captures.forEach(item => capture.cleanup(item.filePath));
         return;
       }
 
-      const captures = capturesForSession(allCaptures, latestTelemetry);
       await uploadCaptures(captures, async (result, item) => {
         await client.postScheduledScreenshot(
           config.deviceToken,
@@ -98,7 +96,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
           latestTelemetry
         );
       }, 'screenshot');
-      log(`Scheduled screenshot captured for ${captures.length} display(s)${latestTelemetry.isRdp ? ' (RDP primary display only).' : '.'}`);
+      log(`Scheduled screenshot captured for ${captures.length} display(s) as ${latestTelemetry.domainUser} [session ${latestTelemetry.sessionId}].`);
     } catch (e) {
       log(`Scheduled capture failed: ${e.message}`);
     }
@@ -109,26 +107,22 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
     const telemetry = getDeviceState();
     if (telemetry.state === 'logged-out') {
       log(telemetry.sessionLocked
-        ? 'Live frame skipped: workstation is locked.'
-        : 'Live frame skipped: no logged-in Windows user.');
+        ? `Live frame skipped: workstation is locked (session ${telemetry.sessionId ?? 'unknown'}).`
+        : 'Live frame skipped: no active interactive Windows user.');
       return;
     }
     try {
-      const allCaptures = await capture.captureLiveAll();
+      const captures = await capture.captureLiveAll();
       const latestTelemetry = getDeviceState();
 
-      if (
-        latestTelemetry.state === 'logged-out' ||
-        !sameInteractiveUser(telemetry, latestTelemetry)
-      ) {
-        log(`Live frame discarded: interactive user changed from ${telemetry.domainUser || 'none'} to ${latestTelemetry.domainUser || 'none'}.`);
-        allCaptures.forEach(item => capture.cleanup(item.filePath));
+      if (!sameInteractiveSession(telemetry, latestTelemetry)) {
+        log(`Live frame discarded: session changed from ${telemetry.domainUser || 'none'}#${telemetry.sessionId ?? 'unknown'} to ${latestTelemetry.domainUser || 'none'}#${latestTelemetry.sessionId ?? 'unknown'}.`);
+        captures.forEach(item => capture.cleanup(item.filePath));
         return;
       }
 
-      const captures = capturesForSession(allCaptures, latestTelemetry);
       await uploadCaptures(captures, async (result, item) => {
-        await client.postLiveFrame(config.deviceToken, result.url, item);
+        await client.postLiveFrame(config.deviceToken, result.url, item, latestTelemetry);
       }, 'live');
     } catch (e) {
       log(`Live frame failed: ${e.message}`);
@@ -146,7 +140,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       currentLiveSeconds = cfg.liveViewFrameIntervalSeconds;
       if (liveTimer) clearInterval(liveTimer);
       liveTimer = setInterval(tickLive, currentLiveSeconds * 1000);
-      log(`Live frame interval set to ${currentLiveSeconds} second(s).`);
+      log(`Live view frame interval set to ${currentLiveSeconds} second(s).`);
     }
   }
 
