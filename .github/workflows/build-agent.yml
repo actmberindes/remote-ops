@@ -1,6 +1,7 @@
 name: Build Remote Ops Agent
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
