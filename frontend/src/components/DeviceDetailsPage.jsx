@@ -38,7 +38,35 @@ function ScreenshotTab({ deviceId, date, setDate, domainUser, setDomainUser, ref
   return <div className="space-y-4"><div className="card p-4 flex flex-wrap items-end gap-3"><label className="text-xs font-semibold"><span className="block text-[10px] text-muted uppercase mb-1">Date</span><input type="date" value={date} onChange={e => setDate(e.target.value)} className="input-surface rounded-lg px-3 py-2 text-xs" /></label><label className="text-xs font-semibold"><span className="block text-[10px] text-muted uppercase mb-1">Domain User</span><select value={domainUser} onChange={e => setDomainUser(e.target.value)} className="input-surface rounded-lg px-3 py-2 text-xs"><option value="">All domain users</option>{users.map(user => <option key={user} value={user}>{user}</option>)}</select></label><button onClick={() => { setDate(''); setDomainUser(''); setPage(1); }} className="px-3 py-2 rounded-lg text-xs hover-surface">Clear</button><div className="ml-auto text-[10px] text-muted">{total} screenshot{total === 1 ? '' : 's'}</div></div>{loading ? <div className="card py-12 text-center text-xs text-muted">Loading screenshots…</div> : items.length ? <><div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">{items.map(item => <button key={item.id} type="button" className="card p-0 overflow-hidden text-left hover-surface" onClick={() => setSelected(item)}><div className="relative"><img src={api.uploads.fileUrl(item.url)} alt={item.filename || 'Screenshot'} className="w-full aspect-video object-cover" /><span className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 text-white"><Maximize2 size={12} /></span></div><div className="p-2 text-[10px] truncate font-medium" title={screenshotLabel(item)}>{screenshotLabel(item)}</div></button>)}</div><div className="card p-3 flex items-center justify-center gap-3"><button disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} className="p-2 rounded-lg hover-surface disabled:opacity-40"><ChevronLeft size={16} /></button><span className="text-xs font-semibold">Page {page} of {totalPages}</span><button disabled={page >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))} className="p-2 rounded-lg hover-surface disabled:opacity-40"><ChevronRight size={16} /></button></div></> : <div className="card py-12 text-center text-xs text-muted">No screenshots match the selected filters.</div>}{selected && <ScreenshotViewer item={selected} onClose={() => setSelected(null)} />}</div>;
 }
 
-function LiveViewTab({ device, frames, domainUser, setDomainUser }) { const users = [...new Set(frames.map(domainUserOf).filter(Boolean))].sort(); const list = frames.filter(item => !domainUser || domainUserOf(item) === domainUser); const latest = list[0]; return <div className="space-y-4"><div className="card p-4 flex flex-wrap items-end gap-3"><label className="text-xs font-semibold"><span className="block text-[10px] text-muted uppercase mb-1">Domain User</span><select value={domainUser} onChange={e => setDomainUser(e.target.value)} className="input-surface rounded-lg px-3 py-2 text-xs"><option value="">All domain users</option>{users.map(user => <option key={user} value={user}>{user}</option>)}</select></label><div className="text-[10px] text-muted">Auto-refreshes every 10 seconds while this tab is open.</div></div>{latest?.url ? <div className="card p-3"><div className="flex items-center justify-between gap-3 mb-2"><div className="text-xs font-semibold">{domainUserOf(latest)} · {fmtDateTime(latest.capturedAt)}</div><span className="text-[10px] text-muted">{displayLabel(latest)}</span></div><img src={api.uploads.fileUrl(latest.url)} alt={device.deviceName} className="w-full max-h-[70vh] object-contain rounded-lg bg-black" /></div> : <div className="card py-12 text-center text-xs text-muted">No Live View frame is available for this device.</div>}</div>; }
+function LiveViewTab({ device, frames, domainUser, setDomainUser }) {
+  const users = [...new Set(frames.map(domainUserOf).filter(Boolean))].sort();
+  const list = frames.filter(item => !domainUser || domainUserOf(item) === domainUser);
+  const displays = [...new Set(list.map(displayLabel))].sort((a, b) => {
+    const na = Number(a.replace(/\D/g, ''));
+    const nb = Number(b.replace(/\D/g, ''));
+    return (Number.isFinite(na) ? na : 999) - (Number.isFinite(nb) ? nb : 999) || a.localeCompare(b);
+  });
+  const [selectedDisplay, setSelectedDisplay] = useState('');
+
+  useEffect(() => {
+    if (!displays.length) {
+      if (selectedDisplay) setSelectedDisplay('');
+      return;
+    }
+    if (!displays.includes(selectedDisplay)) setSelectedDisplay(displays[0]);
+  }, [displays.join('|'), selectedDisplay]);
+
+  const selectedFrames = list.filter(item => displayLabel(item) === selectedDisplay);
+  const latest = selectedFrames[0];
+
+  return <div className="space-y-4"><div className="card p-4 flex flex-wrap items-end gap-3">
+    <label className="text-xs font-semibold"><span className="block text-[10px] text-muted uppercase mb-1">Domain User</span><select value={domainUser} onChange={e => setDomainUser(e.target.value)} className="input-surface rounded-lg px-3 py-2 text-xs"><option value="">All domain users</option>{users.map(user => <option key={user} value={user}>{user}</option>)}</select></label>
+    <label className="text-xs font-semibold"><span className="block text-[10px] text-muted uppercase mb-1">Display</span><select value={selectedDisplay} onChange={e => setSelectedDisplay(e.target.value)} disabled={!displays.length} className="input-surface rounded-lg px-3 py-2 text-xs"><option value="">{displays.length ? 'Select display…' : 'No displays available'}</option>{displays.map(display => <option key={display} value={display}>{display}</option>)}</select></label>
+    <div className="text-[10px] text-muted">{displays.length ? `${displays.length} display${displays.length === 1 ? '' : 's'} detected` : 'No Live View frames available'} · Auto-refreshes every 10 seconds.</div>
+  </div>
+  {latest?.url ? <div className="card p-3"><div className="flex items-center justify-between gap-3 mb-2"><div className="text-xs font-semibold">{domainUserOf(latest)} · {displayLabel(latest)} · {fmtDateTime(latest.capturedAt)}</div><span className="text-[10px] text-muted">Latest frame for selected display</span></div><img src={api.uploads.fileUrl(latest.url)} alt={`${device.deviceName} ${displayLabel(latest)}`} className="w-full max-h-[70vh] object-contain rounded-lg bg-black" /></div> : <div className="card py-12 text-center text-xs text-muted">{selectedDisplay ? `No Live View frame is available for ${selectedDisplay}.` : 'No Live View frame is available for this device.'}</div>}
+  </div>;
+}
 
 export default function DeviceDetailsPage({ deviceId, onBack }) {
   const [payload, setPayload] = useState(null); const [loading, setLoading] = useState(true); const [tab, setTab] = useState('Activity Logs'); const [date, setDate] = useState(''); const [domainUser, setDomainUser] = useState(''); const [error, setError] = useState(''); const [refreshKey, setRefreshKey] = useState(0);
