@@ -49,7 +49,8 @@ function closeCurrentSession(device, endedAt, reason = 'switched') {
 
 function recordStateChange(device, nextState, domainUser, employeeId, timestamp) {
   const previousState = device.state || 'offline';
-  if (previousState === nextState && String(device.domainUser || '').toLowerCase() === String(domainUser || '').toLowerCase()) return;
+  const previousDomainUser = device.domainUser || device.lastDomainUser || null;
+  if (previousState === nextState && String(previousDomainUser || '').toLowerCase() === String(domainUser || '').toLowerCase()) return;
   db.data.deviceStateHistory = db.data.deviceStateHistory || [];
   db.data.deviceStateHistory.push({
     id: nextId(),
@@ -79,8 +80,6 @@ function syncSession(device, telemetry, now) {
     Number(previousSessionId) === incomingSessionId &&
     String(previousUser || '').toLowerCase() === String(incomingUser || '').toLowerCase();
 
-  // Locking is not a user switch. Keep the same session record open so the
-  // subsequent unlock resumes the exact same Windows session.
   if (telemetry.sessionLocked && previousSessionId !== null && previousSessionId !== undefined) {
     const current = (db.data.deviceSessions || []).find(session =>
       Number(session.deviceId) === Number(device.id) &&
