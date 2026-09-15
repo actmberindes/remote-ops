@@ -10,11 +10,14 @@ export default function DeviceManagementRoute() {
 
   useEffect(() => {
     let active = true;
-    Promise.all([api.me(), api.users.list()])
-      .then(([currentUser, userList]) => {
+    api.me()
+      .then(async currentUser => {
         if (!active) return;
         setMe(currentUser);
-        setUsers(Array.isArray(userList) ? userList : []);
+        if (currentUser?.role === 'Admin') {
+          const userList = await api.users.list();
+          if (active) setUsers(Array.isArray(userList) ? userList : []);
+        }
       })
       .catch(err => { if (active) setError(err.message); });
     return () => { active = false; };
