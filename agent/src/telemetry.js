@@ -1,7 +1,7 @@
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 
-let lockStateCache = { expiresAt: 0, sessionId: null, locked: false, checked: false };
+let lockStateCache = { expiresAt: 0, sessionId: null, locked: null, checked: false };
 
 function run(command, args) {
   try {
@@ -79,18 +79,99 @@ function getSessionRows() {
   return rows;
 }
 
+function getWtsLockInfo(sessionId) {
+  if (process.platform !== 'win32' || !Number.isFinite(Number(sessionId))) {
+    return { locked: null, checked: false };
+  }
+
+  const numericSessionId = Number(sessionId);
+  const now = Date.now();
+  if (
+    lockStateCache.expiresAt > now &&
+    lockStateCache.sessionId === numericSessionId
+  ) {
+    return { locked: lockStateCache.locked, checked: lockStateCache.checked };
+  }
+
+  // WTSQuerySessionInformation(WTSSessionInfoEx) exposes SessionFlags directly.
+  // Microsoft documents 0 as locked and 1 as unlocked on supported Windows versions.
+  // The extra Reserved DWORD matches the native WTSINFOEX layout used by Windows.
+  const script = `Add-Type -ErrorAction Stop -TypeDefinition @'\nusing System;\nusing System.Runtime.InteropServices;\n\npublic enum WtsInfoClass { WTSSessionInfoEx = 25 }\n\n[StructLayout(LayoutKind.Sequential)]\npublic struct WtsInfoExLevel1 {\n  public UInt32 SessionId;\n  public Int32 SessionState;\n  public Int32 SessionFlags;\n}\n\n[StructLayout(LayoutKind.Sequential)]\npublic struct WtsInfoExLevel {\n  public WtsInfoExLevel1 Level1;\n}\n\n[StructLayout(LayoutKind.Sequential)]\npublic struct WtsInfoEx {\n  public UInt32 Level;\n  public UInt32 Reserved;\n  public WtsInfoExLevel Data;\n}\n\npublic static class WtsNative {\n  [DllImport(\"wtsapi32.dll\", SetLastError = true)]\n  public static extern bool WTSQuerySessionInformationW(\n    IntPtr hServer,\n    UInt32 sessionId,\n    WtsInfoClass infoClass,\n    out IntPtr buffer,\n    out UInt32 bytesReturned);\n\n  [DllImport(\"wtsapi32.dll\")]\n  public static extern void WTSFreeMemory(IntPtr buffer);\n}\n'@; $buffer = [IntPtr]::Zero; $bytes = 0; $ok = [WtsNative]::WTSQuerySessionInformationW([IntPtr]::Zero, ${numericSessionId}, [WtsInfoClass]::WTSSessionInfoEx, [ref]$buffer, [ref]$bytes); if ($ok -and $buffer -ne [IntPtr]::Zero -and $bytes -ge 12) { try { $info = [Runtime.InteropServices.Marshal]::PtrToStructure($buffer, [type][WtsInfoEx]); Write-Output (\"$($info.Level)|$($info.Data.Level1.SessionFlags)|$($info.Data.Level1.SessionState)\") } finally { [WtsNative]::WTSFreeMemory($buffer) } }`;
+
+  const output = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', $script]);
+  let locked = null;
+  let checked = false;
+
+  if (output) {
+    const [level, flags] = output.split('|').map(Number);
+    if (level === 1 && Number.isFinite(flags)) {
+      checked = flags === 0 || flags === 1;
+      if (checked) locked = flags === 0;
+    }
+  }
+
+  lockStateCache = {
+    expiresAt: now + 3000,
+    sessionId: numericSessionId,
+    locked,
+    checked,
+  };
+
+  return { locked, checked };
+}
+
+function getEventLockState(sessionId) {
+  if (process.platform !== 'win32' || !Number.isFinite(Number(sessionId))) return null;
+
+  const numericSessionId = Number(sessionId);
+  const script = `$events = @(Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = @(4800,4801) } -MaxEvents 40 -ErrorAction Stop); foreach ($event in $events) { [xml]$xml = $event.ToXml(); $session = ($xml.Event.EventData.Data | Where-Object { $_.Name -eq 'SessionId' } | Select-Object -First 1).'#text'; if ($session) { Write-Output (\"$($event.Id)|$($event.TimeCreated.ToUniversalTime().ToString('o'))|$session\") } }`;
+  const output = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', $script]);
+  if (!output) return null;
+
+  const events = output.split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const [id, timestamp, eventSessionId] = line.split('|');
+      return {
+        id: Number(id),
+        timestamp: new Date(timestamp).getTime(),
+        sessionId: Number(eventSessionId),
+      };
+    })
+    .filter(event =>
+      Number.isFinite(event.timestamp) &&
+      Number.isFinite(event.sessionId) &&
+      event.sessionId === numericSessionId
+    )
+    .sort((a, b) => b.timestamp - a.timestamp);
+
+  if (!events.length) return null;
+  return events[0].id === 4800;
+}
+
 function getActiveSession() {
-  const sessions = getSessionRows();
-  const active = sessions.filter(session =>
+  const sessions = getSessionRows().filter(session =>
     session.state === 'active' &&
     session.username &&
     !isServiceIdentity(session.username)
   );
 
-  if (!active.length) return null;
+  if (!sessions.length) return null;
 
-  // Prefer the session marked as current by Windows, then the first active user session.
-  return active.find(session => session.current) || active[0];
+  const enriched = sessions.map(session => ({
+    ...session,
+    lockInfo: getWtsLockInfo(session.sessionId),
+  }));
+
+  // When multiple users remain signed in, Windows marks the previous user's
+  // session as disconnected. When the foreground user is locked, WTS still
+  // reports that session as active, but SessionFlags tells us it is locked.
+  // Prefer an active + unlocked user session so a disconnected/locked user can
+  // never win the current-user selection.
+  const unlocked = enriched.filter(session => session.lockInfo.locked === false);
+  const candidates = unlocked.length ? unlocked : enriched;
+  return candidates.find(session => session.current) || candidates[0] || null;
 }
 
 function qualifyInteractiveUser(username) {
@@ -98,9 +179,6 @@ function qualifyInteractiveUser(username) {
   if (!normalized) return '';
   if (normalized.includes('\\')) return normalized;
 
-  // Win32_ComputerSystem.UserName returns DOMAIN\\username for the interactive
-  // workstation user on normal Windows workstations. Only use it when the user
-  // name matches the active session we already identified.
   const systemUser = run('powershell.exe', [
     '-NoProfile',
     '-NonInteractive',
@@ -116,74 +194,11 @@ function qualifyInteractiveUser(username) {
   return normalized;
 }
 
-function getLockedState(sessionId) {
-  if (process.platform !== 'win32' || !Number.isFinite(Number(sessionId))) {
-    return false;
-  }
-
-  const numericSessionId = Number(sessionId);
-  const now = Date.now();
-
-  if (
-    lockStateCache.expiresAt > now &&
-    lockStateCache.sessionId === numericSessionId
-  ) {
-    return lockStateCache.locked;
-  }
-
-  const script = `$events = @(Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = @(4800,4801) } -MaxEvents 40 -ErrorAction Stop); foreach ($event in $events) { [xml]$xml = $event.ToXml(); $session = ($xml.Event.EventData.Data | Where-Object { $_.Name -eq 'SessionId' } | Select-Object -First 1).'#text'; if ($session) { Write-Output (\"$($event.Id)|$($event.TimeCreated.ToUniversalTime().ToString('o'))|$session\") } }`;
-  const output = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script]);
-
-  let checked = false;
-  let locked = false;
-
-  if (output) {
-    const events = output.split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => {
-      const [id, timestamp, eventSessionId] = line.split('|');
-      return {
-        id: Number(id),
-        timestamp: new Date(timestamp).getTime(),
-        sessionId: Number(eventSessionId),
-      };
-    }).filter(event =>
-      Number.isFinite(event.timestamp) &&
-      Number.isFinite(event.sessionId)
-    );
-
-    const sessionEvents = events
-      .filter(event => event.sessionId === numericSessionId)
-      .sort((a, b) => b.timestamp - a.timestamp);
-
-    if (sessionEvents.length) {
-      checked = true;
-      locked = sessionEvents[0].id === 4800;
-    }
-  }
-
-  // If lock auditing is unavailable for this session, LogonUI is a useful fallback
-  // indicator that Windows is currently presenting the secure sign-in desktop.
-  if (!checked) {
-    const logonUi = run('tasklist.exe', ['/FI', 'IMAGENAME eq LogonUI.exe', '/FO', 'CSV', '/NH']);
-    checked = true;
-    locked = Boolean(logonUi && !/^INFO:/i.test(logonUi));
-  }
-
-  lockStateCache = {
-    expiresAt: now + 5000,
-    sessionId: numericSessionId,
-    locked,
-    checked,
-  };
-
-  return locked;
-}
-
-function getInteractiveUser() {
+function getInteractiveUser(activeSession) {
   if (process.platform !== 'win32') {
     try { return os.userInfo().username || ''; } catch (_) { return ''; }
   }
 
-  const activeSession = getActiveSession();
   if (activeSession?.username) {
     const normalized = activeSession.username.trim();
     if (!isServiceIdentity(normalized)) return qualifyInteractiveUser(normalized);
@@ -201,10 +216,9 @@ function getInteractiveUser() {
   return '';
 }
 
-function getConnectionType() {
+function getConnectionType(activeSession) {
   if (process.platform !== 'win32') return { isRdp: false, sessionName: null };
 
-  const activeSession = getActiveSession();
   const sessionName = activeSession?.sessionName || String(process.env.SESSIONNAME || '').trim() || null;
   const isRdp = /^RDP-Tcp#/i.test(sessionName || '');
   return { isRdp, sessionName };
@@ -212,15 +226,24 @@ function getConnectionType() {
 
 function getIdentity() {
   const hostname = process.env.COMPUTERNAME || os.hostname();
-  const interactiveUser = getInteractiveUser();
   const activeSession = getActiveSession();
-  const connection = getConnectionType();
+  const interactiveUser = getInteractiveUser(activeSession);
+  const connection = getConnectionType(activeSession);
   const match = interactiveUser.match(/^([^\\]+)\\(.+)$/);
   const domain = match ? match[1] : null;
   const username = match ? match[2] : (interactiveUser || null);
   const domainUser = interactiveUser || null;
   const sessionId = activeSession?.sessionId ?? null;
-  const sessionLocked = sessionId !== null ? getLockedState(sessionId) : false;
+
+  let sessionLocked = Boolean(activeSession?.lockInfo?.locked);
+  if (activeSession && activeSession.lockInfo.checked !== true) {
+    const eventState = getEventLockState(sessionId);
+    if (eventState !== null) sessionLocked = eventState;
+    else {
+      const logonUi = run('tasklist.exe', ['/FI', 'IMAGENAME eq LogonUI.exe', '/FO', 'CSV', '/NH']);
+      sessionLocked = Boolean(logonUi && !/^INFO:/i.test(logonUi));
+    }
+  }
 
   return {
     machineId: getMachineId(),
@@ -240,16 +263,8 @@ function getIdentity() {
 function getIdleSeconds() {
   if (process.platform !== 'win32') return 0;
 
-  const script = `Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public static class IdleNative {
-  [StructLayout(LayoutKind.Sequential)] public struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }
-  [DllImport("user32.dll")] public static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
-  [DllImport("kernel32.dll")] public static extern uint GetTickCount();
-}
-"@; $info = New-Object IdleNative+LASTINPUTINFO; $info.cbSize = [Runtime.InteropServices.Marshal]::SizeOf($info); if([IdleNative]::GetLastInputInfo([ref]$info)){ [math]::Round((([IdleNative]::GetTickCount() - $info.dwTime) / 1000), 0) }`;
-  const output = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script]);
+  const script = `Add-Type @"\nusing System;\nusing System.Runtime.InteropServices;\npublic static class IdleNative {\n  [StructLayout(LayoutKind.Sequential)] public struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }\n  [DllImport("user32.dll")] public static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);\n  [DllImport("kernel32.dll")] public static extern uint GetTickCount();\n}\n"@; $info = New-Object IdleNative+LASTINPUTINFO; $info.cbSize = [Runtime.InteropServices.Marshal]::SizeOf($info); if([IdleNative]::GetLastInputInfo([ref]$info)){ [math]::Round((([IdleNative]::GetTickCount() - $info.dwTime) / 1000), 0) }`;
+  const output = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', $script]);
   const value = Number(output);
   return Number.isFinite(value) ? value : 0;
 }
@@ -258,9 +273,6 @@ function getDeviceState() {
   const identity = getIdentity();
   const idleSeconds = getIdleSeconds();
 
-  // A locked workstation is treated like offline/logged-out for monitoring.
-  // The previous user's session remains logged in to Windows, but it is not the
-  // interactive desktop and should not generate activity or screenshots.
   if (identity.sessionLocked) {
     return { ...identity, state: 'logged-out', idleSeconds };
   }
