@@ -14,6 +14,7 @@ import { agentReadonlyRouter } from './routes/agent-readonly.js';
 import { agentRouter } from './routes/agent.js';
 import { agentMonitoringReadonlyRouter } from './routes/agent-monitoring-readonly.js';
 import { agentMonitoringRouter } from './routes/agent-monitoring.js';
+import { activityLiveLockRouter } from './routes/activity-live-lock.js';
 import { activityRouter, purgeOldActivity } from './routes/activity.js';
 import { multiDisplayActivityRouter } from './routes/activity-multi-display.js';
 import { screenshotPaginationRouter } from './routes/activity-screenshot-pagination.js';
@@ -66,6 +67,7 @@ app.use('/api/activity/live-video', (req, res) => res.status(410).json({ error: 
 app.use('/api/activity', screenshotPaginationRouter);
 app.use('/api/activity', screenshotFeedRouter);
 app.use('/api/activity', multiDisplayActivityRouter);
+app.use('/api/activity', activityLiveLockRouter);
 app.use('/api/activity', activityRouter);
 
 async function runMonitoringRetention() {
