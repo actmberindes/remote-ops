@@ -2,6 +2,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
+const AGENT_VERSION = '2.0.1';
+
 function configDir() {
   if (process.platform === 'win32') {
     const base = process.env.ProgramData || path.join(process.env.SystemDrive || 'C:', 'ProgramData');
@@ -26,14 +28,14 @@ const defaults = {
   hostname: null,
   domain: null,
   domainUser: null,
-  agentVersion: '2.0.1',
+  agentVersion: AGENT_VERSION,
   consentAcceptedAt: null,
 };
 
 function loadConfig() {
   try {
     const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-    const merged = { ...defaults, ...raw };
+    const merged = { ...defaults, ...raw, agentVersion: AGENT_VERSION };
 
     if (!merged.apiUrl || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/api\/?$/i.test(merged.apiUrl)) {
       merged.apiUrl = DEFAULT_API_URL;
@@ -47,7 +49,7 @@ function loadConfig() {
 
 function saveConfig(partial) {
   const current = loadConfig();
-  const next = { ...current, ...partial };
+  const next = { ...current, ...partial, agentVersion: AGENT_VERSION };
   fs.mkdirSync(configDir(), { recursive: true });
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(next, null, 2), 'utf8');
   return next;
@@ -61,4 +63,4 @@ function hasConsent(config) {
   return !!(config && config.consentAcceptedAt);
 }
 
-module.exports = { loadConfig, saveConfig, isEnrolled, isPaired: isEnrolled, hasConsent, CONFIG_PATH, configDir };
+module.exports = { AGENT_VERSION, loadConfig, saveConfig, isEnrolled, isPaired: isEnrolled, hasConsent, CONFIG_PATH, configDir };
