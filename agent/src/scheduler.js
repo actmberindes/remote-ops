@@ -21,6 +21,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
         domainUser: telemetry.domainUser,
         isRdp: telemetry.isRdp,
         sessionName: telemetry.sessionName,
+        sessionLocked: telemetry.sessionLocked,
         agentVersion: config.agentVersion,
         ipAddress: telemetry.ipAddress,
         operatingSystem: telemetry.operatingSystem,
@@ -28,7 +29,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       onDeviceStateChange?.(telemetry.state, telemetry);
       if (telemetry.state === 'active') log(`Heartbeat: Active — ${telemetry.domainUser || 'No user'}${telemetry.isRdp ? ' (RDP)' : ''}.`);
       else if (telemetry.state === 'idle') log(`Heartbeat: Idle — ${telemetry.domainUser || 'No user'} (5+ minutes)${telemetry.isRdp ? ' (RDP)' : ''}.`);
-      else if (telemetry.sessionLocked) log('Heartbeat: Workstation locked — monitoring paused until an interactive user unlocks the workstation.');
+      else if (telemetry.state === 'locked') log(`Heartbeat: Workstation locked — ${telemetry.domainUser || 'No user'}. Monitoring paused.`);
       else log('Heartbeat: No logged-in Windows user.');
     } catch (e) {
       onDeviceStateChange?.('offline');
@@ -66,8 +67,8 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
   async function tickScheduled() {
     if (!running) return;
     const telemetry = getDeviceState();
-    if (telemetry.state === 'logged-out') {
-      log(telemetry.sessionLocked
+    if (telemetry.state === 'locked' || telemetry.state === 'logged-out') {
+      log(telemetry.state === 'locked'
         ? 'Scheduled screenshot skipped: workstation is locked.'
         : 'Scheduled screenshot skipped: no logged-in Windows user.');
       return;
@@ -80,10 +81,11 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       // A user can switch sessions or lock the workstation while the screenshot
       // is being captured. Do not upload a frame taken across that transition.
       if (
+        latestTelemetry.state === 'locked' ||
         latestTelemetry.state === 'logged-out' ||
         !sameInteractiveUser(telemetry, latestTelemetry)
       ) {
-        log(`Scheduled screenshot discarded: interactive user changed from ${telemetry.domainUser || 'none'} to ${latestTelemetry.domainUser || 'none'}.`);
+        log(`Scheduled screenshot discarded: monitoring state/user changed from ${telemetry.state}/${telemetry.domainUser || 'none'} to ${latestTelemetry.state}/${latestTelemetry.domainUser || 'none'}.`);
         allCaptures.forEach(item => capture.cleanup(item.filePath));
         return;
       }
@@ -107,8 +109,8 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
   async function tickLive() {
     if (!running) return;
     const telemetry = getDeviceState();
-    if (telemetry.state === 'logged-out') {
-      log(telemetry.sessionLocked
+    if (telemetry.state === 'locked' || telemetry.state === 'logged-out') {
+      log(telemetry.state === 'locked'
         ? 'Live frame skipped: workstation is locked.'
         : 'Live frame skipped: no logged-in Windows user.');
       return;
@@ -118,10 +120,11 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       const latestTelemetry = getDeviceState();
 
       if (
+        latestTelemetry.state === 'locked' ||
         latestTelemetry.state === 'logged-out' ||
         !sameInteractiveUser(telemetry, latestTelemetry)
       ) {
-        log(`Live frame discarded: interactive user changed from ${telemetry.domainUser || 'none'} to ${latestTelemetry.domainUser || 'none'}.`);
+        log(`Live frame discarded: monitoring state/user changed from ${telemetry.state}/${telemetry.domainUser || 'none'} to ${latestTelemetry.state}/${latestTelemetry.domainUser || 'none'}.`);
         allCaptures.forEach(item => capture.cleanup(item.filePath));
         return;
       }
