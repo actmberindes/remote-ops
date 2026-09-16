@@ -1,6 +1,9 @@
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 
+const LOCK_STATE_CACHE_MS = 2000;
+let lockStateCache = { value: false, checkedAt: 0 };
+
 function run(command, args) {
   try {
     return execFileSync(command, args, {
@@ -76,6 +79,34 @@ function getConnectionType() {
   return { isRdp, sessionName };
 }
 
+function getWorkstationLocked() {
+  if (process.platform !== 'win32') return false;
+
+  const now = Date.now();
+  if (now - lockStateCache.checkedAt < LOCK_STATE_CACHE_MS) {
+    return lockStateCache.value;
+  }
+
+  // Windows Security auditing records workstation lock/unlock as 4800/4801.
+  // The newest event tells us whether the workstation is currently locked.
+  const output = run('wevtutil.exe', [
+    'qe',
+    'Security',
+    '/q:*[System[(EventID=4800 or EventID=4801)]]',
+    '/c:1',
+    '/rd:true',
+    '/f:text',
+  ]);
+
+  let locked = lockStateCache.value;
+  const eventId = output.match(/Event ID:\s*(4800|4801)/i)?.[1];
+  if (eventId === '4800') locked = true;
+  else if (eventId === '4801') locked = false;
+
+  lockStateCache = { value: locked, checkedAt: now };
+  return locked;
+}
+
 function getIdentity() {
   const hostname = process.env.COMPUTERNAME || os.hostname();
   const interactiveUser = getInteractiveUser();
@@ -95,6 +126,7 @@ function getIdentity() {
     operatingSystem: `${os.platform()} ${os.release()}`,
     isRdp: connection.isRdp,
     sessionName: connection.sessionName,
+    sessionLocked: getWorkstationLocked(),
   };
 }
 
@@ -119,8 +151,9 @@ function getDeviceState() {
   const identity = getIdentity();
   const idleSeconds = getIdleSeconds();
   if (!identity.domainUser) return { ...identity, state: 'logged-out', idleSeconds };
+  if (identity.sessionLocked) return { ...identity, state: 'locked', idleSeconds };
   if (idleSeconds >= 300) return { ...identity, state: 'idle', idleSeconds };
   return { ...identity, state: 'active', idleSeconds };
 }
 
-module.exports = { getIdentity, getIdleSeconds, getDeviceState };
+module.exports = { getIdentity, getIdleSeconds, getDeviceState, getWorkstationLocked };
