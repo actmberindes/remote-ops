@@ -3,6 +3,7 @@ const { execFileSync } = require('node:child_process');
 
 const LOCK_STATE_CACHE_MS = 2000;
 let lockStateCache = { value: false, checkedAt: 0 };
+let auditPolicyCheckedAt = 0;
 
 function run(command, args) {
   try {
@@ -79,8 +80,29 @@ function getConnectionType() {
   return { isRdp, sessionName };
 }
 
+function ensureLockAuditPolicy() {
+  if (process.platform !== 'win32') return;
+
+  const now = Date.now();
+  if (now - auditPolicyCheckedAt < 5 * 60 * 1000) return;
+  auditPolicyCheckedAt = now;
+
+  // Event IDs 4800/4801 are produced by Audit Other Logon/Logoff Events.
+  // The agent normally runs with the privileges required to apply this locally.
+  // Domain Group Policy can override the local setting, so failure is ignored and
+  // the event query below remains the source of truth when events are available.
+  run('auditpol.exe', [
+    '/set',
+    '/subcategory:Other Logon/Logoff Events',
+    '/success:enable',
+    '/failure:disable',
+  ]);
+}
+
 function getWorkstationLocked() {
   if (process.platform !== 'win32') return false;
+
+  ensureLockAuditPolicy();
 
   const now = Date.now();
   if (now - lockStateCache.checkedAt < LOCK_STATE_CACHE_MS) {
