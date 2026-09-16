@@ -20,18 +20,18 @@ async function main() {
       return;
     }
 
-    log('Starting Remote Ops device enrollment...');
+    log(`Starting Remote Ops Agent v${config.agentVersion} device enrollment...`);
     await runPairingFlow({ log });
     return;
   }
 
   if (!isEnrolled(config)) {
-    log('No enrolled device found. Run this agent with --enroll to register it first.');
+    log(`Remote Ops Agent v${config.agentVersion}: no enrolled device found. Run this agent with --enroll to register it first.`);
     return;
   }
 
   const client = createClient(config.apiUrl);
-  log(`Remote Ops Agent running for assigned employee ${config.employeeName || 'Unknown'}.`);
+  log(`Remote Ops Agent v${config.agentVersion} running for assigned employee ${config.employeeName || 'Unknown'}.`);
 
   let scheduler = null;
   const tray = startTray({
