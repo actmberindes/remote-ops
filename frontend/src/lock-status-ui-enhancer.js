@@ -71,6 +71,9 @@ function applyLiveLockState(items) {
     tile.querySelectorAll('.remoteops-display-updated').forEach(el => {
       if (state === 'locked') {
         el.textContent = 'Live capture paused while locked';
+      } else if (item.capturedAt) {
+        const captured = new Date(item.capturedAt);
+        el.textContent = Number.isNaN(captured.getTime()) ? 'No frame' : `Updated ${captured.toLocaleTimeString()}`;
       }
     });
   });
