@@ -1,9 +1,8 @@
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 
-const LOCK_STATE_CACHE_MS = 2000;
+const LOCK_STATE_CACHE_MS = 1000;
 let lockStateCache = { value: false, checkedAt: 0 };
-let auditPolicyCheckedAt = 0;
 
 function run(command, args) {
   try {
@@ -80,37 +79,7 @@ function getConnectionType() {
   return { isRdp, sessionName };
 }
 
-function ensureLockAuditPolicy() {
-  if (process.platform !== 'win32') return;
-
-  const now = Date.now();
-  if (now - auditPolicyCheckedAt < 5 * 60 * 1000) return;
-  auditPolicyCheckedAt = now;
-
-  // Event IDs 4800/4801 are produced by Audit Other Logon/Logoff Events.
-  // The agent normally runs with the privileges required to apply this locally.
-  // Domain Group Policy can override the local setting, so failure is ignored and
-  // the event query below remains the source of truth when events are available.
-  run('auditpol.exe', [
-    '/set',
-    '/subcategory:Other Logon/Logoff Events',
-    '/success:enable',
-    '/failure:disable',
-  ]);
-}
-
-function getWorkstationLocked() {
-  if (process.platform !== 'win32') return false;
-
-  ensureLockAuditPolicy();
-
-  const now = Date.now();
-  if (now - lockStateCache.checkedAt < LOCK_STATE_CACHE_MS) {
-    return lockStateCache.value;
-  }
-
-  // Windows Security auditing records workstation lock/unlock as 4800/4801.
-  // The newest event tells us whether the workstation is currently locked.
+function getSecurityLockState() {
   const output = run('wevtutil.exe', [
     'qe',
     'Security',
@@ -120,10 +89,35 @@ function getWorkstationLocked() {
     '/f:text',
   ]);
 
-  let locked = lockStateCache.value;
   const eventId = output.match(/Event ID:\s*(4800|4801)/i)?.[1];
-  if (eventId === '4800') locked = true;
-  else if (eventId === '4801') locked = false;
+  if (eventId === '4800') return true;
+  if (eventId === '4801') return false;
+  return null;
+}
+
+function isLogonUiRunning() {
+  const output = run('tasklist.exe', [
+    '/FI',
+    'IMAGENAME eq LogonUI.exe',
+    '/NH',
+  ]);
+  return /(?:^|\s)LogonUI\.exe\s+/i.test(output);
+}
+
+function getWorkstationLocked() {
+  if (process.platform !== 'win32') return false;
+
+  const now = Date.now();
+  if (now - lockStateCache.checkedAt < LOCK_STATE_CACHE_MS) {
+    return lockStateCache.value;
+  }
+
+  // LogonUI.exe is the immediate local indication that Windows has switched
+  // to the secure lock/sign-in desktop. Security event 4800/4801 is used as
+  // a fallback so this does not depend solely on audit policy configuration.
+  const logonUiLocked = isLogonUiRunning();
+  const securityLocked = getSecurityLockState();
+  const locked = logonUiLocked || securityLocked === true;
 
   lockStateCache = { value: locked, checkedAt: now };
   return locked;
