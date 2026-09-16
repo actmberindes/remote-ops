@@ -26,7 +26,7 @@ const defaults = {
   hostname: null,
   domain: null,
   domainUser: null,
-  agentVersion: '2.0.0',
+  agentVersion: '2.0.1',
   consentAcceptedAt: null,
 };
 
