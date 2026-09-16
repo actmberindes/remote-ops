@@ -7,6 +7,7 @@ function statusTone(status) {
   return {
     active: 'var(--success)',
     idle: 'var(--warning)',
+    locked: 'var(--danger)',
     'logged-out': 'var(--neutral)',
     offline: 'var(--danger)',
     pending: 'var(--info)',
@@ -18,6 +19,7 @@ function statusLabel(status) {
   return {
     active: 'Active',
     idle: 'Idle',
+    locked: 'Locked',
     'logged-out': 'No User Logged In',
     offline: 'Offline',
     pending: 'Pending Enrollment',
