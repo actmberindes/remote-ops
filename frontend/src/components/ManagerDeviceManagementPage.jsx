@@ -4,10 +4,10 @@ import { api } from '../lib/api.js';
 import DeviceDetailsPage from './DeviceDetailsPage.jsx';
 
 function statusTone(status) {
-  return { active: 'var(--success)', idle: 'var(--warning)', offline: 'var(--danger)', revoked: 'var(--danger)', pending: 'var(--info)', 'logged-out': 'var(--neutral)' }[status] || 'var(--neutral)';
+  return { active: 'var(--success)', idle: 'var(--warning)', locked: 'var(--danger)', offline: 'var(--danger)', revoked: 'var(--danger)', pending: 'var(--info)', 'logged-out': 'var(--neutral)' }[status] || 'var(--neutral)';
 }
 function statusLabel(status) {
-  return { active: 'Active', idle: 'Idle', offline: 'Offline', revoked: 'Revoked', pending: 'Pending Enrollment', 'logged-out': 'No User Logged In' }[status] || status || 'Unknown';
+  return { active: 'Active', idle: 'Idle', locked: 'Locked', offline: 'Offline', revoked: 'Revoked', pending: 'Pending Enrollment', 'logged-out': 'No User Logged In' }[status] || status || 'Unknown';
 }
 function connectionLabel(device) {
   if (device.isRdp || device.connectionType === 'RDP') return 'RDP';
