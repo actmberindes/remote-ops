@@ -44,6 +44,7 @@ function resolveDeviceState(device) {
   if (!device.lastSeenAt) return 'offline';
   const lastSeen = new Date(device.lastSeenAt).getTime();
   if (Number.isNaN(lastSeen) || Date.now() - lastSeen > 90 * 1000) return 'offline';
+  if (device.sessionLocked === true) return 'locked';
   return device.state || 'active';
 }
 
