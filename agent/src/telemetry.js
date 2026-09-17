@@ -3,6 +3,7 @@ const { execFileSync } = require('node:child_process');
 
 const LOCK_STATE_CACHE_MS = 1000;
 let lockStateCache = { value: false, checkedAt: 0 };
+let lastInteractiveUser = '';
 
 function run(command, args) {
   try {
@@ -164,10 +165,24 @@ public static class IdleNative {
 function getDeviceState() {
   const identity = getIdentity();
   const idleSeconds = getIdleSeconds();
-  if (!identity.domainUser) return { ...identity, state: 'logged-out', idleSeconds };
-  if (identity.sessionLocked) return { ...identity, state: 'locked', idleSeconds };
-  if (idleSeconds >= 300) return { ...identity, state: 'idle', idleSeconds };
-  return { ...identity, state: 'active', idleSeconds };
+  const currentUser = String(identity.domainUser || '').trim().toLowerCase();
+  const previousUser = lastInteractiveUser;
+
+  // During Fast User Switching, Windows can keep the previous user's
+  // workstation lock state/audit event active while a new user has already
+  // entered an interactive session. A change in the interactive user is the
+  // authoritative transition for the agent: resume monitoring for the new
+  // user without requiring the previous user to sign out.
+  const userChanged = Boolean(currentUser && previousUser && currentUser !== previousUser);
+  lastInteractiveUser = currentUser;
+
+  const sessionLocked = userChanged ? false : identity.sessionLocked;
+  const stateIdentity = { ...identity, sessionLocked };
+
+  if (!stateIdentity.domainUser) return { ...stateIdentity, state: 'logged-out', idleSeconds };
+  if (sessionLocked) return { ...stateIdentity, state: 'locked', idleSeconds };
+  if (idleSeconds >= 300) return { ...stateIdentity, state: 'idle', idleSeconds };
+  return { ...stateIdentity, state: 'active', idleSeconds };
 }
 
 module.exports = { getIdentity, getIdleSeconds, getDeviceState, getWorkstationLocked };
