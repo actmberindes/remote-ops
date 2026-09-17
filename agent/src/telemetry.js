@@ -50,7 +50,7 @@ function normalizeInteractiveUser(value) {
   return String(value || '').trim().replace(/^>+/, '').trim();
 }
 
-function parseSessionRows(output) {
+function parseRows(output, format) {
   const rows = [];
   const lines = String(output || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
 
@@ -58,31 +58,19 @@ function parseSessionRows(output) {
     if (/^(USERNAME|SESSIONNAME)\s+/i.test(line)) continue;
     if (/No User exists|The command completed/i.test(line)) continue;
 
-    // query user/session commonly returns:
-    // >joshuaa console 1 Active none ...
-    // testit rdp-tcp#1 2 Active none ...
     const match = line.match(/^>?\s*(\S+)\s+(\S+)\s+(\d+)\s+(ACTIVE|DISC|DISCONNECTED)\b/i);
-    if (match) {
-      const username = normalizeInteractiveUser(match[1]);
-      if (username && !isServiceIdentity(username)) {
-        rows.push({ username, state: match[4].toUpperCase(), sessionId: Number(match[3]) });
-      }
-      continue;
-    }
+    if (!match) continue;
 
-    // Fallback parser for Windows builds where the session-name column is
-    // blank/misaligned. Locate the numeric session id immediately before the
-    // explicit session state.
-    const tokens = line.replace(/^>+/, '').split(/\s+/).filter(Boolean);
-    const stateIndex = tokens.findIndex(token => /^(ACTIVE|DISC|DISCONNECTED)$/i.test(token));
-    if (stateIndex >= 2) {
-      const idIndex = stateIndex - 1;
-      const usernameIndex = idIndex - 1;
-      const username = normalizeInteractiveUser(tokens[usernameIndex]);
-      if (/^\d+$/.test(tokens[idIndex]) && username && !isServiceIdentity(username)) {
-        rows.push({ username, state: tokens[stateIndex].toUpperCase(), sessionId: Number(tokens[idIndex]) });
-      }
-    }
+    // query user:    USERNAME SESSIONNAME ID STATE ...
+    // query session: SESSIONNAME USERNAME ID STATE ...
+    const username = normalizeInteractiveUser(format === 'session' ? match[2] : match[1]);
+    if (!username || isServiceIdentity(username)) continue;
+
+    rows.push({
+      username,
+      state: match[4].toUpperCase(),
+      sessionId: Number(match[3]),
+    });
   }
 
   return rows;
@@ -101,20 +89,20 @@ function getInteractiveUser() {
     try { return os.userInfo().username || ''; } catch (_) { return ''; }
   }
 
-  // IMPORTANT: the agent is a Windows service. whoami.exe identifies the
-  // service account, not the person currently using the desktop, so it must
-  // never be the primary source here.
-  const sessionRows = parseSessionRows(run('query.exe', ['session']));
+  // The agent runs as a Windows service. whoami.exe therefore identifies the
+  // service account and is deliberately not used to determine the desktop user.
+  // query session has the columns SESSIONNAME USERNAME ID STATE, so username
+  // is the second column. Prefer the explicitly ACTIVE session.
+  const sessionRows = parseRows(run('query.exe', ['session']), 'session');
   const activeSession = sessionRows.find(row => row.state === 'ACTIVE');
   if (activeSession) return qualifyUsername(activeSession.username);
 
-  const userRows = parseSessionRows(run('query.exe', ['user']));
+  // query user has USERNAME SESSIONNAME ID STATE, so username is first.
+  const userRows = parseRows(run('query.exe', ['user']), 'user');
   const activeUser = userRows.find(row => row.state === 'ACTIVE');
   if (activeUser) return qualifyUsername(activeUser.username);
 
-  // Win32_ComputerSystem.UserName is a second independent source for the
-  // current interactive console user. It also works when query.exe output is
-  // unavailable to the service.
+  // Independent fallback for the current console user.
   const computerSystemUser = run('powershell.exe', [
     '-NoProfile',
     '-NonInteractive',
@@ -165,8 +153,6 @@ function getWorkstationLocked() {
     return lockStateCache.value;
   }
 
-  // Security events remain the primary lock/unlock signal. LogonUI is only a
-  // fallback when the Security audit events are unavailable.
   const securityLocked = getSecurityLockState();
   const locked = securityLocked !== null ? securityLocked : isLogonUiRunning();
 
