@@ -1,0 +1,12 @@
+{
+  "name": "remote-ops-agent",
+  "version": "2.0.4",
+  "private": true,
+  "description": "Windows background agent for Admin-managed device enrollment, heartbeat telemetry, screenshots, near-live desktop view, and automatic monitoring",
+  "main": "src/index.js",
+  "bin": "src/index.js",
+  "scripts": { "start": "node src/index.js", "enroll": "node src/pairing.js", "build:win": "pkg . --targets node18-win-x64 --output dist/remote-ops-agent.exe" },
+  "dependencies": { "screenshot-desktop": "^1.15.1", "systray2": "^2.1.4" },
+  "devDependencies": { "pkg": "^5.8.1" },
+  "pkg": { "assets": ["node_modules/screenshot-desktop/lib/**/*", "node_modules/systray2/traybin/**/*"] }
+}
