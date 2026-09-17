@@ -19,6 +19,7 @@ import { activityRouter, purgeOldActivity } from './routes/activity.js';
 import { multiDisplayActivityRouter } from './routes/activity-multi-display.js';
 import { screenshotPaginationRouter } from './routes/activity-screenshot-pagination.js';
 import { screenshotFeedRouter } from './routes/activity-screenshot-feed.js';
+import { versionRouter } from './routes/version.js';
 import { db, nextAssetTag } from './db.js';
 import { purgeMonitoringFiles } from './monitoring-retention.js';
 
@@ -38,6 +39,7 @@ app.options('*', cors(corsOptions));
 app.use(express.json());
 app.use('/uploads', express.static(uploadsDir));
 app.get('/api/health', (req, res) => res.json({ ok: true, service: 'remote-ops-backend' }));
+app.use('/api/version', versionRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/applications', applicationsRouter);
