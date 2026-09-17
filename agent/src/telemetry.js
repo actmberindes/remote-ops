@@ -46,29 +46,82 @@ function isServiceIdentity(value) {
   return /^(NT AUTHORITY\\)?(SYSTEM|LOCAL SERVICE|NETWORK SERVICE)$/i.test(String(value || '').trim());
 }
 
+function normalizeInteractiveUser(value) {
+  return String(value || '').trim().replace(/^>+/, '').trim();
+}
+
+function parseSessionRows(output) {
+  const rows = [];
+  const lines = String(output || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+
+  for (const line of lines) {
+    if (/^(USERNAME|SESSIONNAME)\s+/i.test(line)) continue;
+    if (/No User exists|The command completed/i.test(line)) continue;
+
+    // query user/session commonly returns:
+    // >joshuaa console 1 Active none ...
+    // testit rdp-tcp#1 2 Active none ...
+    const match = line.match(/^>?\s*(\S+)\s+(\S+)\s+(\d+)\s+(ACTIVE|DISC|DISCONNECTED)\b/i);
+    if (match) {
+      const username = normalizeInteractiveUser(match[1]);
+      if (username && !isServiceIdentity(username)) {
+        rows.push({ username, state: match[4].toUpperCase(), sessionId: Number(match[3]) });
+      }
+      continue;
+    }
+
+    // Fallback parser for Windows builds where the session-name column is
+    // blank/misaligned. Locate the numeric session id immediately before the
+    // explicit session state.
+    const tokens = line.replace(/^>+/, '').split(/\s+/).filter(Boolean);
+    const stateIndex = tokens.findIndex(token => /^(ACTIVE|DISC|DISCONNECTED)$/i.test(token));
+    if (stateIndex >= 2) {
+      const idIndex = stateIndex - 1;
+      const usernameIndex = idIndex - 1;
+      const username = normalizeInteractiveUser(tokens[usernameIndex]);
+      if (/^\d+$/.test(tokens[idIndex]) && username && !isServiceIdentity(username)) {
+        rows.push({ username, state: tokens[stateIndex].toUpperCase(), sessionId: Number(tokens[idIndex]) });
+      }
+    }
+  }
+
+  return rows;
+}
+
+function qualifyUsername(username) {
+  const normalized = normalizeInteractiveUser(username);
+  if (!normalized) return '';
+  if (/\\/.test(normalized)) return normalized;
+  const domain = String(process.env.USERDOMAIN || '').trim();
+  return domain ? `${domain}\\${normalized}` : normalized;
+}
+
 function getInteractiveUser() {
   if (process.platform !== 'win32') {
     try { return os.userInfo().username || ''; } catch (_) { return ''; }
   }
 
-  const processUser = run('whoami.exe', []);
-  if (processUser && !isServiceIdentity(processUser)) return processUser;
+  // IMPORTANT: the agent is a Windows service. whoami.exe identifies the
+  // service account, not the person currently using the desktop, so it must
+  // never be the primary source here.
+  const sessionRows = parseSessionRows(run('query.exe', ['session']));
+  const activeSession = sessionRows.find(row => row.state === 'ACTIVE');
+  if (activeSession) return qualifyUsername(activeSession.username);
 
-  const queryUser = run('query.exe', ['user']);
-  if (queryUser) {
-    const lines = queryUser.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-    for (const line of lines) {
-      if (/^USERNAME\s+/i.test(line)) continue;
-      const match = line.match(/^>?\s*(\S+)\s+\S+\s+\d+\s+(ACTIVE|DISC|DISCONNECTED)\b/i);
-      if (match && match[1] && !isServiceIdentity(match[1])) return match[1];
-    }
-  }
+  const userRows = parseSessionRows(run('query.exe', ['user']));
+  const activeUser = userRows.find(row => row.state === 'ACTIVE');
+  if (activeUser) return qualifyUsername(activeUser.username);
 
-  const envUsername = String(process.env.USERNAME || '').trim();
-  if (envUsername && !isServiceIdentity(envUsername)) {
-    const envDomain = String(process.env.USERDOMAIN || '').trim();
-    return envDomain ? `${envDomain}\\${envUsername}` : envUsername;
-  }
+  // Win32_ComputerSystem.UserName is a second independent source for the
+  // current interactive console user. It also works when query.exe output is
+  // unavailable to the service.
+  const computerSystemUser = run('powershell.exe', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    '(Get-CimInstance Win32_ComputerSystem).UserName',
+  ]);
+  if (computerSystemUser && !isServiceIdentity(computerSystemUser)) return computerSystemUser;
 
   return '';
 }
@@ -112,9 +165,8 @@ function getWorkstationLocked() {
     return lockStateCache.value;
   }
 
-  // Prefer the Security audit events because LogonUI.exe can remain present
-  // while another user is actively signing in after the workstation was
-  // unlocked. Event 4800 = workstation locked; 4801 = workstation unlocked.
+  // Security events remain the primary lock/unlock signal. LogonUI is only a
+  // fallback when the Security audit events are unavailable.
   const securityLocked = getSecurityLockState();
   const locked = securityLocked !== null ? securityLocked : isLogonUiRunning();
 
@@ -168,11 +220,9 @@ function getDeviceState() {
   const currentUser = String(identity.domainUser || '').trim().toLowerCase();
   const previousUser = lastInteractiveUser;
 
-  // During Fast User Switching, Windows can keep the previous user's
-  // workstation lock state/audit event active while a new user has already
-  // entered an interactive session. A change in the interactive user is the
-  // authoritative transition for the agent: resume monitoring for the new
-  // user without requiring the previous user to sign out.
+  // Fast User Switching can leave the previous user's 4800 lock event in the
+  // Security log while the new user is already active. A detected change of
+  // interactive user therefore resumes monitoring for the new session.
   const userChanged = Boolean(currentUser && previousUser && currentUser !== previousUser);
   lastInteractiveUser = currentUser;
 
