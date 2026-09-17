@@ -1,6 +1,6 @@
 {
   "name": "remote-ops-agent",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "private": true,
   "description": "Windows background agent for Admin-managed device enrollment, heartbeat telemetry, screenshots, near-live desktop view, and automatic monitoring",
   "main": "src/index.js",
