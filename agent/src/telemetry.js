@@ -84,14 +84,13 @@ function getSecurityLockState() {
     'qe',
     'Security',
     '/q:*[System[(EventID=4800 or EventID=4801)]]',
-    '/c:1',
+    '/c:5',
     '/rd:true',
     '/f:text',
   ]);
 
-  const eventId = output.match(/Event ID:\s*(4800|4801)/i)?.[1];
-  if (eventId === '4800') return true;
-  if (eventId === '4801') return false;
+  const eventIds = [...output.matchAll(/Event ID:\s*(4800|4801)/gi)].map(match => match[1]);
+  if (eventIds.length > 0) return eventIds[0] === '4800';
   return null;
 }
 
@@ -112,12 +111,11 @@ function getWorkstationLocked() {
     return lockStateCache.value;
   }
 
-  // LogonUI.exe is the immediate local indication that Windows has switched
-  // to the secure lock/sign-in desktop. Security event 4800/4801 is used as
-  // a fallback so this does not depend solely on audit policy configuration.
-  const logonUiLocked = isLogonUiRunning();
+  // Prefer the Security audit events because LogonUI.exe can remain present
+  // while another user is actively signing in after the workstation was
+  // unlocked. Event 4800 = workstation locked; 4801 = workstation unlocked.
   const securityLocked = getSecurityLockState();
-  const locked = logonUiLocked || securityLocked === true;
+  const locked = securityLocked !== null ? securityLocked : isLogonUiRunning();
 
   lockStateCache = { value: locked, checkedAt: now };
   return locked;
