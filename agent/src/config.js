@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
-const AGENT_VERSION = '2.0.4';
+const AGENT_VERSION = '2.0.1';
 
 function configDir() {
   if (process.platform === 'win32') {
@@ -15,15 +15,36 @@ function configDir() {
 
 const CONFIG_PATH = path.join(configDir(), 'config.json');
 const DEFAULT_API_URL = process.env.REMOTE_OPS_API_URL || 'http://192.168.1.2:4000/api';
-const defaults = { apiUrl: DEFAULT_API_URL, deviceToken: null, deviceId: null, employeeId: null, employeeName: null, deviceName: null, enrolledAt: null, machineId: null, hostname: null, domain: null, domainUser: null, agentVersion: AGENT_VERSION, consentAcceptedAt: null };
+
+const defaults = {
+  apiUrl: DEFAULT_API_URL,
+  deviceToken: null,
+  deviceId: null,
+  employeeId: null,
+  employeeName: null,
+  deviceName: null,
+  enrolledAt: null,
+  machineId: null,
+  hostname: null,
+  domain: null,
+  domainUser: null,
+  agentVersion: AGENT_VERSION,
+  consentAcceptedAt: null,
+};
 
 function loadConfig() {
   try {
     const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
     const merged = { ...defaults, ...raw, agentVersion: AGENT_VERSION };
-    if (!merged.apiUrl || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/api\/?$/i.test(merged.apiUrl)) merged.apiUrl = DEFAULT_API_URL;
+
+    if (!merged.apiUrl || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/api\/?$/i.test(merged.apiUrl)) {
+      merged.apiUrl = DEFAULT_API_URL;
+    }
+
     return merged;
-  } catch (_) { return { ...defaults }; }
+  } catch (_) {
+    return { ...defaults };
+  }
 }
 
 function saveConfig(partial) {
@@ -34,7 +55,12 @@ function saveConfig(partial) {
   return next;
 }
 
-function isEnrolled(config) { return !!(config && config.deviceToken && config.deviceId && config.employeeId); }
-function hasConsent(config) { return !!(config && config.consentAcceptedAt); }
+function isEnrolled(config) {
+  return !!(config && config.deviceToken && config.deviceId && config.employeeId);
+}
+
+function hasConsent(config) {
+  return !!(config && config.consentAcceptedAt);
+}
 
 module.exports = { AGENT_VERSION, loadConfig, saveConfig, isEnrolled, isPaired: isEnrolled, hasConsent, CONFIG_PATH, configDir };
