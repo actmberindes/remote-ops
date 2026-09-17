@@ -1,6 +1,6 @@
 const { getDeviceState } = require('./telemetry.js');
 
-const HEARTBEAT_PERIOD_MS = 30 * 1000;
+const HEARTBEAT_PERIOD_MS = 10 * 1000;
 
 function startScheduler({ client, config, capture, log, onSessionStateChange, onDeviceStateChange } = {}) {
   let running = true;
@@ -78,8 +78,6 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       const allCaptures = await capture.captureFullAll();
       const latestTelemetry = getDeviceState();
 
-      // A user can switch sessions or lock the workstation while the screenshot
-      // is being captured. Do not upload a frame taken across that transition.
       if (
         latestTelemetry.state === 'locked' ||
         latestTelemetry.state === 'logged-out' ||
