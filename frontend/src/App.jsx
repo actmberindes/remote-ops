@@ -4953,30 +4953,6 @@ function ScreenshotsPage({ title, subtitle }) {
 
   return <ScreenshotsSection title={title} subtitle={subtitle} deviceOptions={deviceOptions} showFilters />;
 }
-function AdminScreenshots() {
-  return <ScreenshotsPage title="Screenshots" subtitle="Scheduled desktop captures across the organization." />;
-}
-function ManagerLiveView() {
-  const { users, currentUser } = useApp();
-
-  const employeeOptions = users.filter(
-    u =>
-      u.role === 'Employee' &&
-      u.managerId === currentUser.id
-  );
-
-  return (
-    <LiveViewPage
-      title="Team Live View"
-      subtitle="Your direct reports who are currently in an active work session."
-      employeeOptions={employeeOptions}
-    />
-  );
-}
-function ManagerScreenshots() {
-  return <ScreenshotsPage title="Team Screenshots" subtitle="Scheduled desktop captures from your direct reports." />;
-}
-
 function AdminLiveView() {
   const { users } = useApp();
 
