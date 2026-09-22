@@ -4565,7 +4565,7 @@ function ScreenshotsSection({ title, subtitle, limit, deviceOptions = [], showFi
 
   const [shots, setShots] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [employeeFilter, setEmployeeFilter] = useState('');
+  const [deviceFilter, setDeviceFilter] = useState('');
   const [dateFilter, setDateFilter] = useState('');
   const [selectedIds, setSelectedIds] = useState([]);
   const [deleting, setDeleting] = useState(false);
@@ -4777,7 +4777,7 @@ function ScreenshotsSection({ title, subtitle, limit, deviceOptions = [], showFi
             {(deviceFilter || dateFilter) && (
               <button
                 onClick={() => {
-                  setEmployeeFilter('');
+                  setDeviceFilter('');
                   setDateFilter('');
                   setPage(1);
                 }}
