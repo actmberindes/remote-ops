@@ -41,11 +41,11 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
     const uploaded = [];
     for (const item of captures) {
       try {
-        const result = await client.uploadFile(config.deviceToken, item.filePath, type);
+        const result = await client.uploadFile(config.deviceToken, item.imageBuffer, type);
         await postCapture(result, item);
         uploaded.push({ ...item, url: result.url, filename: result.filename });
       } finally {
-        capture.cleanup(item.filePath);
+        capture.cleanup(item.imageBuffer);
       }
     }
     return uploaded;
