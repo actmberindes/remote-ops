@@ -2613,9 +2613,9 @@ function ScreenshotEvidence({ url, filename, label = 'Speedtest Evidence', varia
       )}
 
       {open && (
-        <div className="fixed inset-0 z-[110] bg-black/95" onClick={() => setOpen(false)}>
-          <div className="relative w-screen h-screen flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-4 py-3 bg-black/70 text-white">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setOpen(false)}>
+          <div className="card p-0 overflow-hidden max-w-3xl w-full max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
               <span className="font-display font-bold text-sm truncate">
                 {viewerTitle || caption || filename || label}
               </span>
@@ -2629,9 +2629,9 @@ function ScreenshotEvidence({ url, filename, label = 'Speedtest Evidence', varia
                 <button onClick={() => setOpen(false)} className="p-1.5 rounded-lg hover-surface" title="Close"><X size={16} /></button>
               </div>
             </div>
-            <div className="flex-1 min-h-0 overflow-auto flex items-center justify-center p-2 sm:p-4">
+            <div className="flex-1 overflow-auto flex items-center justify-center p-4" style={{ background: 'var(--bg)' }}>
               {hasRealFile ? (
-                <img src={resolvedUrl} alt={filename || label} className={zoomed ? 'max-w-none' : 'max-w-full max-h-full object-contain'} style={zoomed ? { width: '180%', height: 'auto' } : { width: '100%', height: '100%', objectFit: 'contain' }} />
+                <img src={resolvedUrl} alt={filename || label} className={zoomed ? '' : 'max-w-full max-h-full object-contain'} style={zoomed ? { width: '160%', maxWidth: 'none' } : {}} />
               ) : (
                 <div className="text-center py-10 text-sm text-muted">
                   <ImageOff size={28} className="mx-auto mb-2" />
@@ -4560,12 +4560,19 @@ function LiveViewPage({ title, subtitle, employeeOptions = [] }) {
   );
 }
 
-function ScreenshotsSection({ title, subtitle, limit, deviceOptions = [], showFilters, onViewAll }) {
+function ScreenshotsSection({
+  title,
+  subtitle,
+  limit,
+  employeeOptions,
+  showFilters,
+  onViewAll
+}) {
   const { addToast } = useApp();
 
   const [shots, setShots] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [deviceFilter, setDeviceFilter] = useState('');
+  const [employeeFilter, setEmployeeFilter] = useState('');
   const [dateFilter, setDateFilter] = useState('');
   const [selectedIds, setSelectedIds] = useState([]);
   const [deleting, setDeleting] = useState(false);
@@ -4585,7 +4592,7 @@ function ScreenshotsSection({ title, subtitle, limit, deviceOptions = [], showFi
       const data = await api.activity.screenshotsPage({
         page,
         pageSize: limit || 60,
-        deviceId: deviceFilter || undefined,
+        employeeId: employeeFilter || undefined,
         date: dateFilter || undefined
       });
 
@@ -4608,7 +4615,7 @@ function ScreenshotsSection({ title, subtitle, limit, deviceOptions = [], showFi
 
   useEffect(() => {
     load();
-  }, [deviceFilter, dateFilter, page]);
+  }, [employeeFilter, dateFilter, page]);
 
   const allVisibleSelected =
     shots.length > 0 &&
@@ -4737,22 +4744,22 @@ function ScreenshotsSection({ title, subtitle, limit, deviceOptions = [], showFi
           <div className="flex flex-wrap items-end gap-2 mb-4 w-full">
             <div className="flex-1 min-w-[220px]">
               <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">
-                Device
+                Employee
               </label>
 
               <select
-                className={inputCls + ' h-9'}
-                value={deviceFilter}
+                className={`${inputCls} h-9`}
+                value={employeeFilter}
                 onChange={e => {
-                  setDeviceFilter(e.target.value);
+                  setEmployeeFilter(e.target.value);
                   setPage(1);
                 }}
               >
-                <option value="">All Devices</option>
+                <option value="">All Employees</option>
 
-                {deviceOptions.map(device => (
-                  <option key={device.id} value={device.id}>
-                    {device.deviceName || device.hostname || `Device #${device.id}`}
+                {employeeOptions.map(e => (
+                  <option key={e.id} value={e.id}>
+                    {e.name}
                   </option>
                 ))}
               </select>
@@ -4774,10 +4781,10 @@ function ScreenshotsSection({ title, subtitle, limit, deviceOptions = [], showFi
               />
             </div>
 
-            {(deviceFilter || dateFilter) && (
+            {(employeeFilter || dateFilter) && (
               <button
                 onClick={() => {
-                  setDeviceFilter('');
+                  setEmployeeFilter('');
                   setDateFilter('');
                   setPage(1);
                 }}
@@ -4931,28 +4938,12 @@ function ScreenshotsSection({ title, subtitle, limit, deviceOptions = [], showFi
   );
 }
 
-function ScreenshotsPage({ title, subtitle }) {
-  const [deviceOptions, setDeviceOptions] = useState([]);
-  const [loadingDevices, setLoadingDevices] = useState(true);
-
-  useEffect(() => {
-    let alive = true;
-    api.agent.devices()
-      .then(data => {
-        if (!alive) return;
-        setDeviceOptions(Array.isArray(data) ? data : (data?.devices || []));
-      })
-      .catch(() => { if (alive) setDeviceOptions([]); })
-      .finally(() => { if (alive) setLoadingDevices(false); });
-    return () => { alive = false; };
-  }, []);
-
-  if (loadingDevices) {
-    return <Card><div className="py-10 text-center text-sm text-muted">Loading devices…</div></Card>;
-  }
-
-  return <ScreenshotsSection title={title} subtitle={subtitle} deviceOptions={deviceOptions} showFilters />;
+function ScreenshotsPage({ title, subtitle, employeeOptions: overrideOptions }) {
+  const { users, currentUser } = useApp();
+  const employeeOptions = overrideOptions || users.filter(u => u.role === 'Employee');
+  return <ScreenshotsSection title={title} subtitle={subtitle} employeeOptions={employeeOptions} showFilters />;
 }
+
 function AdminLiveView() {
   const { users } = useApp();
 
