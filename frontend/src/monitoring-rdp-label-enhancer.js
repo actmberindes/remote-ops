@@ -37,7 +37,7 @@ function injectStyles() {
   document.head.appendChild(style);
 }
 
-function applyRdpBadges(data) {
+/*function applyRdpBadges(data) {
   const byEmployee = new Map(data.map(item => [String(item.employeeId), item]));
 
   document.querySelectorAll('.remoteops-live-employee-tile').forEach(tile => {
@@ -60,7 +60,7 @@ function applyRdpBadges(data) {
     nameNode.appendChild(badge);
     tile.dataset.remoteopsRdp = 'true';
   });
-}
+}*/
 
 function start() {
   injectStyles();
