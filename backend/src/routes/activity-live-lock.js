@@ -29,6 +29,15 @@ function deviceState(device) {
   return device.state || 'active';
 }
 
+function deviceIsRdp(device) {
+  return device?.isRdp === true || /^RDP-Tcp#/i.test(String(device?.sessionName || '').trim());
+}
+
+function deviceCanMonitor(device) {
+  const state = deviceState(device);
+  return ['active', 'idle'].includes(state) || (state === 'locked' && deviceIsRdp(device));
+}
+
 activityLiveLockRouter.get('/live-view', requireAuth(db), requireRole('Admin', 'Manager'), (req, res) => {
   const allowed = req.user.role === 'Admin'
     ? null
@@ -36,7 +45,7 @@ activityLiveLockRouter.get('/live-view', requireAuth(db), requireRole('Admin', '
 
   const eligible = db.data.devices
     .filter(device => device.employeeId && deviceIsOnline(device))
-    .filter(device => ['active', 'idle', 'locked'].includes(deviceState(device)))
+    .filter(device => deviceCanMonitor(device))
     .filter(device => !allowed || allowed.has(device.employeeId));
 
   const chosen = new Map();
@@ -49,7 +58,7 @@ activityLiveLockRouter.get('/live-view', requireAuth(db), requireRole('Admin', '
 
   const result = [...chosen.values()].map(device => {
     const state = deviceState(device);
-    const frame = state === 'locked' ? null : db.data.liveFrames.find(f => f.deviceId === device.id);
+    const frame = db.data.liveFrames.find(f => f.deviceId === device.id);
     const emp = db.data.users.find(u => u.id === device.employeeId);
     return {
       employeeId: device.employeeId,
@@ -58,11 +67,15 @@ activityLiveLockRouter.get('/live-view', requireAuth(db), requireRole('Admin', '
       deviceId: device.id,
       deviceName: device.deviceName,
       hostname: device.hostname,
-      domainUser: state === 'locked' ? null : device.domainUser,
+      domainUser: device.domainUser,
       deviceStatus: state,
       frameUrl: frame ? frame.url : null,
       capturedAt: frame ? frame.capturedAt : null,
       lastSeenAt: device.lastSeenAt,
+      isRdp: deviceIsRdp(device),
+      sessionName: device.sessionName || null,
+      sessionLocked: device.sessionLocked === true,
+      monitoringActive: deviceCanMonitor(device),
     };
   });
 
