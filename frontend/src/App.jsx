@@ -4399,7 +4399,7 @@ function LiveViewSection({
   const { tiles, loading } = useLiveView(5000);
 
   const [query, setQuery] = useState('');
-  const [deviceFilter, setDeviceFilter] = useState('');
+  const [employeeFilter, setEmployeeFilter] = useState('');
 
   const filteredTiles = tiles.filter(tile => {
     if (
@@ -4508,7 +4508,7 @@ function LiveViewSection({
             <button
               onClick={() => {
                 setQuery('');
-                setDeviceFilter('');
+                setEmployeeFilter('');
               }}
               className="h-9 px-3 rounded-lg text-xs font-bold border border-[var(--border)] hover-surface"
             >
