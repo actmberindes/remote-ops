@@ -32,11 +32,11 @@ screenshotPageRouter.get('/screenshots-page', requireAuth(db), requireRole('Admi
   const allowed = scopedEmployeeIds(req.user);
   const page = Math.max(1, Number(req.query.page) || 1);
   const pageSize = Math.min(60, Math.max(1, Number(req.query.pageSize) || 60));
-  const employeeId = req.query.employeeId ? Number(req.query.employeeId) : null;
+  const deviceId = req.query.deviceId ? Number(req.query.deviceId) : null;
   const date = String(req.query.date || '').trim();
 
   let list = db.data.screenshots.filter(item => !allowed || allowed.has(item.employeeId));
-  if (employeeId && Number.isFinite(employeeId)) list = list.filter(item => Number(item.employeeId) === employeeId);
+  if (deviceId && Number.isFinite(deviceId)) list = list.filter(item => Number(item.deviceId) === deviceId);
   if (date) list = list.filter(item => String(item.capturedAt || '').slice(0, 10) === date);
 
   list.sort((a, b) => new Date(b.capturedAt || 0).getTime() - new Date(a.capturedAt || 0).getTime());
@@ -47,7 +47,7 @@ screenshotPageRouter.get('/screenshots-page', requireAuth(db), requireRole('Admi
   const start = (safePage - 1) * pageSize;
   const items = list.slice(start, start + pageSize).map(item => ({
     ...item,
-    employeeName: `${userName(item.employeeId)}${item.displayName ? ` · ${item.displayName}` : ''}`,
+    employeeName: `${userName(item.employeeId)}${item.displayName ? ` · ${item.displayName}` : ''}`,\n    deviceName: db.data.devices.find(device => Number(device.id) === Number(item.deviceId))?.deviceName || db.data.devices.find(device => Number(device.id) === Number(item.deviceId))?.hostname || `Device #${item.deviceId || '—'}`,
     domainUser: currentDomainUser(item),
   }));
 
