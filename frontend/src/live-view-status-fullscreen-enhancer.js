@@ -97,14 +97,15 @@ function updateStatusBadges(data) {
 
     const active = relevant.filter(item => item.deviceStatus === 'active').length;
     const idle = relevant.filter(item => item.deviceStatus === 'idle').length;
+    const rdpLocked = relevant.filter(item => item.isRdp && item.deviceStatus === 'locked').length;
 
     let label = '0 Active';
-    if (active && !idle) label = `${active} Active`;
-    else if (idle && !active) label = `${idle} Idle`;
-    else if (active || idle) label = `${active} Active · ${idle} Idle`;
+    if (active && !idle && !rdpLocked) label = `${active} Active`;
+    else if (idle && !active && !rdpLocked) label = `${idle} Idle`;
+    else if (active || idle || rdpLocked) label = `${active} Active · ${idle} Idle · ${rdpLocked} RDP Locked`;
 
     badge.textContent = label;
-    badge.setAttribute('title', `${active} active, ${idle} idle`);
+    badge.setAttribute('title', `${active} active, ${idle} idle, ${rdpLocked} RDP sessions with locked physical workstation`);
   });
 }
 

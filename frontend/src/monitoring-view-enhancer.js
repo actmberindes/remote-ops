@@ -178,7 +178,8 @@ function displayHtml(display, employeeName, fallbackIndex) {
 function employeeTileHtml(item) {
   const employeeName = item.employeeName || `Employee #${item.employeeId}`;
   const department = item.department || '—';
-  const state = item.deviceStatus === 'idle' ? 'idle' : 'active';
+  const rdpLocked = item.isRdp && item.deviceStatus === 'locked';
+  const state = rdpLocked ? 'rdp-locked' : (item.deviceStatus === 'idle' ? 'idle' : 'active');
   const displays = validDisplays(item);
   const gridClass = displays.length > 1 ? 'two-plus' : 'one';
 
@@ -187,9 +188,9 @@ function employeeTileHtml(item) {
       <div class="remoteops-live-employee-info">
         <div class="remoteops-live-employee-name">${escapeHtml(employeeName)}</div>
         <div class="remoteops-live-employee-meta">${escapeHtml(department)}${item.domainUser ? ` · ${escapeHtml(item.domainUser)}` : ''}</div>
-        <div class="remoteops-live-employee-device">${escapeHtml(item.deviceName || item.hostname || 'Managed device')}</div>
+        <div class="remoteops-live-employee-device">${escapeHtml(item.deviceName || item.hostname || 'Managed device')}${item.isRdp ? ' · RDP' : ''}${rdpLocked ? ' · Physical workstation locked' : ''}</div>
       </div>
-      <span class="remoteops-live-state" style="color:${state === 'idle' ? 'var(--warning)' : 'var(--success)'};border-color:${state === 'idle' ? 'var(--warning)' : 'var(--success)'}33">${state === 'idle' ? 'IDLE' : 'LIVE'}</span>
+      <span class="remoteops-live-state" style="color:${rdpLocked ? 'var(--warning)' : (state === 'idle' ? 'var(--warning)' : 'var(--success)')};border-color:${rdpLocked ? 'var(--warning)' : (state === 'idle' ? 'var(--warning)' : 'var(--success)')}33">${rdpLocked ? 'RDP · LOCKED' : (state === 'idle' ? 'IDLE' : 'LIVE')}</span>
     </div>
     <div class="remoteops-display-grid ${gridClass}">
       ${displays.length > 0
@@ -286,7 +287,12 @@ function renderCardGrid(card, data, state) {
   summary.className = 'remoteops-live-result-count';
   const active = filtered.filter(item => item.deviceStatus === 'active').length;
   const idle = filtered.filter(item => item.deviceStatus === 'idle').length;
-  summary.textContent = `${filtered.length} ${filtered.length === 1 ? 'employee' : 'employees'} reporting${active || idle ? ` · ${active} active${idle ? ` · ${idle} idle` : ''}` : ''}`;
+  const rdpLocked = filtered.filter(item => item.isRdp && item.deviceStatus === 'locked').length;
+  const statusParts = [];
+  if (active) statusParts.push(`${active} active`);
+  if (idle) statusParts.push(`${idle} idle`);
+  if (rdpLocked) statusParts.push(`${rdpLocked} RDP locked`);
+  summary.textContent = `${filtered.length} ${filtered.length === 1 ? 'employee' : 'employees'} reporting${statusParts.length ? ` · ${statusParts.join(' · ')}` : ''}`;
 
   const grid = document.createElement('div');
   grid.dataset.remoteopsLiveGrid = 'true';

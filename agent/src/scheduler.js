@@ -67,9 +67,9 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
   async function tickScheduled() {
     if (!running) return;
     const telemetry = getDeviceState();
-    if (telemetry.state === 'locked' || telemetry.state === 'logged-out') {
+    if (telemetry.state === 'logged-out' || (telemetry.state === 'locked' && !telemetry.isRdp)) {
       log(telemetry.state === 'locked'
-        ? 'Scheduled screenshot skipped: workstation is locked.'
+        ? 'Scheduled screenshot skipped: workstation is locked and there is no active RDP session.'
         : 'Scheduled screenshot skipped: no logged-in Windows user.');
       return;
     }
@@ -81,8 +81,8 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       // A user can switch sessions or lock the workstation while the screenshot
       // is being captured. Do not upload a frame taken across that transition.
       if (
-        latestTelemetry.state === 'locked' ||
         latestTelemetry.state === 'logged-out' ||
+        (latestTelemetry.state === 'locked' && !latestTelemetry.isRdp) ||
         !sameInteractiveUser(telemetry, latestTelemetry)
       ) {
         log(`Scheduled screenshot discarded: monitoring state/user changed from ${telemetry.state}/${telemetry.domainUser || 'none'} to ${latestTelemetry.state}/${latestTelemetry.domainUser || 'none'}.`);
@@ -109,9 +109,9 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
   async function tickLive() {
     if (!running) return;
     const telemetry = getDeviceState();
-    if (telemetry.state === 'locked' || telemetry.state === 'logged-out') {
+    if (telemetry.state === 'logged-out' || (telemetry.state === 'locked' && !telemetry.isRdp)) {
       log(telemetry.state === 'locked'
-        ? 'Live frame skipped: workstation is locked.'
+        ? 'Live frame skipped: workstation is locked and there is no active RDP session.'
         : 'Live frame skipped: no logged-in Windows user.');
       return;
     }
@@ -120,8 +120,8 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       const latestTelemetry = getDeviceState();
 
       if (
-        latestTelemetry.state === 'locked' ||
         latestTelemetry.state === 'logged-out' ||
+        (latestTelemetry.state === 'locked' && !latestTelemetry.isRdp) ||
         !sameInteractiveUser(telemetry, latestTelemetry)
       ) {
         log(`Live frame discarded: monitoring state/user changed from ${telemetry.state}/${telemetry.domainUser || 'none'} to ${latestTelemetry.state}/${latestTelemetry.domainUser || 'none'}.`);

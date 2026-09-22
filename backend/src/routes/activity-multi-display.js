@@ -56,6 +56,11 @@ function deviceState(device) {
   return device.state || 'active';
 }
 
+function deviceCanMonitor(device) {
+  const state = deviceState(device);
+  return ['active', 'idle'].includes(state) || (state === 'locked' && deviceIsRdp(device));
+}
+
 function displayKey(frame = {}) {
   if (frame.displayId !== undefined && frame.displayId !== null && frame.displayId !== '') return String(frame.displayId);
   return `display-${Number(frame.displayIndex) || 1}`;
@@ -190,7 +195,7 @@ multiDisplayActivityRouter.post('/screenshots', requireDevice(db), async (req, r
 multiDisplayActivityRouter.get('/live-view', requireAuth(db), requireRole('Admin', 'Manager'), (req, res) => {
   const allowed = scopedEmployeeIds(req.user);
   const eligible = db.data.devices
-    .filter(device => device.employeeId && deviceIsOnline(device) && ['active', 'idle'].includes(deviceState(device)))
+    .filter(device => device.employeeId && deviceIsOnline(device) && deviceCanMonitor(device))
     .filter(device => {
       const currentId = currentEmployeeIdForDevice(device);
       return !allowed || allowed.has(currentId || device.employeeId);
@@ -229,6 +234,8 @@ multiDisplayActivityRouter.get('/live-view', requireAuth(db), requireRole('Admin
       connectionType: rdp ? 'RDP' : (device.domainUser ? 'Local' : null),
       isRdp: rdp,
       sessionName: device.sessionName || null,
+      sessionLocked: device.sessionLocked === true,
+      monitoringActive: deviceCanMonitor(device),
       frameUrl: first?.frameUrl || null,
       capturedAt: first?.capturedAt || null,
       lastSeenAt: device.lastSeenAt,
