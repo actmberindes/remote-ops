@@ -1,5 +1,15 @@
 # Remote Ops Changelog
 
+## v1.0.1 — 2026-09-22
+
+**Capture storage cleanup**
+
+- Live and scheduled screenshot captures now stay in memory while being uploaded.
+- Removed agent-created screenshot files from the Windows TEMP workflow.
+- Windows Agent updated to **v2.0.2**.
+- Release baseline commit: `2143520a09c9fbf7ebf3953f57cd54e78663eee5`.
+
+
 This file tracks user-visible Remote Ops releases. Every major feature or meaningful change should have a matching version entry and release commit.
 
 ## v1.0.0 — 2026-09-17
