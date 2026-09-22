@@ -1,8 +1,19 @@
-export const REMOTE_OPS_VERSION = '1.0.0';
-export const REMOTE_OPS_RELEASE_DATE = '2026-09-17';
-export const REMOTE_OPS_RELEASE_COMMIT = '1585c2ee5f135a3be7129566eacc076fd9311fc5';
+export const REMOTE_OPS_VERSION = '1.0.1';
+export const REMOTE_OPS_RELEASE_DATE = '2026-09-22';
+export const REMOTE_OPS_RELEASE_COMMIT = '2143520a09c9fbf7ebf3953f57cd54e78663eee5';
 
 export const REMOTE_OPS_CHANGELOG = [
+  {
+    version: '1.0.1',
+    date: '2026-09-22',
+    commit: '2143520a09c9fbf7ebf3953f57cd54e78663eee5',
+    title: 'Capture storage cleanup',
+    changes: [
+      'Changed live and scheduled screenshot capture to stay in memory during upload.',
+      'Removed agent-created screenshot files from the Windows TEMP workflow.',
+      'Windows Agent updated to v2.0.2.',
+    ],
+  },
   {
     version: '1.0.0',
     date: '2026-09-17',
