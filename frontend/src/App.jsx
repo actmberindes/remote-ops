@@ -2614,7 +2614,7 @@ function ScreenshotEvidence({ url, filename, label = 'Speedtest Evidence', varia
 
       {open && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setOpen(false)}>
-          <div className="card p-0 overflow-hidden max-w-3xl w-full max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          <div className="card p-0 overflow-hidden max-w-[96vw] w-full max-h-[96vh] flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
               <span className="font-display font-bold text-sm truncate">
                 {viewerTitle || caption || filename || label}
@@ -2629,9 +2629,9 @@ function ScreenshotEvidence({ url, filename, label = 'Speedtest Evidence', varia
                 <button onClick={() => setOpen(false)} className="p-1.5 rounded-lg hover-surface" title="Close"><X size={16} /></button>
               </div>
             </div>
-            <div className="flex-1 overflow-auto flex items-center justify-center p-4" style={{ background: 'var(--bg)' }}>
+            <div className="flex-1 min-h-0 overflow-auto flex items-center justify-center p-3 sm:p-4" style={{ background: 'var(--bg)' }}>
               {hasRealFile ? (
-                <img src={resolvedUrl} alt={filename || label} className={zoomed ? '' : 'max-w-full max-h-full object-contain'} style={zoomed ? { width: '160%', maxWidth: 'none' } : {}} />
+                <img src={resolvedUrl} alt={filename || label} className={zoomed ? '' : 'max-w-full max-h-[calc(96vh-120px)] object-contain'} style={zoomed ? { width: '180%', maxWidth: 'none' } : {}} />
               ) : (
                 <div className="text-center py-10 text-sm text-muted">
                   <ImageOff size={28} className="mx-auto mb-2" />
@@ -4399,7 +4399,7 @@ function LiveViewSection({
   const { tiles, loading } = useLiveView(5000);
 
   const [query, setQuery] = useState('');
-  const [employeeFilter, setEmployeeFilter] = useState('');
+  const [deviceFilter, setDeviceFilter] = useState('');
 
   const filteredTiles = tiles.filter(tile => {
     if (
@@ -4508,7 +4508,7 @@ function LiveViewSection({
             <button
               onClick={() => {
                 setQuery('');
-                setEmployeeFilter('');
+                setDeviceFilter('');
               }}
               className="h-9 px-3 rounded-lg text-xs font-bold border border-[var(--border)] hover-surface"
             >
@@ -4560,14 +4560,7 @@ function LiveViewPage({ title, subtitle, employeeOptions = [] }) {
   );
 }
 
-function ScreenshotsSection({
-  title,
-  subtitle,
-  limit,
-  employeeOptions,
-  showFilters,
-  onViewAll
-}) {
+function ScreenshotsSection({ title, subtitle, limit, deviceOptions = [], showFilters, onViewAll }) {
   const { addToast } = useApp();
 
   const [shots, setShots] = useState([]);
@@ -4592,7 +4585,7 @@ function ScreenshotsSection({
       const data = await api.activity.screenshotsPage({
         page,
         pageSize: limit || 60,
-        employeeId: employeeFilter || undefined,
+        deviceId: deviceFilter || undefined,
         date: dateFilter || undefined
       });
 
@@ -4615,7 +4608,7 @@ function ScreenshotsSection({
 
   useEffect(() => {
     load();
-  }, [employeeFilter, dateFilter, page]);
+  }, [deviceFilter, dateFilter, page]);
 
   const allVisibleSelected =
     shots.length > 0 &&
@@ -4744,22 +4737,22 @@ function ScreenshotsSection({
           <div className="flex flex-wrap items-end gap-2 mb-4 w-full">
             <div className="flex-1 min-w-[220px]">
               <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">
-                Employee
+                Device
               </label>
 
               <select
-                className={`${inputCls} h-9`}
-                value={employeeFilter}
+                className={inputCls + ' h-9'}
+                value={deviceFilter}
                 onChange={e => {
-                  setEmployeeFilter(e.target.value);
+                  setDeviceFilter(e.target.value);
                   setPage(1);
                 }}
               >
-                <option value="">All Employees</option>
+                <option value="">All Devices</option>
 
-                {employeeOptions.map(e => (
-                  <option key={e.id} value={e.id}>
-                    {e.name}
+                {deviceOptions.map(device => (
+                  <option key={device.id} value={device.id}>
+                    {device.deviceName || device.hostname || `Device #${device.id}`}
                   </option>
                 ))}
               </select>
@@ -4781,7 +4774,7 @@ function ScreenshotsSection({
               />
             </div>
 
-            {(employeeFilter || dateFilter) && (
+            {(deviceFilter || dateFilter) && (
               <button
                 onClick={() => {
                   setEmployeeFilter('');
@@ -4938,10 +4931,50 @@ function ScreenshotsSection({
   );
 }
 
-function ScreenshotsPage({ title, subtitle, employeeOptions: overrideOptions }) {
+function ScreenshotsPage({ title, subtitle }) {
+  const [deviceOptions, setDeviceOptions] = useState([]);
+  const [loadingDevices, setLoadingDevices] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    api.agent.devices()
+      .then(data => {
+        if (!alive) return;
+        setDeviceOptions(Array.isArray(data) ? data : (data?.devices || []));
+      })
+      .catch(() => { if (alive) setDeviceOptions([]); })
+      .finally(() => { if (alive) setLoadingDevices(false); });
+    return () => { alive = false; };
+  }, []);
+
+  if (loadingDevices) {
+    return <Card><div className="py-10 text-center text-sm text-muted">Loading devices…</div></Card>;
+  }
+
+  return <ScreenshotsSection title={title} subtitle={subtitle} deviceOptions={deviceOptions} showFilters />;
+}
+function AdminScreenshots() {
+  return <ScreenshotsPage title="Screenshots" subtitle="Scheduled desktop captures across the organization." />;
+}
+function ManagerLiveView() {
   const { users, currentUser } = useApp();
-  const employeeOptions = overrideOptions || users.filter(u => u.role === 'Employee');
-  return <ScreenshotsSection title={title} subtitle={subtitle} employeeOptions={employeeOptions} showFilters />;
+
+  const employeeOptions = users.filter(
+    u =>
+      u.role === 'Employee' &&
+      u.managerId === currentUser.id
+  );
+
+  return (
+    <LiveViewPage
+      title="Team Live View"
+      subtitle="Your direct reports who are currently in an active work session."
+      employeeOptions={employeeOptions}
+    />
+  );
+}
+function ManagerScreenshots() {
+  return <ScreenshotsPage title="Team Screenshots" subtitle="Scheduled desktop captures from your direct reports." />;
 }
 
 function AdminLiveView() {
