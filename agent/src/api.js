@@ -1,6 +1,4 @@
-const fs = require('node:fs');
-
-async function request(apiUrl, path, { method = 'GET', body, token, isMultipart, filePath, fileFieldName = 'file', multipartFields = {} } = {}) {
+async function request(apiUrl, path, { method = 'GET', body, token, isMultipart, fileBuffer, fileFieldName = 'file', multipartFields = {} } = {}) {
   const url = `${apiUrl}${path}`;
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -9,7 +7,6 @@ async function request(apiUrl, path, { method = 'GET', body, token, isMultipart,
   if (isMultipart) {
     const form = new FormData();
     for (const [key, value] of Object.entries(multipartFields)) form.append(key, String(value));
-    const fileBuffer = fs.readFileSync(filePath);
     form.append(fileFieldName, new Blob([fileBuffer], { type: 'image/png' }), 'capture.png');
     fetchBody = form;
   } else if (body !== undefined) {
@@ -34,7 +31,7 @@ function createClient(apiUrl) {
     getConfig: (deviceToken) => request(apiUrl, '/agent/config', { token: deviceToken }),
     heartbeat: (deviceToken, telemetry) => request(apiUrl, '/agent/heartbeat', { method: 'POST', token: deviceToken, body: telemetry }),
     authorizeQuit: (deviceToken, code) => request(apiUrl, '/agent/quit-authorize', { method: 'POST', token: deviceToken, body: { code } }),
-    uploadFile: (deviceToken, filePath, type = 'screenshot') => request(apiUrl, `/uploads/monitoring?type=${type === 'live' ? 'live' : 'screenshot'}`, { method: 'POST', token: deviceToken, isMultipart: true, filePath }),
+    uploadFile: (deviceToken, imageBuffer, type = 'screenshot') => request(apiUrl, `/uploads/monitoring?type=${type === 'live' ? 'live' : 'screenshot'}`, { method: 'POST', token: deviceToken, isMultipart: true, fileBuffer: imageBuffer }),
     postScheduledScreenshot: (deviceToken, url, filename, display = {}, telemetry = {}) =>
   request(apiUrl, '/activity/screenshots', {
     method: 'POST',
