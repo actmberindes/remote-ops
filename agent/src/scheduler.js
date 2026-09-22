@@ -120,8 +120,8 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       const latestTelemetry = getDeviceState();
 
       if (
-        latestTelemetry.state === 'locked' ||
         latestTelemetry.state === 'logged-out' ||
+        (latestTelemetry.state === 'locked' && !latestTelemetry.isRdp) ||
         !sameInteractiveUser(telemetry, latestTelemetry)
       ) {
         log(`Live frame discarded: monitoring state/user changed from ${telemetry.state}/${telemetry.domainUser || 'none'} to ${latestTelemetry.state}/${latestTelemetry.domainUser || 'none'}.`);
