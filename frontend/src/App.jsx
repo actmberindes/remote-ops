@@ -2613,9 +2613,9 @@ function ScreenshotEvidence({ url, filename, label = 'Speedtest Evidence', varia
       )}
 
       {open && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setOpen(false)}>
-          <div className="card p-0 overflow-hidden max-w-[96vw] w-full max-h-[96vh] flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
+        <div className="fixed inset-0 z-[110] bg-black/95" onClick={() => setOpen(false)}>
+          <div className="relative w-screen h-screen flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-4 py-3 bg-black/70 text-white">
               <span className="font-display font-bold text-sm truncate">
                 {viewerTitle || caption || filename || label}
               </span>
@@ -2629,9 +2629,9 @@ function ScreenshotEvidence({ url, filename, label = 'Speedtest Evidence', varia
                 <button onClick={() => setOpen(false)} className="p-1.5 rounded-lg hover-surface" title="Close"><X size={16} /></button>
               </div>
             </div>
-            <div className="flex-1 min-h-0 overflow-auto flex items-center justify-center p-3 sm:p-4" style={{ background: 'var(--bg)' }}>
+            <div className="flex-1 min-h-0 overflow-auto flex items-center justify-center p-2 sm:p-4">
               {hasRealFile ? (
-                <img src={resolvedUrl} alt={filename || label} className={zoomed ? '' : 'max-w-full max-h-[calc(96vh-120px)] object-contain'} style={zoomed ? { width: '180%', maxWidth: 'none' } : {}} />
+                <img src={resolvedUrl} alt={filename || label} className={zoomed ? 'max-w-none' : 'max-w-full max-h-full object-contain'} style={zoomed ? { width: '180%', height: 'auto' } : { width: '100%', height: '100%', objectFit: 'contain' }} />
               ) : (
                 <div className="text-center py-10 text-sm text-muted">
                   <ImageOff size={28} className="mx-auto mb-2" />
