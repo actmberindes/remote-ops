@@ -86,7 +86,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
         !sameInteractiveUser(telemetry, latestTelemetry)
       ) {
         log(`Scheduled screenshot discarded: monitoring state/user changed from ${telemetry.state}/${telemetry.domainUser || 'none'} to ${latestTelemetry.state}/${latestTelemetry.domainUser || 'none'}.`);
-        allCaptures.forEach(item => capture.cleanup(item.filePath));
+        allCaptures.forEach(item => capture.cleanup(item.imageBuffer));
         return;
       }
 
@@ -125,7 +125,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
         !sameInteractiveUser(telemetry, latestTelemetry)
       ) {
         log(`Live frame discarded: monitoring state/user changed from ${telemetry.state}/${telemetry.domainUser || 'none'} to ${latestTelemetry.state}/${latestTelemetry.domainUser || 'none'}.`);
-        allCaptures.forEach(item => capture.cleanup(item.filePath));
+        allCaptures.forEach(item => capture.cleanup(item.imageBuffer));
         return;
       }
 
