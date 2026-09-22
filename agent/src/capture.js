@@ -1,13 +1,4 @@
-const path = require('node:path');
-const os = require('node:os');
-const fs = require('node:fs');
 const screenshot = require('screenshot-desktop');
-
-const tmpDir = () => {
-  const dir = path.join(os.tmpdir(), 'remote-ops-agent');
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
-};
 
 async function listDisplays() {
   const displays = await screenshot.listDisplays();
@@ -16,24 +7,23 @@ async function listDisplays() {
     : [{ id: 0, name: 'Display 1' }];
 }
 
-async function captureAll(prefix) {
+async function captureAll() {
   const displays = await listDisplays();
   const captures = [];
 
   for (let index = 0; index < displays.length; index += 1) {
     const display = displays[index];
     const displayIndex = index + 1;
-    const safeId = String(display.id ?? displayIndex).replace(/[^a-zA-Z0-9_-]/g, '_');
-    const filePath = path.join(tmpDir(), `${prefix}-${Date.now()}-display-${displayIndex}-${safeId}.png`);
 
-    await screenshot({
-      filename: filePath,
+    // Capture into memory. screenshot-desktop cleans up its own temporary
+    // capture file when no filename is supplied.
+    const imageBuffer = await screenshot({
       format: 'png',
       screen: display.id,
     });
 
     captures.push({
-      filePath,
+      imageBuffer,
       displayId: String(display.id ?? displayIndex),
       // Use the stable display index for the visible label. Do not expose the
       // Windows device path (for example \\.\DISPLAY1) to the UI.
@@ -46,26 +36,26 @@ async function captureAll(prefix) {
 }
 
 async function captureFullAll() {
-  return captureAll('full');
+  return captureAll();
 }
 
 async function captureLiveAll() {
-  return captureAll('live');
+  return captureAll();
 }
 
 async function captureFull() {
   const captures = await captureFullAll();
-  return captures[0]?.filePath;
+  return captures[0]?.imageBuffer;
 }
 
 async function captureLive() {
   const captures = await captureLiveAll();
-  return captures[0]?.filePath;
+  return captures[0]?.imageBuffer;
 }
 
-function cleanup(filePath) {
-  if (!filePath) return;
-  fs.unlink(filePath, () => { /* best-effort */ });
+function cleanup() {
+  // Captures are held in memory; there is no agent-created screenshot file
+  // to remove.
 }
 
 module.exports = { listDisplays, captureFullAll, captureLiveAll, captureFull, captureLive, cleanup };
