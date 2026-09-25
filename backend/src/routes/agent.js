@@ -114,7 +114,7 @@ agentRouter.post('/pair', (req, res) => res.status(410).json({ error: 'Employee 
 agentRouter.get('/config', requireDevice(db), (req, res) => res.json(db.data.agentConfig));
 agentRouter.get('/session-status', requireDevice(db), (req, res) => {
   const current = currentEmployee(req.device);
-  res.json({ status: resolveDeviceState(req.device), employeeName: current?.name || userName(req.device.employeeId), currentEmployeeId: current?.id || null, domainUser: req.device.domainUser || null, deviceName: req.device.deviceName, isRdp: req.device.isRdp === true, connectionType: req.device.isRdp ? 'RDP' : (req.device.domainUser ? 'Local' : null), sessionName: req.device.sessionName || null, sessionLocked: req.device.sessionLocked === true });
+  res.json({ status: resolveDeviceState(req.device), employeeName: current?.name || userName(req.device.employeeId), currentEmployeeId: current?.id || null, currentSessionId: req.device.currentSessionId || null, domainUser: req.device.domainUser || null, deviceName: req.device.deviceName, isRdp: req.device.isRdp === true, connectionType: req.device.isRdp ? 'RDP' : (req.device.domainUser ? 'Local' : null), sessionName: req.device.sessionName || null, sessionLocked: req.device.sessionLocked === true });
 });
 
 agentRouter.post('/heartbeat', requireDevice(db), async (req, res) => {
@@ -128,7 +128,7 @@ agentRouter.post('/heartbeat', requireDevice(db), async (req, res) => {
   if (nextDomainUser !== previousDomainUser || previousSessionId !== (req.device.currentSessionId ?? null) || req.device.currentEmployeeId !== nextEmployeeId || previousRdp !== req.device.isRdp) { req.device.currentEmployeeId = nextEmployeeId; req.device.currentSessionStartedAt = nextEmployeeId ? now : null; }
   if (nextState === 'logged-out') { req.device.currentEmployeeId = null; req.device.currentSessionId = null; req.device.currentSessionStartedAt = null; }
   req.device.lastSeenAt = now; recordStateChange(req.device, nextState, now, req.device.currentSessionId, null, previousSessionId); await db.write();
-  res.json({ ok: true, status: resolveDeviceState(req.device), currentEmployeeId: req.device.currentEmployeeId, currentEmployeeName: req.device.currentEmployeeId ? userName(req.device.currentEmployeeId) : null, domainUser: req.device.domainUser || null, isRdp: req.device.isRdp === true, connectionType: req.device.isRdp ? 'RDP' : (req.device.domainUser ? 'Local' : null), sessionName: req.device.sessionName || null, sessionLocked: req.device.sessionLocked === true, agentVersion: req.device.agentVersion || null, serverTime: now });
+  res.json({ ok: true, status: resolveDeviceState(req.device), currentEmployeeId: req.device.currentEmployeeId, currentSessionId: req.device.currentSessionId || null, currentEmployeeName: req.device.currentEmployeeId ? userName(req.device.currentEmployeeId) : null, domainUser: req.device.domainUser || null, isRdp: req.device.isRdp === true, connectionType: req.device.isRdp ? 'RDP' : (req.device.domainUser ? 'Local' : null), sessionName: req.device.sessionName || null, sessionLocked: req.device.sessionLocked === true, agentVersion: req.device.agentVersion || null, serverTime: now });
 });
 
 agentRouter.post('/quit-authorize', requireDevice(db), async (req, res) => {
