@@ -19,6 +19,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
         hostname: telemetry.hostname,
         domain: telemetry.domain,
         domainUser: telemetry.domainUser,
+        sessionId: telemetry.sessionId,
         isRdp: telemetry.isRdp,
         sessionName: telemetry.sessionName,
         sessionLocked: telemetry.sessionLocked,
@@ -56,11 +57,17 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
     return captures.filter(item => Number(item.displayIndex) === 1).slice(0, 1);
   }
 
-  function sameInteractiveUser(a, b) {
-    return Boolean(
-      a?.domainUser &&
-      b?.domainUser &&
-      String(a.domainUser).toLowerCase() === String(b.domainUser).toLowerCase()
+  function sameInteractiveSession(a, b) {
+    if (!a?.sessionId || !b?.sessionId) {
+      return Boolean(
+        a?.domainUser &&
+        b?.domainUser &&
+        String(a.domainUser).toLowerCase() === String(b.domainUser).toLowerCase()
+      );
+    }
+    return (
+      Number(a.sessionId) === Number(b.sessionId) &&
+      String(a.domainUser || '').toLowerCase() === String(b.domainUser || '').toLowerCase()
     );
   }
 
@@ -83,7 +90,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       if (
         latestTelemetry.state === 'logged-out' ||
         (latestTelemetry.state === 'locked' && !latestTelemetry.isRdp) ||
-        !sameInteractiveUser(telemetry, latestTelemetry)
+        !sameInteractiveSession(telemetry, latestTelemetry)
       ) {
         log(`Scheduled screenshot discarded: monitoring state/user changed from ${telemetry.state}/${telemetry.domainUser || 'none'} to ${latestTelemetry.state}/${latestTelemetry.domainUser || 'none'}.`);
         allCaptures.forEach(item => capture.cleanup(item.imageBuffer));
@@ -97,7 +104,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
           result.url,
           result.filename,
           item,
-          latestTelemetry
+          { ...latestTelemetry, sessionId: latestTelemetry.sessionId }
         );
       }, 'screenshot');
       log(`Scheduled screenshot captured for ${captures.length} display(s)${latestTelemetry.isRdp ? ' (RDP primary display only).' : '.'}`);
@@ -131,7 +138,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
 
       const captures = capturesForSession(allCaptures, latestTelemetry);
       await uploadCaptures(captures, async (result, item) => {
-        await client.postLiveFrame(config.deviceToken, result.url, item);
+        await client.postLiveFrame(config.deviceToken, result.url, item, latestTelemetry);
       }, 'live');
     } catch (e) {
       log(`Live frame failed: ${e.message}`);
