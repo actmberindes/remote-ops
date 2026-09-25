@@ -110,7 +110,8 @@ activityRouter.post('/screenshots', requireDevice(db), async (req, res) => {
     displayId,
     displayName,
     displayIndex,
-    domainUser
+    domainUser,
+    sessionId
   } = req.body || {};
   if (!url) return res.status(400).json({ error: 'url is required (upload the file to /api/uploads/monitoring first).' });
 
@@ -124,6 +125,7 @@ activityRouter.post('/screenshots', requireDevice(db), async (req, res) => {
   displayName: displayName ?? null,
   displayIndex: displayIndex ?? null,
   domainUser: domainUser || req.device.domainUser || null,
+  sessionId: sessionId !== null && sessionId !== undefined ? Number(sessionId) : (req.device.currentSessionId || null),
   capturedAt: capturedAt || new Date().toISOString(),
   type: 'scheduled',
 };
@@ -135,16 +137,18 @@ activityRouter.post('/screenshots', requireDevice(db), async (req, res) => {
 });
 
 activityRouter.post('/live-frame', requireDevice(db), async (req, res) => {
-  const { url, capturedAt } = req.body || {};
+  const { url, capturedAt, domainUser = null, sessionId = null } = req.body || {};
   if (!url) return res.status(400).json({ error: 'url is required.' });
 
   const ts = capturedAt || new Date().toISOString();
-  const employeeId = req.device.employeeId;
+  const employeeId = req.device.currentEmployeeId || req.device.employeeId;
   const existing = db.data.liveFrames.find(f => f.deviceId === req.device.id);
 
   if (existing) {
     const oldUrl = existing.url;
     existing.employeeId = employeeId;
+    existing.domainUser = domainUser || req.device.domainUser || null;
+    existing.sessionId = sessionId !== null && sessionId !== undefined ? Number(sessionId) : (req.device.currentSessionId || null);
     existing.url = url;
     existing.capturedAt = ts;
     if (oldUrl && oldUrl !== url) {
@@ -153,11 +157,11 @@ activityRouter.post('/live-frame', requireDevice(db), async (req, res) => {
       if (!oldHistoryStillUsesIt && !oldScreenshotStillUsesIt) deleteStoredMonitoringFile(oldUrl);
     }
   } else {
-    db.data.liveFrames.push({ employeeId, deviceId: req.device.id, url, capturedAt: ts });
+    db.data.liveFrames.push({ employeeId, deviceId: req.device.id, url, capturedAt: ts, domainUser: domainUser || req.device.domainUser || null, sessionId: sessionId !== null && sessionId !== undefined ? Number(sessionId) : (req.device.currentSessionId || null) });
   }
 
   db.data.liveFrameHistory = db.data.liveFrameHistory || [];
-  db.data.liveFrameHistory.push({ id: nextId(), employeeId, deviceId: req.device.id, url, capturedAt: ts });
+  db.data.liveFrameHistory.push({ id: nextId(), employeeId, deviceId: req.device.id, url, capturedAt: ts, domainUser: domainUser || req.device.domainUser || null, sessionId: sessionId !== null && sessionId !== undefined ? Number(sessionId) : (req.device.currentSessionId || null) });
   purgeOldActivity();
   await db.write();
   res.status(201).json({ ok: true });
