@@ -50,9 +50,9 @@ function publicDevice(device) {
     sessionLocked: device.sessionLocked === true,
   };
 }
-function recordStateChange(device, nextState, timestamp = new Date().toISOString(), sessionId = device.currentSessionId || null, event = null) {
+function recordStateChange(device, nextState, timestamp = new Date().toISOString(), sessionId = device.currentSessionId || null, event = null, previousSessionId = device.currentSessionId || null) {
   const previousState = device.state || 'offline';
-  const sessionChanged = Number(device.currentSessionId || 0) !== Number(sessionId || 0);
+  const sessionChanged = Number(previousSessionId || 0) !== Number(sessionId || 0);
   if (previousState === nextState && !sessionChanged) return;
 
   db.data.deviceStateHistory = db.data.deviceStateHistory || [];
@@ -127,7 +127,7 @@ agentRouter.post('/heartbeat', requireDevice(db), async (req, res) => {
   const nextDomainUser = String(req.device.domainUser || '').trim().toLowerCase(); const resolvedEmployee = resolveCurrentEmployee(req.device.domainUser); const nextEmployeeId = resolvedEmployee?.id || null;
   if (nextDomainUser !== previousDomainUser || previousSessionId !== (req.device.currentSessionId ?? null) || req.device.currentEmployeeId !== nextEmployeeId || previousRdp !== req.device.isRdp) { req.device.currentEmployeeId = nextEmployeeId; req.device.currentSessionStartedAt = nextEmployeeId ? now : null; }
   if (nextState === 'logged-out') { req.device.currentEmployeeId = null; req.device.currentSessionId = null; req.device.currentSessionStartedAt = null; }
-  req.device.lastSeenAt = now; recordStateChange(req.device, nextState, now, req.device.currentSessionId); await db.write();
+  req.device.lastSeenAt = now; recordStateChange(req.device, nextState, now, req.device.currentSessionId, null, previousSessionId); await db.write();
   res.json({ ok: true, status: resolveDeviceState(req.device), currentEmployeeId: req.device.currentEmployeeId, currentEmployeeName: req.device.currentEmployeeId ? userName(req.device.currentEmployeeId) : null, domainUser: req.device.domainUser || null, isRdp: req.device.isRdp === true, connectionType: req.device.isRdp ? 'RDP' : (req.device.domainUser ? 'Local' : null), sessionName: req.device.sessionName || null, sessionLocked: req.device.sessionLocked === true, agentVersion: req.device.agentVersion || null, serverTime: now });
 });
 
