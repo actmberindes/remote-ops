@@ -3,7 +3,7 @@ const { execFileSync } = require('node:child_process');
 
 const WTS_SESSIONSTATE_LOCK = 0;
 const WTS_RDP_PROTOCOL = 2;
-const WTS_SCRIPT = String.raw\`
+const WTS_SCRIPT = String.raw`
 Add-Type -TypeDefinition @"
 using System;
 using System.Collections.Generic;
@@ -146,7 +146,8 @@ public static class RemoteOpsWts {
 }
 "@
 [RemoteOpsWts]::GetJson()
-\`;
+
+`;
 
 let cachedSessions = { checkedAt: 0, sessions: [] };
 const SESSION_CACHE_MS = 1000;
