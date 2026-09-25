@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
-const AGENT_VERSION = '2.0.1';
+const AGENT_VERSION = '2.1.0';
 
 function configDir() {
   if (process.platform === 'win32') {
