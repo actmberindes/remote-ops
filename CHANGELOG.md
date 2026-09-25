@@ -17,7 +17,7 @@
 
 - Live and scheduled screenshot captures now stay in memory while being uploaded.
 - Removed agent-created screenshot files from the Windows TEMP workflow.
-- Windows Agent updated to **v2.1.0**.
+- Windows Agent updated to **v2.0.2**.
 - Release baseline commit: `2143520a09c9fbf7ebf3953f57cd54e78663eee5`.
 
 
