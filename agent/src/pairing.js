@@ -33,6 +33,7 @@ async function runPairingFlow({ log = console.log } = {}) {
       hostname: telemetry.hostname,
       domain: telemetry.domain,
       domainUser: telemetry.domainUser,
+      sessionId: telemetry.sessionId,
       deviceType: 'desktop-agent',
       agentVersion: config.agentVersion,
     });
