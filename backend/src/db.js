@@ -49,6 +49,7 @@ for (const device of db.data.devices) {
   if (device.domainUser === undefined) device.domainUser = null;
   if (device.agentVersion === undefined) device.agentVersion = null;
   if (device.currentEmployeeId === undefined) device.currentEmployeeId = employeeIdForDomainUser(device.domainUser);
+  if (device.currentSessionId === undefined) device.currentSessionId = null;
   if (device.currentSessionStartedAt === undefined) device.currentSessionStartedAt = null;
 }
 if (db.data.agentConfig && db.data.agentConfig.screenshotRetentionDays === 30 && !db.data.agentConfig.liveViewRetentionDays) db.data.agentConfig.screenshotRetentionDays = 7;
