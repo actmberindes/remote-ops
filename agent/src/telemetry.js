@@ -1,20 +1,236 @@
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 
-const LOCK_STATE_CACHE_MS = 1000;
-let lockStateCache = { value: false, checkedAt: 0 };
+const WTS_SESSIONSTATE_LOCK = 0;
+const WTS_RDP_PROTOCOL = 2;
+const WTS_SCRIPT = String.raw\`
+Add-Type -TypeDefinition @"
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
 
-function run(command, args) {
-  try {
-    return execFileSync(command, args, {
-      encoding: 'utf8',
-      windowsHide: true,
-      timeout: 5000,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-  } catch (_) {
-    return '';
+public static class RemoteOpsWts {
+  [StructLayout(LayoutKind.Sequential)]
+  public struct SESSION_INFO {
+    public uint SessionId;
+    public IntPtr WinStationName;
+    public int State;
   }
+
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+  public struct INFOEX_LEVEL1 {
+    public uint SessionId;
+    public int SessionState;
+    public int SessionFlags;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 33)] public string WinStationName;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 21)] public string UserName;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 18)] public string DomainName;
+    public long LogonTime;
+    public long ConnectTime;
+    public long DisconnectTime;
+    public long LastInputTime;
+    public long CurrentTime;
+    public uint IncomingBytes;
+    public uint OutgoingBytes;
+    public uint IncomingFrames;
+    public uint OutgoingFrames;
+    public uint IncomingCompressedBytes;
+    public uint OutgoingCompressedBytes;
+  }
+
+  [StructLayout(LayoutKind.Sequential)]
+  public struct INFOEX {
+    public uint Level;
+    public INFOEX_LEVEL1 Data;
+  }
+
+  [DllImport("wtsapi32.dll", CharSet = CharSet.Unicode)]
+  static extern bool WTSEnumerateSessionsW(IntPtr hServer, uint Reserved, uint Version, out IntPtr ppSessionInfo, out uint pCount);
+
+  [DllImport("wtsapi32.dll", CharSet = CharSet.Unicode)]
+  static extern bool WTSQuerySessionInformationW(IntPtr hServer, uint SessionId, int WTSInfoClass, out IntPtr ppBuffer, out uint pBytesReturned);
+
+  [DllImport("wtsapi32.dll")]
+  static extern void WTSFreeMemory(IntPtr pMemory);
+
+  [DllImport("wtsapi32.dll")]
+  static extern uint WTSGetActiveConsoleSessionId();
+
+  const int WTSUserName = 5;
+  const int WTSDomainName = 7;
+  const int WTSClientProtocolType = 16;
+  const int WTSSessionInfoEx = 25;
+
+  static string QueryString(uint sessionId, int infoClass) {
+    IntPtr p = IntPtr.Zero;
+    uint bytes = 0;
+    try {
+      if (!WTSQuerySessionInformationW(IntPtr.Zero, sessionId, infoClass, out p, out bytes) || p == IntPtr.Zero) return "";
+      return Marshal.PtrToStringUni(p) ?? "";
+    } finally {
+      if (p != IntPtr.Zero) WTSFreeMemory(p);
+    }
+  }
+
+  static int QueryProtocol(uint sessionId) {
+    IntPtr p = IntPtr.Zero;
+    uint bytes = 0;
+    try {
+      if (!WTSQuerySessionInformationW(IntPtr.Zero, sessionId, WTSClientProtocolType, out p, out bytes) || p == IntPtr.Zero) return -1;
+      return Marshal.ReadInt16(p);
+    } finally {
+      if (p != IntPtr.Zero) WTSFreeMemory(p);
+    }
+  }
+
+  static INFOEX_LEVEL1 QueryInfoEx(uint sessionId) {
+    IntPtr p = IntPtr.Zero;
+    uint bytes = 0;
+    try {
+      if (!WTSQuerySessionInformationW(IntPtr.Zero, sessionId, WTSSessionInfoEx, out p, out bytes) || p == IntPtr.Zero) {
+        return new INFOEX_LEVEL1 { SessionId = sessionId, SessionState = -1, SessionFlags = -1 };
+      }
+      var info = (INFOEX)Marshal.PtrToStructure(p, typeof(INFOEX));
+      return info.Data;
+    } finally {
+      if (p != IntPtr.Zero) WTSFreeMemory(p);
+    }
+  }
+
+  static string Escape(string value) {
+    return (value ?? "").Replace("|", "\\|");
+  }
+
+  public static string GetJson() {
+    IntPtr p = IntPtr.Zero;
+    uint count = 0;
+    try {
+      if (!WTSEnumerateSessionsW(IntPtr.Zero, 0, 1, out p, out count) || p == IntPtr.Zero) return "";
+
+      int size = Marshal.SizeOf(typeof(SESSION_INFO));
+      uint consoleSessionId = WTSGetActiveConsoleSessionId();
+      var rows = new List<string>();
+
+      for (uint i = 0; i < count; i++) {
+        var row = (SESSION_INFO)Marshal.PtrToStructure(
+          IntPtr.Add(p, checked((int)(i * (uint)size))),
+          typeof(SESSION_INFO)
+        );
+
+        if (row.State != 0) continue;
+
+        string user = QueryString(row.SessionId, WTSUserName).Trim();
+        if (String.IsNullOrWhiteSpace(user)) continue;
+
+        string domain = QueryString(row.SessionId, WTSDomainName).Trim();
+        string domainUser = String.IsNullOrWhiteSpace(domain) ? user : domain + "\\" + user;
+        int protocol = QueryProtocol(row.SessionId);
+        var info = QueryInfoEx(row.SessionId);
+
+        rows.Add(
+          row.SessionId.ToString() + "|" +
+          Escape(domainUser) + "|" +
+          protocol.ToString() + "|" +
+          info.SessionFlags.ToString() + "|" +
+          info.LogonTime.ToString() + "|" +
+          info.LastInputTime.ToString() + "|" +
+          (row.SessionId == consoleSessionId ? "1" : "0")
+        );
+      }
+
+      return String.Join("\\n", rows);
+    } finally {
+      if (p != IntPtr.Zero) WTSFreeMemory(p);
+    }
+  }
+}
+"@
+[RemoteOpsWts]::GetJson()
+\`;
+
+let cachedSessions = { checkedAt: 0, sessions: [] };
+const SESSION_CACHE_MS = 1000;
+
+function getWindowsSessions() {
+  if (process.platform !== 'win32') return [];
+
+  const now = Date.now();
+  if (now - cachedSessions.checkedAt < SESSION_CACHE_MS) return cachedSessions.sessions;
+
+  try {
+    const output = execFileSync(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', WTS_SCRIPT],
+      {
+        encoding: 'utf8',
+        windowsHide: true,
+        timeout: 5000,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }
+    ).trim();
+
+    const sessions = String(output || '')
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean)
+      .map(line => {
+        const parts = line.split('|');
+        if (parts.length < 7) return null;
+
+        const sessionId = Number(parts[0]);
+        const domainUser = parts[1].replace(/\\\|/g, '|');
+        const protocol = Number(parts[2]);
+        const sessionFlags = Number(parts[3]);
+        const logonTime = Number(parts[4]);
+        const lastInputTime = Number(parts[5]);
+        const isConsole = parts[6] === '1';
+
+        if (!Number.isFinite(sessionId) || !domainUser) return null;
+
+        return {
+          sessionId,
+          domainUser,
+          protocol,
+          isRdp: protocol === WTS_RDP_PROTOCOL,
+          isConsole: isConsole || protocol === 0,
+          locked: sessionFlags === WTS_SESSIONSTATE_LOCK,
+          sessionFlags,
+          logonTime,
+          lastInputTime,
+        };
+      })
+      .filter(Boolean);
+
+    cachedSessions = { checkedAt: now, sessions };
+    return sessions;
+  } catch (_) {
+    return [];
+  }
+}
+
+function chooseInteractiveSession(sessions) {
+  if (!Array.isArray(sessions) || sessions.length === 0) return null;
+
+  const unlockedConsole = sessions
+    .filter(session => session.isConsole && !session.locked)
+    .sort((a, b) => b.logonTime - a.logonTime)[0];
+  if (unlockedConsole) return unlockedConsole;
+
+  const unlockedRdp = sessions
+    .filter(session => session.isRdp && !session.locked)
+    .sort((a, b) => b.logonTime - a.logonTime)[0];
+  if (unlockedRdp) return unlockedRdp;
+
+  const lockedRdp = sessions
+    .filter(session => session.isRdp)
+    .sort((a, b) => b.logonTime - a.logonTime)[0];
+  if (lockedRdp) return lockedRdp;
+
+  return sessions.sort((a, b) => b.logonTime - a.logonTime)[0] || null;
+}
+
+function getActiveWindowsSession() {
+  return chooseInteractiveSession(getWindowsSessions());
 }
 
 function getMachineId() {
@@ -41,135 +257,64 @@ function getPrimaryIPv4() {
   return '';
 }
 
-function isServiceIdentity(value) {
-  return /^(NT AUTHORITY\\)?(SYSTEM|LOCAL SERVICE|NETWORK SERVICE)$/i.test(String(value || '').trim());
-}
-
-function getInteractiveUser() {
-  if (process.platform !== 'win32') {
-    try { return os.userInfo().username || ''; } catch (_) { return ''; }
-  }
-
-  const processUser = run('whoami.exe', []);
-  if (processUser && !isServiceIdentity(processUser)) return processUser;
-
-  const queryUser = run('query.exe', ['user']);
-  if (queryUser) {
-    const lines = queryUser.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-    for (const line of lines) {
-      if (/^USERNAME\s+/i.test(line)) continue;
-      const match = line.match(/^>?\s*(\S+)\s+\S+\s+\d+\s+(ACTIVE|DISC|DISCONNECTED)\b/i);
-      if (match && match[1] && !isServiceIdentity(match[1])) return match[1];
-    }
-  }
-
-  const envUsername = String(process.env.USERNAME || '').trim();
-  if (envUsername && !isServiceIdentity(envUsername)) {
-    const envDomain = String(process.env.USERDOMAIN || '').trim();
-    return envDomain ? `${envDomain}\\${envUsername}` : envUsername;
-  }
-
-  return '';
-}
-
-function getConnectionType() {
-  if (process.platform !== 'win32') return { isRdp: false, sessionName: null };
-  const sessionName = String(process.env.SESSIONNAME || '').trim() || null;
-  const isRdp = /^RDP-Tcp#/i.test(sessionName || '');
-  return { isRdp, sessionName };
-}
-
-function getSecurityLockState() {
-  const output = run('wevtutil.exe', [
-    'qe',
-    'Security',
-    '/q:*[System[(EventID=4800 or EventID=4801)]]',
-    '/c:1',
-    '/rd:true',
-    '/f:text',
-  ]);
-
-  const eventId = output.match(/Event ID:\s*(4800|4801)/i)?.[1];
-  if (eventId === '4800') return true;
-  if (eventId === '4801') return false;
-  return null;
-}
-
-function isLogonUiRunning() {
-  const output = run('tasklist.exe', [
-    '/FI',
-    'IMAGENAME eq LogonUI.exe',
-    '/NH',
-  ]);
-  return /(?:^|\s)LogonUI\.exe\s+/i.test(output);
-}
-
-function getWorkstationLocked() {
-  if (process.platform !== 'win32') return false;
-
-  const now = Date.now();
-  if (now - lockStateCache.checkedAt < LOCK_STATE_CACHE_MS) {
-    return lockStateCache.value;
-  }
-
-  // LogonUI.exe is the immediate local indication that Windows has switched
-  // to the secure lock/sign-in desktop. Security event 4800/4801 is used as
-  // a fallback so this does not depend solely on audit policy configuration.
-  const logonUiLocked = isLogonUiRunning();
-  const securityLocked = getSecurityLockState();
-  const locked = logonUiLocked || securityLocked === true;
-
-  lockStateCache = { value: locked, checkedAt: now };
-  return locked;
-}
-
 function getIdentity() {
   const hostname = process.env.COMPUTERNAME || os.hostname();
-  const interactiveUser = getInteractiveUser();
-  const connection = getConnectionType();
-  const match = interactiveUser.match(/^([^\\]+)\\(.+)$/);
+  const interactive = getActiveWindowsSession();
+  const domainUser = interactive?.domainUser || '';
+  const match = domainUser.match(/^([^\\]+)\\(.+)$/);
   const domain = match ? match[1] : null;
-  const username = match ? match[2] : (interactiveUser || null);
-  const domainUser = interactiveUser || null;
+  const username = match ? match[2] : (domainUser || null);
 
   return {
     machineId: getMachineId(),
     hostname,
     domain,
-    domainUser,
+    domainUser: domainUser || null,
     username,
+    sessionId: interactive?.sessionId ?? null,
+    sessionLocked: interactive?.locked === true,
+    isRdp: interactive?.isRdp === true,
+    sessionName: interactive?.isRdp
+      ? 'RDP-Tcp#' + interactive.sessionId
+      : (interactive?.isConsole ? 'console' : null),
     ipAddress: getPrimaryIPv4() || null,
-    operatingSystem: `${os.platform()} ${os.release()}`,
-    isRdp: connection.isRdp,
-    sessionName: connection.sessionName,
-    sessionLocked: getWorkstationLocked(),
+    operatingSystem: os.platform() + ' ' + os.release(),
+    lastInputTime: interactive?.lastInputTime || null,
+    sessionLogonTime: interactive?.logonTime || null,
   };
+}
+
+function fileTimeToUnixMs(fileTime) {
+  if (!Number.isFinite(fileTime) || fileTime <= 0) return null;
+  return Math.round(fileTime / 10000 - 11644473600000);
 }
 
 function getIdleSeconds() {
   if (process.platform !== 'win32') return 0;
 
-  const script = `Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public static class IdleNative {
-  [StructLayout(LayoutKind.Sequential)] public struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }
-  [DllImport("user32.dll")] public static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
-  [DllImport("kernel32.dll")] public static extern uint GetTickCount();
-}
-"@; $info = New-Object IdleNative+LASTINPUTINFO; $info.cbSize = [Runtime.InteropServices.Marshal]::SizeOf($info); if([IdleNative]::GetLastInputInfo([ref]$info)){ [math]::Round((([IdleNative]::GetTickCount() - $info.dwTime) / 1000), 0) }`;
-  const output = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script]);
-  const value = Number(output);
-  return Number.isFinite(value) ? value : 0;
+  const session = getActiveWindowsSession();
+  if (!session?.lastInputTime) return 0;
+
+  const lastInputMs = fileTimeToUnixMs(session.lastInputTime);
+  if (!Number.isFinite(lastInputMs)) return 0;
+
+  return Math.max(0, Math.round((Date.now() - lastInputMs) / 1000));
 }
 
 function getDeviceState() {
   const identity = getIdentity();
   const idleSeconds = getIdleSeconds();
+
   if (!identity.domainUser) return { ...identity, state: 'logged-out', idleSeconds };
   if (identity.sessionLocked) return { ...identity, state: 'locked', idleSeconds };
   if (idleSeconds >= 300) return { ...identity, state: 'idle', idleSeconds };
   return { ...identity, state: 'active', idleSeconds };
 }
 
-module.exports = { getIdentity, getIdleSeconds, getDeviceState, getWorkstationLocked };
+module.exports = {
+  getWindowsSessions,
+  getActiveWindowsSession,
+  getIdentity,
+  getIdleSeconds,
+  getDeviceState,
+};
