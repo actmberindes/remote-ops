@@ -234,6 +234,19 @@ function getActiveWindowsSession() {
   return chooseInteractiveSession(getWindowsSessions());
 }
 
+function run(command, args = []) {
+  try {
+    return execFileSync(command, args, {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 5000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch (_) {
+    return '';
+  }
+}
+
 function getMachineId() {
   if (process.platform !== 'win32') return os.hostname();
 
