@@ -123,11 +123,11 @@ function scopedEmployeeIds(user) {
 }
 
 multiDisplayActivityRouter.post('/live-frame', requireDevice(db), async (req, res) => {
-  const { url, capturedAt, displayId = null, displayName = null, displayIndex = 1 } = req.body || {};
+  const { url, capturedAt, displayId = null, displayName = null, displayIndex = 1, domainUser = null, sessionId = null } = req.body || {};
   if (!url) return res.status(400).json({ error: 'url is required.' });
 
   const ts = capturedAt || new Date().toISOString();
-  const employeeId = currentEmployeeIdForDevice(req.device) || req.device.employeeId;
+  const employeeId = currentEmployeeIdForDevice({ ...req.device, domainUser: domainUser || req.device.domainUser }) || req.device.employeeId;
   const rdp = deviceIsRdp(req.device);
   const normalizedIndex = rdp ? 1 : Math.max(1, Number(displayIndex) || 1);
   const normalizedId = rdp ? '\\\\.\\DISPLAY1' : (displayId ? String(displayId) : `display-${normalizedIndex}`);
@@ -154,6 +154,8 @@ multiDisplayActivityRouter.post('/live-frame', requireDevice(db), async (req, re
     displayId: normalizedId,
     displayName: normalizedName,
     displayIndex: normalizedIndex,
+    domainUser: domainUser || req.device.domainUser || null,
+    sessionId: sessionId !== null && sessionId !== undefined ? Number(sessionId) : (req.device.currentSessionId || null),
   };
 
   if (existing) Object.assign(existing, nextFrame);
@@ -167,12 +169,12 @@ multiDisplayActivityRouter.post('/live-frame', requireDevice(db), async (req, re
 });
 
 multiDisplayActivityRouter.post('/screenshots', requireDevice(db), async (req, res) => {
-  const { url, filename, capturedAt, displayId = null, displayName = null, displayIndex = 1 } = req.body || {};
+  const { url, filename, capturedAt, displayId = null, displayName = null, displayIndex = 1, domainUser = null, sessionId = null } = req.body || {};
   if (!url) return res.status(400).json({ error: 'url is required (upload the file to /api/uploads/monitoring first).' });
 
   const rdp = deviceIsRdp(req.device);
   const normalizedIndex = rdp ? 1 : Math.max(1, Number(displayIndex) || 1);
-  const currentEmployeeId = currentEmployeeIdForDevice(req.device) || req.device.employeeId;
+  const currentEmployeeId = currentEmployeeIdForDevice({ ...req.device, domainUser: domainUser || req.device.domainUser }) || req.device.employeeId;
   const entry = {
     id: nextId(),
     employeeId: currentEmployeeId,
@@ -184,6 +186,8 @@ multiDisplayActivityRouter.post('/screenshots', requireDevice(db), async (req, r
     displayId: rdp ? '\\\\.\\DISPLAY1' : (displayId ? String(displayId) : `display-${normalizedIndex}`),
     displayName: rdp ? '\\\\.\\DISPLAY1' : (displayName ? String(displayName) : `Display ${normalizedIndex}`),
     displayIndex: normalizedIndex,
+    domainUser: domainUser || req.device.domainUser || null,
+    sessionId: sessionId !== null && sessionId !== undefined ? Number(sessionId) : (req.device.currentSessionId || null),
   };
 
   db.data.screenshots.push(entry);
