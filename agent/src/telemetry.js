@@ -152,6 +152,81 @@ public static class RemoteOpsWts {
 let cachedSessions = { checkedAt: 0, sessions: [] };
 const SESSION_CACHE_MS = 1000;
 
+function parseWtsSessions(output) {
+  return String(output || '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const parts = line.split('|');
+      if (parts.length < 7) return null;
+
+      const sessionId = Number(parts[0]);
+      const domainUser = parts[1].replace(/\\\|/g, '|');
+      const protocol = Number(parts[2]);
+      const sessionFlags = Number(parts[3]);
+      const logonTime = Number(parts[4]);
+      const lastInputTime = Number(parts[5]);
+      const isConsole = parts[6] === '1';
+
+      if (!Number.isFinite(sessionId) || !domainUser) return null;
+
+      return {
+        sessionId,
+        domainUser,
+        protocol,
+        isRdp: protocol === WTS_RDP_PROTOCOL,
+        isConsole: isConsole || protocol === 0,
+        locked: sessionFlags === WTS_SESSIONSTATE_LOCK,
+        sessionFlags,
+        logonTime,
+        lastInputTime,
+      };
+    })
+    .filter(Boolean);
+}
+
+function parseQuserSessions(output) {
+  const sessions = [];
+
+  for (const rawLine of String(output || '').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || /^USERNAME\s+/i.test(line)) continue;
+
+    const normalized = line.replace(/^>/, '').trim();
+    const parts = normalized.split(/\s+/);
+    if (parts.length < 4) continue;
+
+    const username = parts[0];
+    const sessionName = parts.length >= 5 ? parts[1] : '';
+    const sessionIdIndex = sessionName ? 2 : 1;
+    const sessionId = Number(parts[sessionIdIndex]);
+    const state = String(parts[sessionIdIndex + 1] || '').toLowerCase();
+
+    if (!username || !Number.isFinite(sessionId)) continue;
+    if (!['active', 'disc', 'disconnected', 'idle'].includes(state)) continue;
+
+    const isRdp = /^(rdp-tcp|rdp)/i.test(sessionName);
+    const isConsole = !isRdp || /^console$/i.test(sessionName);
+
+    sessions.push({
+      sessionId,
+      domainUser: username,
+      protocol: isRdp ? WTS_RDP_PROTOCOL : 0,
+      isRdp,
+      isConsole,
+      locked: false,
+      sessionFlags: null,
+      logonTime: 0,
+      lastInputTime: 0,
+      fallback: true,
+      disconnected: state === 'disc' || state === 'disconnected',
+    });
+  }
+
+  return sessions;
+}
+
 function getWindowsSessions() {
   if (process.platform !== 'win32') return [];
 
@@ -170,41 +245,30 @@ function getWindowsSessions() {
       }
     ).trim();
 
-    const sessions = String(output || '')
-      .split(/\r?\n/)
-      .map(line => line.trim())
-      .filter(Boolean)
-      .map(line => {
-        const parts = line.split('|');
-        if (parts.length < 7) return null;
+    let sessions = parseWtsSessions(output);
 
-        const sessionId = Number(parts[0]);
-        const domainUser = parts[1].replace(/\\\|/g, '|');
-        const protocol = Number(parts[2]);
-        const sessionFlags = Number(parts[3]);
-        const logonTime = Number(parts[4]);
-        const lastInputTime = Number(parts[5]);
-        const isConsole = parts[6] === '1';
-
-        if (!Number.isFinite(sessionId) || !domainUser) return null;
-
-        return {
-          sessionId,
-          domainUser,
-          protocol,
-          isRdp: protocol === WTS_RDP_PROTOCOL,
-          isConsole: isConsole || protocol === 0,
-          locked: sessionFlags === WTS_SESSIONSTATE_LOCK,
-          sessionFlags,
-          logonTime,
-          lastInputTime,
-        };
-      })
-      .filter(Boolean);
+    // WTS is the authoritative source because it provides session IDs,
+    // domains, lock state and last-input time. If WTS cannot be queried
+    // on a workstation, fall back to quser so a normal interactive login
+    // is still detected instead of reporting "No User Logged In".
+    if (sessions.length === 0) {
+      try {
+        const quserOutput = execFileSync('quser.exe', [], {
+          encoding: 'utf8',
+          windowsHide: true,
+          timeout: 5000,
+          stdio: ['ignore', 'pipe', 'ignore'],
+        });
+        sessions = parseQuserSessions(quserOutput);
+      } catch (_) {
+        sessions = [];
+      }
+    }
 
     cachedSessions = { checkedAt: now, sessions };
     return sessions;
   } catch (_) {
+    cachedSessions = { checkedAt: now, sessions: [] };
     return [];
   }
 }
@@ -213,21 +277,23 @@ function chooseInteractiveSession(sessions) {
   if (!Array.isArray(sessions) || sessions.length === 0) return null;
 
   const unlockedConsole = sessions
-    .filter(session => session.isConsole && !session.locked)
+    .filter(session => session.isConsole && !session.locked && !session.disconnected)
     .sort((a, b) => b.logonTime - a.logonTime)[0];
   if (unlockedConsole) return unlockedConsole;
 
   const unlockedRdp = sessions
-    .filter(session => session.isRdp && !session.locked)
+    .filter(session => session.isRdp && !session.locked && !session.disconnected)
     .sort((a, b) => b.logonTime - a.logonTime)[0];
   if (unlockedRdp) return unlockedRdp;
 
   const lockedRdp = sessions
-    .filter(session => session.isRdp)
+    .filter(session => session.isRdp && !session.disconnected)
     .sort((a, b) => b.logonTime - a.logonTime)[0];
   if (lockedRdp) return lockedRdp;
 
-  return sessions.sort((a, b) => b.logonTime - a.logonTime)[0] || null;
+  return sessions
+    .filter(session => !session.disconnected)
+    .sort((a, b) => b.logonTime - a.logonTime)[0] || null;
 }
 
 function getActiveWindowsSession() {
