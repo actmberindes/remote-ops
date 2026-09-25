@@ -67,6 +67,13 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # The source branch can move while the Windows build is running.
+          # Rebase onto the current main before committing the generated EXE
+          # so the publish step does not fail with a non-fast-forward push.
+          git fetch origin main
+          git rebase origin/main
+
           git add --force agent/remote-ops-agent.exe
           if (git diff --cached --quiet) {
             Write-Host "Executable is already up to date; nothing to commit."
