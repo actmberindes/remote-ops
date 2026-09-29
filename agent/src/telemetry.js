@@ -3,7 +3,7 @@ const { execFileSync } = require('node:child_process');
 
 const WTS_SESSIONSTATE_LOCK = 0;
 const WTS_RDP_PROTOCOL = 2;
-const WTS_SCRIPT = String.raw`
+const WTS_SCRIPT = String.raw\`
 Add-Type -TypeDefinition @"
 using System;
 using System.Collections.Generic;
@@ -58,6 +58,7 @@ public static class RemoteOpsWts {
 
   const int WTSUserName = 5;
   const int WTSDomainName = 7;
+  const int WTSConnectState = 8;
   const int WTSClientProtocolType = 16;
   const int WTSSessionInfoEx = 25;
 
@@ -76,7 +77,7 @@ public static class RemoteOpsWts {
     IntPtr p = IntPtr.Zero;
     uint bytes = 0;
     try {
-      if (!WTSQuerySessionInformationW(IntPtr.Zero, sessionId, WTSClientProtocolType, out p, out bytes) || p == IntPtr.Zero) return -1;
+      if (!WTSQuerySessionInformationW(IntPtr.Zero, sessionId, WTSClientProtocolType, out p, out bytes) || p == IntPtr.Zero || bytes < 2) return -1;
       return Marshal.ReadInt16(p);
     } finally {
       if (p != IntPtr.Zero) WTSFreeMemory(p);
@@ -101,7 +102,7 @@ public static class RemoteOpsWts {
     return (value ?? "").Replace("|", "\\|");
   }
 
-  public static string GetJson() {
+  public static string GetRows() {
     IntPtr p = IntPtr.Zero;
     uint count = 0;
     try {
@@ -125,29 +126,42 @@ public static class RemoteOpsWts {
         string domain = QueryString(row.SessionId, WTSDomainName).Trim();
         string domainUser = String.IsNullOrWhiteSpace(domain) ? user : domain + "\\" + user;
         int protocol = QueryProtocol(row.SessionId);
-        var info = QueryInfoEx(row.SessionId);
+
+        // WTSINFOEX is optional. A failure here must never discard identity.
+        int sessionFlags = -1;
+        long logonTime = 0;
+        long lastInputTime = 0;
+        try {
+          var info = QueryInfoEx(row.SessionId);
+          if (info.SessionId == row.SessionId) {
+            sessionFlags = info.SessionFlags;
+            logonTime = info.LogonTime;
+            lastInputTime = info.LastInputTime;
+          }
+        } catch {
+        }
 
         rows.Add(
           row.SessionId.ToString() + "|" +
           Escape(domainUser) + "|" +
           protocol.ToString() + "|" +
-          info.SessionFlags.ToString() + "|" +
-          info.LogonTime.ToString() + "|" +
-          info.LastInputTime.ToString() + "|" +
+          sessionFlags.ToString() + "|" +
+          logonTime.ToString() + "|" +
+          lastInputTime.ToString() + "|" +
           (row.SessionId == consoleSessionId ? "1" : "0")
         );
       }
 
-      return String.Join("\n", rows);
+      return String.Join("\\n", rows);
     } finally {
       if (p != IntPtr.Zero) WTSFreeMemory(p);
     }
   }
 }
 "@
-[RemoteOpsWts]::GetJson()
+[RemoteOpsWts]::GetRows()
+\`;
 
-`;
 
 let cachedSessions = { checkedAt: 0, sessions: [] };
 const SESSION_CACHE_MS = 1000;
@@ -177,7 +191,7 @@ function parseWtsSessions(output) {
         protocol,
         isRdp: protocol === WTS_RDP_PROTOCOL,
         isConsole: isConsole || protocol === 0,
-        locked: sessionFlags === WTS_SESSIONSTATE_LOCK,
+        locked: sessionFlags === 0,
         sessionFlags,
         logonTime,
         lastInputTime,
