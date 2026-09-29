@@ -3,7 +3,7 @@ const { execFileSync } = require('node:child_process');
 
 const WTS_SESSIONSTATE_LOCK = 0;
 const WTS_RDP_PROTOCOL = 2;
-const WTS_SCRIPT = String.raw\`
+const WTS_SCRIPT = String.raw`
 Add-Type -TypeDefinition @"
 using System;
 using System.Collections.Generic;
@@ -152,7 +152,7 @@ public static class RemoteOpsWts {
         );
       }
 
-      return String.Join("\\n", rows);
+      return String.Join("\n", rows);
     } finally {
       if (p != IntPtr.Zero) WTSFreeMemory(p);
     }
