@@ -138,7 +138,7 @@ public static class RemoteOpsWts {
         );
       }
 
-      return String.Join("\\n", rows);
+      return String.Join("\n", rows);
     } finally {
       if (p != IntPtr.Zero) WTSFreeMemory(p);
     }
