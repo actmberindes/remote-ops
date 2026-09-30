@@ -239,11 +239,82 @@ function parseQuserSessions(output) {
   return sessions;
 }
 
+function parseSessionCommand(output) {
+  const sessions = [];
+
+  for (const rawLine of String(output || '').split(/\r?\n/)) {
+    const line = rawLine.replace(/^\s*>?\s*/, '').trim();
+    if (!line || /^(SESSIONNAME|USERNAME)\s+/i.test(line)) continue;
+
+    const parts = line.split(/\s+/);
+    const idIndex = parts.findIndex((part, index) => index > 0 && /^\d+$/.test(part));
+    if (idIndex < 1 || !parts[idIndex + 1]) continue;
+
+    const username = parts[0];
+    const sessionName = idIndex > 1 ? parts[1] : '';
+    const sessionId = Number(parts[idIndex]);
+    const state = String(parts[idIndex + 1]).toLowerCase();
+
+    if (!username || !Number.isFinite(sessionId)) continue;
+
+    const isRdp = /^(rdp-tcp|rdp)/i.test(sessionName);
+    sessions.push({
+      sessionId,
+      domainUser: username,
+      protocol: isRdp ? WTS_RDP_PROTOCOL : 0,
+      isRdp,
+      isConsole: !isRdp || /^console$/i.test(sessionName),
+      locked: false,
+      sessionFlags: null,
+      logonTime: 0,
+      lastInputTime: 0,
+      fallback: true,
+      disconnected: /^(disc|disconnected|listen|down|init|reset)$/i.test(state),
+    });
+  }
+
+  return sessions;
+}
+
+function parseExplorerSessions(output) {
+  const sessions = [];
+
+  for (const rawLine of String(output || '').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const parts = line.split('|');
+    if (parts.length < 3) continue;
+
+    const sessionId = Number(parts[0]);
+    const domainUser = parts[1].trim();
+    if (!Number.isFinite(sessionId) || !domainUser) continue;
+
+    sessions.push({
+      sessionId,
+      domainUser,
+      protocol: 0,
+      isRdp: false,
+      isConsole: true,
+      locked: false,
+      sessionFlags: null,
+      logonTime: 0,
+      lastInputTime: 0,
+      fallback: true,
+      disconnected: false,
+    });
+  }
+
+  return sessions;
+}
+
 function getWindowsSessions() {
   if (process.platform !== 'win32') return [];
 
   const now = Date.now();
   if (now - cachedSessions.checkedAt < SESSION_CACHE_MS) return cachedSessions.sessions;
+
+  let sessions = [];
 
   try {
     const output = execFileSync(
@@ -257,32 +328,72 @@ function getWindowsSessions() {
       }
     ).trim();
 
-    let sessions = parseWtsSessions(output);
+    sessions = parseWtsSessions(output);
+  } catch (_) {
+    sessions = [];
+  }
 
-    // WTS is the authoritative source because it provides session IDs,
-    // domains, lock state and last-input time. If WTS cannot be queried
-    // on a workstation, fall back to quser so a normal interactive login
-    // is still detected instead of reporting "No User Logged In".
-    if (sessions.length === 0) {
-      try {
-        const quserOutput = execFileSync('quser.exe', [], {
+  // The WTS helper is authoritative, but keep a native Windows fallback.
+  // This prevents a transient WTS/PowerShell problem from making a valid
+  // interactive user look logged out.
+  if (sessions.length === 0) {
+    try {
+      const output = execFileSync('quser.exe', [], {
+        encoding: 'utf8',
+        windowsHide: true,
+        timeout: 5000,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      sessions = parseQuserSessions(output);
+    } catch (_) {
+      sessions = [];
+    }
+  }
+
+  if (sessions.length === 0) {
+    try {
+      const output = execFileSync('query.exe', ['session'], {
+        encoding: 'utf8',
+        windowsHide: true,
+        timeout: 5000,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      sessions = parseSessionCommand(output);
+    } catch (_) {
+      sessions = [];
+    }
+  }
+
+  // Final fallback: Explorer processes expose both the Windows session ID
+  // and the interactive user's domain-qualified identity even when the agent
+  // itself runs outside the user's desktop session.
+  if (sessions.length === 0) {
+    try {
+      const output = execFileSync(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-Command',
+          "$ErrorActionPreference='Stop'; Get-Process -Name explorer -IncludeUserName | ForEach-Object { \"$($_.SessionId)|$($_.UserName)\" }",
+        ],
+        {
           encoding: 'utf8',
           windowsHide: true,
           timeout: 5000,
           stdio: ['ignore', 'pipe', 'ignore'],
-        });
-        sessions = parseQuserSessions(quserOutput);
-      } catch (_) {
-        sessions = [];
-      }
+        }
+      );
+      sessions = parseExplorerSessions(output);
+    } catch (_) {
+      sessions = [];
     }
-
-    cachedSessions = { checkedAt: now, sessions };
-    return sessions;
-  } catch (_) {
-    cachedSessions = { checkedAt: now, sessions: [] };
-    return [];
   }
+
+  cachedSessions = { checkedAt: now, sessions };
+  return sessions;
 }
 
 function chooseInteractiveSession(sessions) {
