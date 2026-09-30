@@ -160,9 +160,7 @@ public static class RemoteOpsWts {
 }
 "@
 [RemoteOpsWts]::GetRows()
-\`;
-
-
+`;
 let cachedSessions = { checkedAt: 0, sessions: [] };
 const SESSION_CACHE_MS = 1000;
 
