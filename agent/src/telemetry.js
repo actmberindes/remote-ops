@@ -565,7 +565,10 @@ function fileTimeToUnixMs(fileTime) {
 function getIdleSeconds() {
   if (process.platform !== 'win32') return 0;
 
-  const session = getActiveWindowsSession();
+  const identity = getIdentity();
+  const session = identity.sessionId !== null
+    ? getWindowsSessions().find(item => Number(item.sessionId) === Number(identity.sessionId))
+    : null;
   if (!session?.lastInputTime) return 0;
 
   const lastInputMs = fileTimeToUnixMs(session.lastInputTime);
