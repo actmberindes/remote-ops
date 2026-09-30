@@ -460,13 +460,83 @@ function getPrimaryIPv4() {
   return '';
 }
 
+function getCurrentProcessSession() {
+  if (process.platform !== 'win32') return null;
+
+  try {
+    const output = run(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        '[Diagnostics.Process]::GetCurrentProcess().SessionId',
+      ]
+    );
+    const sessionId = Number(output);
+    return Number.isFinite(sessionId) ? sessionId : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function getCurrentProcessDomainUser() {
+  if (process.platform !== 'win32') return '';
+
+  const username = String(process.env.USERNAME || '').trim();
+  const domain = String(process.env.USERDOMAIN || '').trim();
+
+  if (username && domain) return domain + '\\' + username;
+  if (username) return username;
+
+  try {
+    return run('whoami.exe', []);
+  } catch (_) {
+    return '';
+  }
+}
+
 function getIdentity() {
   const hostname = process.env.COMPUTERNAME || os.hostname();
-  const interactive = getActiveWindowsSession();
-  const domainUser = interactive?.domainUser || '';
+
+  // The agent is launched from the Windows Startup folder, so this process
+  // is already running inside the signed-in user's interactive session.
+  // Do not require WTSEnumerateSessions to discover the current user.
+  const processSessionId = getCurrentProcessSession();
+  const processDomainUser = getCurrentProcessDomainUser();
+
+  let interactive = null;
+  if (processSessionId !== null) {
+    interactive = getWindowsSessions().find(
+      session => Number(session.sessionId) === Number(processSessionId)
+    ) || null;
+  }
+
+  // If WTS enumeration is unavailable, the process identity is still valid.
+  // Build a usable session record from the process itself.
+  if (!interactive && processDomainUser) {
+    interactive = {
+      sessionId: processSessionId,
+      domainUser: processDomainUser,
+      protocol: 0,
+      isRdp: false,
+      isConsole: true,
+      locked: false,
+      sessionFlags: null,
+      logonTime: 0,
+      lastInputTime: 0,
+    };
+  }
+
+  const domainUser = processDomainUser || interactive?.domainUser || '';
   const match = domainUser.match(/^([^\\]+)\\(.+)$/);
   const domain = match ? match[1] : null;
   const username = match ? match[2] : (domainUser || null);
+
+  // Prefer the WTS record for the current process session when available.
+  const sessionId = processSessionId ?? interactive?.sessionId ?? null;
 
   return {
     machineId: getMachineId(),
@@ -474,11 +544,11 @@ function getIdentity() {
     domain,
     domainUser: domainUser || null,
     username,
-    sessionId: interactive?.sessionId ?? null,
+    sessionId,
     sessionLocked: interactive?.locked === true,
     isRdp: interactive?.isRdp === true,
     sessionName: interactive?.isRdp
-      ? 'RDP-Tcp#' + interactive.sessionId
+      ? 'RDP-Tcp#' + sessionId
       : (interactive?.isConsole ? 'console' : null),
     ipAddress: getPrimaryIPv4() || null,
     operatingSystem: os.platform() + ' ' + os.release(),
