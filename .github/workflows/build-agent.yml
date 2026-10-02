@@ -61,6 +61,7 @@ jobs:
           Copy-Item -LiteralPath $source -Destination $target -Force
 
       - name: Commit rebuilt executable
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
