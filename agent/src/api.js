@@ -43,10 +43,12 @@ function createClient(apiUrl) {
       displayName: display.displayName ?? null,
       displayIndex: display.displayIndex ?? null,
       domainUser: telemetry.domainUser ?? null,
+      sessionId: telemetry.sessionId ?? null,
+      activeSessionName: telemetry.activeSessionName ?? null,
       capturedAt: new Date().toISOString()
     }
   }),
-    postLiveFrame: (deviceToken, url, display = {}) => request(apiUrl, '/activity/live-frame', { method: 'POST', token: deviceToken, body: { url, displayId: display.displayId ?? null, displayName: display.displayName ?? null, displayIndex: display.displayIndex ?? null, capturedAt: new Date().toISOString() } }),
+    postLiveFrame: (deviceToken, url, display = {}, telemetry = {}) => request(apiUrl, '/activity/live-frame', { method: 'POST', token: deviceToken, body: { url, displayId: display.displayId ?? null, displayName: display.displayName ?? null, displayIndex: display.displayIndex ?? null, domainUser: telemetry.domainUser ?? null, sessionId: telemetry.sessionId ?? null, activeSessionName: telemetry.activeSessionName ?? null, capturedAt: new Date().toISOString() } }),
     postWebUsage: (deviceToken, entries) => request(apiUrl, '/activity/web-usage', { method: 'POST', token: deviceToken, body: { entries } }),
   };
 }

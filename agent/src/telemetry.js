@@ -45,31 +45,57 @@ function isServiceIdentity(value) {
   return /^(NT AUTHORITY\\)?(SYSTEM|LOCAL SERVICE|NETWORK SERVICE)$/i.test(String(value || '').trim());
 }
 
+function parseActiveSession(output) {
+  const lines = String(output || '').split(/\r?\n/);
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line || /^USERNAME\s+/i.test(line)) continue;
+    const match = line.match(/^>?\s*(\S+)\s+(\S+)\s+(\d+)\s+(ACTIVE)\b(?:\s+(\S+))?/i);
+    if (!match || isServiceIdentity(match[1])) continue;
+    return {
+      username: match[1],
+      sessionName: match[2],
+      sessionId: Number(match[3]),
+      idleSeconds: null,
+    };
+  }
+  return null;
+}
+
+function getActiveInteractiveSession() {
+  if (process.platform !== 'win32') return null;
+  const connection = getConnectionType();
+
+  // Preserve the existing RDP path. Do not replace the RDP session identity
+  // with the active console session when the agent is running under RDP.
+  if (connection.isRdp) {
+    const processUser = run('whoami.exe', []);
+    return !isServiceIdentity(processUser) && processUser
+      ? {
+          username: processUser,
+          sessionName: connection.sessionName,
+          sessionId: null,
+          idleSeconds: null,
+        }
+      : null;
+  }
+
+  // query user reports all Windows sessions and marks active sessions.
+  // This lets the agent follow Fast User Switching instead of the account
+  // that originally launched the agent process.
+  return parseActiveSession(run('query.exe', ['user']));
+}
+
 function getInteractiveUser() {
   if (process.platform !== 'win32') {
     try { return os.userInfo().username || ''; } catch (_) { return ''; }
   }
 
+  const active = getActiveInteractiveSession();
+  if (active?.username) return active.username;
+
   const processUser = run('whoami.exe', []);
-  if (processUser && !isServiceIdentity(processUser)) return processUser;
-
-  const queryUser = run('query.exe', ['user']);
-  if (queryUser) {
-    const lines = queryUser.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-    for (const line of lines) {
-      if (/^USERNAME\s+/i.test(line)) continue;
-      const match = line.match(/^>?\s*(\S+)\s+\S+\s+\d+\s+(ACTIVE|DISC|DISCONNECTED)\b/i);
-      if (match && match[1] && !isServiceIdentity(match[1])) return match[1];
-    }
-  }
-
-  const envUsername = String(process.env.USERNAME || '').trim();
-  if (envUsername && !isServiceIdentity(envUsername)) {
-    const envDomain = String(process.env.USERDOMAIN || '').trim();
-    return envDomain ? `${envDomain}\\${envUsername}` : envUsername;
-  }
-
-  return '';
+  return !isServiceIdentity(processUser) ? processUser : '';
 }
 
 function getConnectionType() {
@@ -125,7 +151,8 @@ function getWorkstationLocked() {
 
 function getIdentity() {
   const hostname = process.env.COMPUTERNAME || os.hostname();
-  const interactiveUser = getInteractiveUser();
+  const activeSession = getActiveInteractiveSession();
+  const interactiveUser = activeSession?.username || getInteractiveUser();
   const connection = getConnectionType();
   const match = interactiveUser.match(/^([^\\]+)\\(.+)$/);
   const domain = match ? match[1] : null;
@@ -138,6 +165,8 @@ function getIdentity() {
     domain,
     domainUser,
     username,
+    sessionId: activeSession?.sessionId ?? null,
+    activeSessionName: activeSession?.sessionName || null,
     ipAddress: getPrimaryIPv4() || null,
     operatingSystem: `${os.platform()} ${os.release()}`,
     isRdp: connection.isRdp,
