@@ -267,6 +267,39 @@ function getSecurityLockState() {
   return null;
 }
 
+function getSecurityLockStateForSession(sessionId, domainUser) {
+  if (process.platform !== 'win32' || sessionId == null) return null;
+
+  const output = run('wevtutil.exe', [
+    'qe',
+    'Security',
+    '/q:*[System[(EventID=4800 or EventID=4801)]]',
+    '/c:30',
+    '/rd:true',
+    '/f:xml',
+  ]);
+
+  const target = String(domainUser || '').toLowerCase();
+  const blocks = String(output || '').split(/<Event xmlns=/i).slice(1);
+
+  for (const block of blocks) {
+    const eventId = block.match(/<EventID[^>]*>(4800|4801)<\/EventID>/i)?.[1];
+    const eventSession = block.match(/<Data Name="SessionId">(.*?)<\/Data>/i)?.[1]?.trim();
+    const username = block.match(/<Data Name="TargetUserName">(.*?)<\/Data>/i)?.[1]?.trim();
+    const domain = block.match(/<Data Name="TargetDomainName">(.*?)<\/Data>/i)?.[1]?.trim();
+    if (!eventId || eventSession == null || Number(eventSession) !== Number(sessionId)) continue;
+
+    const eventUser = username
+      ? (domain ? `${domain}\\${username}` : username).toLowerCase()
+      : '';
+    if (target && eventUser && eventUser !== target) continue;
+
+    return eventId === '4800';
+  }
+
+  return null;
+}
+
 function isLogonUiRunning() {
   const output = run('tasklist.exe', [
     '/FI',
@@ -296,14 +329,21 @@ function getWorkstationLocked() {
     return locked;
   }
 
-  // For local/Fast User Switching, only the currently active session is
-  // authoritative. Never use a previous user's global 4800/LogonUI state to
-  // mark the newly active session as locked.
+  // For local/Fast User Switching, lock state must be tied to the
+  // currently active session. Event 4800/4801 includes SessionId, so an
+  // older user's lock event cannot lock the newly switched-to session.
   const activeSession = getActiveInteractiveSession();
-  const locked = !activeSession?.username;
+  if (activeSession?.username) {
+    const sessionLock = getSecurityLockStateForSession(activeSession.sessionId, activeSession.username);
+    const locked = sessionLock === true;
+    lockStateCache = { value: locked, checkedAt: now };
+    return locked;
+  }
 
-  lockStateCache = { value: locked, checkedAt: now };
-  return locked;
+  // No interactive session means the workstation is genuinely at the
+  // logon/secure desktop. Do not reuse another user's session state.
+  lockStateCache = { value: true, checkedAt: now };
+  return true;
 }
 function getIdentity() {
   const hostname = process.env.COMPUTERNAME || os.hostname();
