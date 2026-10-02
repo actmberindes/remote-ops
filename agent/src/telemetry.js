@@ -138,9 +138,32 @@ function getWorkstationLocked() {
     return lockStateCache.value;
   }
 
-  // LogonUI.exe is the immediate local indication that Windows has switched
-  // to the secure lock/sign-in desktop. Security event 4800/4801 is used as
-  // a fallback so this does not depend solely on audit policy configuration.
+  const connection = getConnectionType();
+
+  // Preserve the existing RDP behavior. The scheduler already allows RDP
+  // monitoring while the session is locked.
+  if (connection.isRdp) {
+    const logonUiLocked = isLogonUiRunning();
+    const securityLocked = getSecurityLockState();
+    const locked = logonUiLocked || securityLocked === true;
+    lockStateCache = { value: locked, checkedAt: now };
+    return locked;
+  }
+
+  // Lock state is session-specific when Fast User Switching is involved.
+  // A machine-wide LogonUI.exe process or Security 4800 event can belong to
+  // the previously active user, so it must not mark the newly active user's
+  // session as locked.
+  //
+  // If Windows reports an active interactive session, that is the session we
+  // monitor and it is not locked. Only fall back to machine-wide lock
+  // indicators when there is no active interactive session.
+  const activeSession = getActiveInteractiveSession();
+  if (activeSession?.username) {
+    lockStateCache = { value: false, checkedAt: now };
+    return false;
+  }
+
   const logonUiLocked = isLogonUiRunning();
   const securityLocked = getSecurityLockState();
   const locked = logonUiLocked || securityLocked === true;
@@ -148,7 +171,6 @@ function getWorkstationLocked() {
   lockStateCache = { value: locked, checkedAt: now };
   return locked;
 }
-
 function getIdentity() {
   const hostname = process.env.COMPUTERNAME || os.hostname();
   const activeSession = getActiveInteractiveSession();
