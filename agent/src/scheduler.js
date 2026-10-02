@@ -19,10 +19,6 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
         hostname: telemetry.hostname,
         domain: telemetry.domain,
         domainUser: telemetry.domainUser,
-        sessionId: telemetry.sessionId,
-        activeSessionName: telemetry.activeSessionName,
-        sessionDetectionSource: telemetry.sessionDetectionSource,
-        sessionWtsState: telemetry.sessionWtsState,
         isRdp: telemetry.isRdp,
         sessionName: telemetry.sessionName,
         sessionLocked: telemetry.sessionLocked,
@@ -31,7 +27,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
         operatingSystem: telemetry.operatingSystem,
       });
       onDeviceStateChange?.(telemetry.state, telemetry);
-      if (telemetry.state === 'active') log(`Heartbeat: Active — ${telemetry.domainUser || 'No user'} | session ${telemetry.sessionId ?? 'n/a'} | ${telemetry.activeSessionName || 'n/a'} | source ${telemetry.sessionDetectionSource || 'n/a'}${telemetry.isRdp ? ' (RDP)' : ''}.`);
+      if (telemetry.state === 'active') log(`Heartbeat: Active — ${telemetry.domainUser || 'No user'}${telemetry.isRdp ? ' (RDP)' : ''}.`);
       else if (telemetry.state === 'idle') log(`Heartbeat: Idle — ${telemetry.domainUser || 'No user'} (5+ minutes)${telemetry.isRdp ? ' (RDP)' : ''}.`);
       else if (telemetry.state === 'locked') log(`Heartbeat: Workstation locked — ${telemetry.domainUser || 'No user'}. Monitoring paused.`);
       else log('Heartbeat: No logged-in Windows user.');
@@ -60,20 +56,12 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
     return captures.filter(item => Number(item.displayIndex) === 1).slice(0, 1);
   }
 
-  function sameInteractiveSession(a, b) {
-    const sameUser = Boolean(
+  function sameInteractiveUser(a, b) {
+    return Boolean(
       a?.domainUser &&
       b?.domainUser &&
       String(a.domainUser).toLowerCase() === String(b.domainUser).toLowerCase()
     );
-    if (!sameUser) return false;
-
-    // Local Windows session switches must invalidate an in-flight capture.
-    // RDP keeps the existing user-based behavior because the RDP path is
-    // intentionally left unchanged.
-    if (a?.isRdp || b?.isRdp) return true;
-    if (a?.sessionId == null || b?.sessionId == null) return true;
-    return Number(a.sessionId) === Number(b.sessionId);
   }
 
   async function tickScheduled() {
@@ -95,7 +83,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       if (
         latestTelemetry.state === 'logged-out' ||
         (latestTelemetry.state === 'locked' && !latestTelemetry.isRdp) ||
-        !sameInteractiveSession(telemetry, latestTelemetry)
+        !sameInteractiveUser(telemetry, latestTelemetry)
       ) {
         log(`Scheduled screenshot discarded: monitoring state/user changed from ${telemetry.state}/${telemetry.domainUser || 'none'} to ${latestTelemetry.state}/${latestTelemetry.domainUser || 'none'}.`);
         allCaptures.forEach(item => capture.cleanup(item.imageBuffer));
@@ -134,7 +122,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       if (
         latestTelemetry.state === 'logged-out' ||
         (latestTelemetry.state === 'locked' && !latestTelemetry.isRdp) ||
-        !sameInteractiveSession(telemetry, latestTelemetry)
+        !sameInteractiveUser(telemetry, latestTelemetry)
       ) {
         log(`Live frame discarded: monitoring state/user changed from ${telemetry.state}/${telemetry.domainUser || 'none'} to ${latestTelemetry.state}/${latestTelemetry.domainUser || 'none'}.`);
         allCaptures.forEach(item => capture.cleanup(item.imageBuffer));
@@ -143,7 +131,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
 
       const captures = capturesForSession(allCaptures, latestTelemetry);
       await uploadCaptures(captures, async (result, item) => {
-        await client.postLiveFrame(config.deviceToken, result.url, item, latestTelemetry);
+        await client.postLiveFrame(config.deviceToken, result.url, item);
       }, 'live');
     } catch (e) {
       log(`Live frame failed: ${e.message}`);
