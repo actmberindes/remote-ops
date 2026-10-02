@@ -132,7 +132,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       if (
         latestTelemetry.state === 'logged-out' ||
         (latestTelemetry.state === 'locked' && !latestTelemetry.isRdp) ||
-        !sameInteractiveUser(telemetry, latestTelemetry)
+        !sameInteractiveSession(telemetry, latestTelemetry)
       ) {
         log(`Live frame discarded: monitoring state/user changed from ${telemetry.state}/${telemetry.domainUser || 'none'} to ${latestTelemetry.state}/${latestTelemetry.domainUser || 'none'}.`);
         allCaptures.forEach(item => capture.cleanup(item.imageBuffer));
@@ -141,7 +141,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
 
       const captures = capturesForSession(allCaptures, latestTelemetry);
       await uploadCaptures(captures, async (result, item) => {
-        await client.postLiveFrame(config.deviceToken, result.url, item);
+        await client.postLiveFrame(config.deviceToken, result.url, item, latestTelemetry);
       }, 'live');
     } catch (e) {
       log(`Live frame failed: ${e.message}`);
