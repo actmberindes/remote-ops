@@ -310,6 +310,26 @@ function isLogonUiRunning() {
   return /(?:^|\s)LogonUI\.exe\s+/i.test(output);
 }
 
+function isLogonUiRunningForSession(sessionId) {
+  if (process.platform !== 'win32' || sessionId == null) return false;
+
+  const output = run('tasklist.exe', [
+    '/FI',
+    'IMAGENAME eq LogonUI.exe',
+    '/FO',
+    'CSV',
+    '/NH',
+  ]);
+
+  const lines = String(output || '').split(/\r?\n/);
+  for (const line of lines) {
+    const match = line.match(/"LogonUI\\.exe","[^"]+","[^"]*","(\\d+)"/i);
+    if (match && Number(match[1]) === Number(sessionId)) return true;
+  }
+
+  return false;
+}
+
 function getWorkstationLocked() {
   if (process.platform !== 'win32') return false;
 
@@ -330,19 +350,18 @@ function getWorkstationLocked() {
     return locked;
   }
 
-  // For local/Fast User Switching, lock state must be tied to the
-  // currently active session. Event 4800/4801 includes SessionId, so an
-  // older user's lock event cannot lock the newly switched-to session.
+  // For local/Fast User Switching, determine lock state from the current
+  // interactive session itself. A historical Security 4800 event must not
+  // keep the current session marked as locked after the user has unlocked.
   const activeSession = getActiveInteractiveSession();
-  if (activeSession?.username) {
-    const sessionLock = getSecurityLockStateForSession(activeSession.sessionId, activeSession.username);
-    const locked = sessionLock === true;
+  if (activeSession?.username && activeSession.sessionId != null) {
+    const locked = isLogonUiRunningForSession(activeSession.sessionId);
     lockStateCache = { value: locked, checkedAt: now };
     return locked;
   }
 
   // No interactive session means the workstation is genuinely at the
-  // logon/secure desktop. Do not reuse another user's session state.
+  // logon/secure desktop.
   lockStateCache = { value: true, checkedAt: now };
   return true;
 }
