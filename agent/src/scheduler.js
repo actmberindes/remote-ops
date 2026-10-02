@@ -19,6 +19,8 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
         hostname: telemetry.hostname,
         domain: telemetry.domain,
         domainUser: telemetry.domainUser,
+        sessionId: telemetry.sessionId,
+        activeSessionName: telemetry.activeSessionName,
         isRdp: telemetry.isRdp,
         sessionName: telemetry.sessionName,
         sessionLocked: telemetry.sessionLocked,
@@ -56,12 +58,20 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
     return captures.filter(item => Number(item.displayIndex) === 1).slice(0, 1);
   }
 
-  function sameInteractiveUser(a, b) {
-    return Boolean(
+  function sameInteractiveSession(a, b) {
+    const sameUser = Boolean(
       a?.domainUser &&
       b?.domainUser &&
       String(a.domainUser).toLowerCase() === String(b.domainUser).toLowerCase()
     );
+    if (!sameUser) return false;
+
+    // Local Windows session switches must invalidate an in-flight capture.
+    // RDP keeps the existing user-based behavior because the RDP path is
+    // intentionally left unchanged.
+    if (a?.isRdp || b?.isRdp) return true;
+    if (a?.sessionId == null || b?.sessionId == null) return true;
+    return Number(a.sessionId) === Number(b.sessionId);
   }
 
   async function tickScheduled() {
@@ -83,7 +93,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       if (
         latestTelemetry.state === 'logged-out' ||
         (latestTelemetry.state === 'locked' && !latestTelemetry.isRdp) ||
-        !sameInteractiveUser(telemetry, latestTelemetry)
+        !sameInteractiveSession(telemetry, latestTelemetry)
       ) {
         log(`Scheduled screenshot discarded: monitoring state/user changed from ${telemetry.state}/${telemetry.domainUser || 'none'} to ${latestTelemetry.state}/${latestTelemetry.domainUser || 'none'}.`);
         allCaptures.forEach(item => capture.cleanup(item.imageBuffer));
