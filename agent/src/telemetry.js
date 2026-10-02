@@ -1,7 +1,7 @@
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 
-const LOCK_STATE_CACHE_MS = 1000;
+// Session-aware monitoring rebuild marker: 2026-10-02\nconst LOCK_STATE_CACHE_MS = 1000;
 let lockStateCache = { value: false, checkedAt: 0 };
 
 function run(command, args) {
