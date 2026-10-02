@@ -21,6 +21,8 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
         domainUser: telemetry.domainUser,
         sessionId: telemetry.sessionId,
         activeSessionName: telemetry.activeSessionName,
+        sessionDetectionSource: telemetry.sessionDetectionSource,
+        sessionWtsState: telemetry.sessionWtsState,
         isRdp: telemetry.isRdp,
         sessionName: telemetry.sessionName,
         sessionLocked: telemetry.sessionLocked,
@@ -29,7 +31,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
         operatingSystem: telemetry.operatingSystem,
       });
       onDeviceStateChange?.(telemetry.state, telemetry);
-      if (telemetry.state === 'active') log(`Heartbeat: Active — ${telemetry.domainUser || 'No user'}${telemetry.isRdp ? ' (RDP)' : ''}.`);
+      if (telemetry.state === 'active') log(`Heartbeat: Active — ${telemetry.domainUser || 'No user'} | session ${telemetry.sessionId ?? 'n/a'} | ${telemetry.activeSessionName || 'n/a'} | source ${telemetry.sessionDetectionSource || 'n/a'}${telemetry.isRdp ? ' (RDP)' : ''}.`);
       else if (telemetry.state === 'idle') log(`Heartbeat: Idle — ${telemetry.domainUser || 'No user'} (5+ minutes)${telemetry.isRdp ? ' (RDP)' : ''}.`);
       else if (telemetry.state === 'locked') log(`Heartbeat: Workstation locked — ${telemetry.domainUser || 'No user'}. Monitoring paused.`);
       else log('Heartbeat: No logged-in Windows user.');
