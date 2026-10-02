@@ -69,18 +69,17 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # The source branch can move while the Windows build is running.
-          # Rebase onto the current main before committing the generated EXE
-          # so the publish step does not fail with a non-fast-forward push.
-          git fetch origin main
-          git rebase origin/main
-
+          # Commit the generated EXE first so the working tree is clean.
+          # Then rebase that build commit onto the current main before pushing.
           git add --force agent/remote-ops-agent.exe
           if (git diff --cached --quiet) {
             Write-Host "Executable is already up to date; nothing to commit."
             exit 0
           }
           git commit -m "build: update remote-ops-agent.exe"
+
+          git fetch origin main
+          git rebase origin/main
           git push origin HEAD:main
 
       - name: Upload executable artifact
