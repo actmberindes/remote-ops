@@ -98,6 +98,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       }
 
       const captures = capturesForSession(allCaptures, latestTelemetry);
+      log(`Scheduled screenshot: uploading ${captures.length} display(s).`);
       await uploadCaptures(captures, async (result, item) => {
         await client.postScheduledScreenshot(
           config.deviceToken,
@@ -123,7 +124,9 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       return;
     }
     try {
+      log('Live frame: starting display capture.');
       const allCaptures = await capture.captureLiveAll();
+      log(`Live frame: captured ${allCaptures.length} display(s).`);
       const latestTelemetry = getDeviceState();
 
       if (
@@ -137,6 +140,7 @@ function startScheduler({ client, config, capture, log, onSessionStateChange, on
       }
 
       const captures = capturesForSession(allCaptures, latestTelemetry);
+      log(`Live frame: uploading ${captures.length} display(s).`);
       await uploadCaptures(captures, async (result, item) => {
         await client.postLiveFrame(config.deviceToken, result.url, item, latestTelemetry);
       }, 'live');
