@@ -45,6 +45,102 @@ function isServiceIdentity(value) {
   return /^(NT AUTHORITY\\)?(SYSTEM|LOCAL SERVICE|NETWORK SERVICE)$/i.test(String(value || '').trim());
 }
 
+const WTS_SESSION_CACHE_MS = 1000;
+let activeSessionCache = { value: null, checkedAt: 0 };
+
+function getActiveConsoleSessionViaWts() {
+  if (process.platform !== 'win32') return null;
+
+  const now = Date.now();
+  if (now - activeSessionCache.checkedAt < WTS_SESSION_CACHE_MS) {
+    return activeSessionCache.value;
+  }
+
+  // WTSGetActiveConsoleSessionId identifies the Windows console session that
+  // is currently attached to the physical/interactive desktop. This is
+  // session-specific and therefore works across Fast User Switching, unlike
+  // LogonUI.exe or the last global Security 4800 event.
+  const script = `Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class RemoteOpsWts {
+  public enum WTS_INFO_CLASS {
+    WTSInitialProgram = 0,
+    WTSApplicationName = 1,
+    WTSWorkingDirectory = 2,
+    WTSOEMId = 3,
+    WTSSessionId = 4,
+    WTSUserName = 5,
+    WTSWinStationName = 6,
+    WTSDomainName = 7
+  }
+
+  [DllImport("kernel32.dll")]
+  public static extern uint WTSGetActiveConsoleSessionId();
+
+  [DllImport("wtsapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+  public static extern bool WTSQuerySessionInformation(
+    IntPtr hServer,
+    uint sessionId,
+    WTS_INFO_CLASS infoClass,
+    out IntPtr buffer,
+    out uint bytesReturned
+  );
+
+  [DllImport("wtsapi32.dll")]
+  public static extern void WTSFreeMemory(IntPtr memory);
+
+  public static string Query(uint sessionId, WTS_INFO_CLASS infoClass) {
+    IntPtr buffer;
+    uint bytes;
+    if (!WTSQuerySessionInformation(IntPtr.Zero, sessionId, infoClass, out buffer, out bytes) || buffer == IntPtr.Zero) {
+      return "";
+    }
+
+    try {
+      return Marshal.PtrToStringUni(buffer) ?? "";
+    } finally {
+      WTSFreeMemory(buffer);
+    }
+  }
+
+  public static string GetActiveConsoleIdentity() {
+    uint sessionId = WTSGetActiveConsoleSessionId();
+    if (sessionId == 0xFFFFFFFF) return "";
+
+    string username = Query(sessionId, WTS_INFO_CLASS.WTSUserName);
+    string domain = Query(sessionId, WTS_INFO_CLASS.WTSDomainName);
+    string station = Query(sessionId, WTS_INFO_CLASS.WTSWinStationName);
+    if (String.IsNullOrWhiteSpace(username)) return "";
+
+    string identity = String.IsNullOrWhiteSpace(domain)
+      ? username
+      : domain + "\\" + username;
+
+    return identity + "|" + station + "|" + sessionId.ToString();
+  }
+}
+"@; [RemoteOpsWts]::GetActiveConsoleIdentity()`;
+  const output = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script]);
+  const parts = output.split('|');
+  if (parts.length >= 3 && parts[0] && /^\\d+$/.test(parts[2])) {
+    activeSessionCache = {
+      value: {
+        username: parts[0],
+        sessionName: parts[1] || 'Console',
+        sessionId: Number(parts[2]),
+        idleSeconds: null,
+      },
+      checkedAt: now,
+    };
+    return activeSessionCache.value;
+  }
+
+  activeSessionCache = { value: null, checkedAt: now };
+  return null;
+}
+
 function parseActiveSession(output) {
   const lines = String(output || '').split(/\r?\n/);
   for (const raw of lines) {
@@ -80,9 +176,13 @@ function getActiveInteractiveSession() {
       : null;
   }
 
-  // query user reports all Windows sessions and marks active sessions.
-  // This lets the agent follow Fast User Switching instead of the account
-  // that originally launched the agent process.
+  // Use the Windows Terminal Services API for the actual active console
+  // session. This is reliable when the agent is running as a Windows service
+  // and avoids depending on the service's Session 0 environment.
+  const wtsSession = getActiveConsoleSessionViaWts();
+  if (wtsSession?.username) return wtsSession;
+
+  // Keep query user as a fallback for systems where the WTS API is unavailable.
   return parseActiveSession(run('query.exe', ['user']));
 }
 
