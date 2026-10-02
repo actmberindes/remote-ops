@@ -124,7 +124,7 @@ public static class RemoteOpsWts {
 "@; [RemoteOpsWts]::GetActiveConsoleIdentity()`;
   const output = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script]);
   const parts = output.split('|');
-  if (parts.length >= 3 && parts[0] && /^\\d+$/.test(parts[2])) {
+  if (parts.length >= 3 && parts[0] && /^\d+$/.test(parts[2])) {
     activeSessionCache = {
       value: {
         username: parts[0],
