@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { ArrowLeft, Calendar, ChevronLeft, ChevronRight, Clock3, Download, Maximize2, Monitor, RefreshCw, User, Wifi, WifiOff, X } from 'lucide-react';
 import { api } from '../lib/api.js';
 
@@ -32,14 +31,121 @@ function DeviceInfo({ device }) {
   </div><div className="mt-3 pt-3 border-t border-[var(--border)] flex flex-wrap items-center gap-3 text-[10px] text-muted"><span className="inline-flex items-center gap-1.5 font-semibold capitalize" style={{ color: online ? 'var(--success)' : 'var(--danger)' }}>{online ? <Wifi size={12} /> : <WifiOff size={12} />}{statusLabel(status)}</span>{device?.hostname && <span className="mono">{device.hostname}</span>}{device?.domain && <span className="mono">{device.domain}</span>}{device?.sessionName && <span className="mono">Session: {device.sessionName}</span>}{device?.isRdp && <span className="px-1.5 py-0.5 rounded bg-[var(--surface-2)]">RDP</span>}</div></div>;
 }
 
-function DailyStatusChart({ history }) {
-  const data = useMemo(() => { const grouped = new Map(); history.forEach(item => { const date = item.timestamp?.slice(0, 10); if (!date) return; const row = grouped.get(date) || { date, online: 0, offline: 0 }; const to = item.to || item.state; if (to === 'active' || to === 'idle') row.online += 1; else row.offline += 1; grouped.set(date, row); }); return [...grouped.values()].sort((a, b) => a.date.localeCompare(b.date)).slice(-14).map(row => ({ ...row, label: new Date(`${row.date}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) })); }, [history]);
-  return <div className="card p-4 min-w-0"><div className="mb-3"><div className="font-display font-bold text-sm">Recent Activity</div><div className="text-[10px] text-muted">Online / Offline state changes by date</div></div><div className="h-56">{data.length ? <ResponsiveContainer width="100%" height="100%"><BarChart data={data}><CartesianGrid strokeDasharray="3 3" stroke="var(--border)" /><XAxis dataKey="label" tick={{ fontSize: 10 }} /><YAxis allowDecimals={false} tick={{ fontSize: 10 }} /><Tooltip /><Bar dataKey="online" name="Online" fill="var(--success)" radius={[3, 3, 0, 0]} /><Bar dataKey="offline" name="Offline" fill="var(--danger)" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer> : <div className="h-full flex items-center justify-center text-xs text-muted">No state history yet.</div>}</div></div>;
+// Builds a 7-day x 24-hour matrix of "percent of that hour spent in the
+// 'active' workstation state" from the raw state-change history. History
+// only records *transitions*, so each entry's active window runs from its
+// own timestamp up to the next transition (or "now" for the most recent
+// entry) — the same duration-weighted approach the device already used for
+// its single-day hourly chart, extended across a rolling 7-day window and
+// split per calendar day instead of collapsed into one 24-hour strip.
+function lastNDays(n) {
+  const days = [];
+  for (let i = n - 1; i >= 0; i -= 1) {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - i);
+    days.push(d);
+  }
+  return days;
+}
+function dateKey(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+
+function useActivityMatrix(history, days = 7) {
+  return useMemo(() => {
+    const windowDays = lastNDays(days);
+    const indexByKey = new Map(windowDays.map((d, i) => [dateKey(d), i]));
+    const buckets = windowDays.map(d => ({ date: d, key: dateKey(d), hours: Array.from({ length: 24 }, () => ({ active: 0, total: 0 })) }));
+    const windowStart = windowDays[0].getTime();
+    const windowEnd = windowDays[windowDays.length - 1].getTime() + 24 * 60 * 60 * 1000;
+    const sorted = [...history].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    const now = Date.now();
+
+    sorted.forEach((item, index) => {
+      const start = new Date(item.timestamp).getTime();
+      const next = index + 1 < sorted.length ? new Date(sorted[index + 1].timestamp).getTime() : now;
+      const end = Math.min(next, now);
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return;
+      const clampedStart = Math.max(start, windowStart);
+      const clampedEnd = Math.min(end, windowEnd);
+      if (clampedEnd <= clampedStart) return;
+      const active = item.to === 'active';
+      let cursor = clampedStart;
+      while (cursor < clampedEnd) {
+        const d = new Date(cursor);
+        const dayIndex = indexByKey.get(dateKey(d));
+        const nextHour = new Date(d); nextHour.setMinutes(60, 0, 0);
+        const sliceEnd = Math.min(clampedEnd, nextHour.getTime());
+        const seconds = Math.max(0, sliceEnd - cursor) / 1000;
+        if (dayIndex !== undefined) {
+          const bucket = buckets[dayIndex].hours[d.getHours()];
+          bucket.total += seconds;
+          if (active) bucket.active += seconds;
+        }
+        cursor = sliceEnd;
+      }
+    });
+
+    return buckets.map(bucket => {
+      const hours = bucket.hours.map((h, hour) => ({ hour, hasData: h.total > 0, percent: h.total ? Math.round((h.active / h.total) * 100) : 0 }));
+      const totalActive = bucket.hours.reduce((sum, h) => sum + h.active, 0);
+      const totalTracked = bucket.hours.reduce((sum, h) => sum + h.total, 0);
+      return {
+        key: bucket.key,
+        date: bucket.date,
+        label: bucket.date.toLocaleDateString(undefined, { month: 'short', day: '2-digit' }),
+        weekday: bucket.date.toLocaleDateString(undefined, { weekday: 'short' }),
+        hasData: totalTracked > 0,
+        percent: totalTracked ? Math.round((totalActive / totalTracked) * 100) : 0,
+        hours,
+      };
+    });
+  }, [history, days]);
 }
 
-function HourlyActivityChart({ history }) {
-  const data = useMemo(() => { const buckets = Array.from({ length: 24 }, (_, hour) => ({ hour, active: 0, total: 0 })); const sorted = [...history].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()); const now = Date.now(); sorted.forEach((item, index) => { const start = new Date(item.timestamp).getTime(); const next = index + 1 < sorted.length ? new Date(sorted[index + 1].timestamp).getTime() : now; const end = Math.min(next, start + 24 * 60 * 60 * 1000); if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return; const active = item.to === 'active'; let cursor = start; while (cursor < end) { const d = new Date(cursor); const nextHour = new Date(d); nextHour.setMinutes(60, 0, 0); const sliceEnd = Math.min(end, nextHour.getTime()); const seconds = Math.max(0, sliceEnd - cursor) / 1000; const bucket = buckets[d.getHours()]; bucket.total += seconds; if (active) bucket.active += seconds; cursor = sliceEnd; } }); return buckets.map(x => ({ ...x, label: `${String(x.hour).padStart(2, '0')}:00`, percent: x.total ? Math.round((x.active / x.total) * 100) : 0 })); }, [history]);
-  return <div className="card p-4 min-w-0"><div className="mb-3"><div className="font-display font-bold text-sm">Hourly Workstation Activity</div><div className="text-[10px] text-muted">100% = Active · 0% = Idle (based on workstation idle state)</div></div><div className="h-56"><ResponsiveContainer width="100%" height="100%"><BarChart data={data}><CartesianGrid strokeDasharray="3 3" stroke="var(--border)" /><XAxis dataKey="label" tick={{ fontSize: 9 }} interval={1} /><YAxis domain={[0, 100]} tickFormatter={v => `${v}%`} tick={{ fontSize: 10 }} /><Tooltip formatter={value => [`${value}%`, 'Active']} /><Bar dataKey="percent" name="Active %" fill="var(--success)" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer></div></div>;
+function DailyActivityBars({ history }) {
+  const days = useActivityMatrix(history, 7);
+  return <div className="card p-4 min-w-0">
+    <div className="flex items-center justify-between mb-4"><div className="font-display font-bold text-sm">Activity</div></div>
+    <div className="flex items-end gap-2 h-48 pl-5 relative">
+      <span className="absolute left-0 bottom-0 text-[10px] text-muted">0</span>
+      {days.map(day => <div key={day.key} className="flex flex-col items-center gap-2 flex-1 h-full justify-end" title={day.hasData ? `${day.percent}% active on ${day.label}` : `No data for ${day.label}`}>
+        <div className="relative w-6 sm:w-7 flex-1 rounded-full overflow-hidden flex items-end" style={{ background: 'var(--surface-2)' }}>
+          <div className="w-full rounded-full transition-all" style={{ height: `${day.hasData ? Math.max(6, day.percent) : 0}%`, background: 'var(--info, #5b9bf7)' }} />
+        </div>
+        <div className="text-[9px] text-muted font-semibold whitespace-nowrap">{day.label}</div>
+      </div>)}
+    </div>
+  </div>;
+}
+
+function HourlyActivityHeatmap({ history }) {
+  const days = useActivityMatrix(history, 7);
+  function cellColor(hour) {
+    if (!hour.hasData) return 'var(--surface-2)';
+    const alpha = 0.12 + Math.min(1, Math.max(0, hour.percent / 100)) * 0.78;
+    return `rgba(34,197,94,${alpha.toFixed(2)})`;
+  }
+  return <div className="card p-4 min-w-0 overflow-x-auto">
+    <div className="font-display font-bold text-sm">Activity (Keyboard/Mouse) Hourly</div>
+    <div className="text-[10px] text-muted mb-3">Based on workstation active vs. idle/locked state, per hour</div>
+    <div className="flex gap-3 min-w-[620px]">
+      <div className="flex flex-col items-center justify-between py-1 h-[182px] text-[9px] text-muted font-semibold shrink-0">
+        <span>100%</span>
+        <div className="flex-1 w-2 my-1 rounded-full" style={{ background: 'linear-gradient(to top, rgba(34,197,94,0.12), rgba(34,197,94,0.9))' }} />
+        <span>0%</span>
+      </div>
+      <div className="flex-1">
+        <div className="grid gap-[3px]" style={{ gridTemplateColumns: '44px repeat(24, minmax(0,1fr))' }}>
+          {days.map(day => <React.Fragment key={day.key}>
+            <div className="text-[10px] text-muted font-semibold flex items-center">{day.weekday}</div>
+            {day.hours.map(hour => <div key={hour.hour} title={`${day.weekday} ${String(hour.hour).padStart(2, '0')}:00 — ${hour.hasData ? `${hour.percent}% active` : 'No data'}`} className="aspect-square rounded-[3px]" style={{ background: cellColor(hour) }} />)}
+          </React.Fragment>)}
+          <div />
+          {Array.from({ length: 24 }, (_, h) => <div key={h} className="text-[8px] text-muted text-center">{h}</div>)}
+        </div>
+      </div>
+    </div>
+  </div>;
 }
 
 function ActivityTimeline({ history, domainUser }) { const rows = history.filter(item => !domainUser || domainUserOf(item) === domainUser).slice(0, 100); return <div className="card p-4"><div className="flex items-center justify-between gap-3 mb-3"><div className="flex items-center gap-2"><Clock3 size={15} className="accent-text" /><div className="font-display font-bold text-sm">Activity Timeline</div></div><div className="text-[10px] text-muted">{rows.length} record{rows.length === 1 ? '' : 's'}</div></div>{rows.length ? <div className="divide-y divide-[var(--border)]">{rows.map(item => { const color = statusColor(item.to); return <div key={item.id} className="py-2.5 flex flex-wrap items-center gap-3 text-xs"><div className="min-w-[155px]"><div className="font-semibold">{fmtDateTime(item.timestamp)}</div><div className="text-[9px] text-muted">{relativeTime(item.timestamp)}</div></div><span className="mono font-semibold truncate max-w-[260px]" title={item.domainUser || 'No domain user'}>{item.domainUser || 'No domain user'}</span><span className="inline-flex items-center gap-1.5 font-semibold px-2 py-1 rounded-full bg-[var(--surface-2)]" style={{ color }}><span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />{statusLabel(item.to)}{item.from ? <span className="opacity-60 font-normal">from {statusLabel(item.from)}</span> : null}</span></div>; })}</div> : <div className="py-8 text-center text-xs text-muted">No activity records for this filter.</div>}</div>; }
@@ -68,8 +174,12 @@ export default function DeviceDetailsPage({ deviceId, onBack }) {
   useEffect(() => { load(); }, [deviceId]);
   useEffect(() => { if (tab !== 'Live View') return undefined; const timer = setInterval(() => { load({ silent: true }); setRefreshKey(k => k + 1); }, 10000); return () => clearInterval(timer); }, [tab, deviceId]);
   const history = payload?.history || []; const liveFrames = payload?.liveFrames || []; const activityUsers = useMemo(() => [...new Set(history.map(domainUserOf).filter(Boolean))].sort(), [history]); const filteredHistory = useMemo(() => history.filter(item => (!date || item.timestamp?.slice(0, 10) === date) && (!domainUser || domainUserOf(item) === domainUser)), [history, date, domainUser]);
+  // The daily/hourly activity views are inherently a rolling 7-day window, so
+  // they only honor the domain-user filter (not the single-date filter,
+  // which would collapse a 7-day chart down to one bar/row).
+  const userFilteredHistory = useMemo(() => history.filter(item => !domainUser || domainUserOf(item) === domainUser), [history, domainUser]);
   if (loading) return <div className="py-16 text-center text-sm text-muted">Loading device details…</div>;
   if (error) return <div className="card p-6"><div className="text-sm font-semibold text-[var(--danger)]">Unable to load device</div><div className="text-xs text-muted mt-1">{error}</div><button onClick={() => load()} className="mt-3 px-3 py-2 rounded-lg text-xs accent-bg-solid">Retry</button></div>;
   const device = payload?.device;
-  return <div className="flex flex-col gap-4 w-full"><div className="flex items-center justify-between gap-3"><button onClick={onBack} className="inline-flex items-center gap-1.5 text-xs font-semibold hover-surface px-3 py-2 rounded-lg"><ArrowLeft size={14} /> Device Management</button><button onClick={() => load()} className="p-2 rounded-lg hover-surface" title="Refresh"><RefreshCw size={14} /></button></div><div className="flex items-center gap-3"><div className="p-2.5 rounded-xl accent-bg"><Monitor size={20} /></div><div><h2 className="font-display font-bold text-lg">{device?.deviceName}</h2><div className="text-xs text-muted">{device?.hostname || 'Hostname pending'} · {device?.currentDomainUser || device?.domainUser || 'No current domain user'}</div></div></div><DeviceInfo device={device} /><div className="card p-2 flex flex-wrap gap-1">{tabs.map(item => <button key={item} onClick={() => { setTab(item); setDate(''); setDomainUser(''); setRefreshKey(k => k + 1); }} className={`px-4 py-2 rounded-lg text-xs font-bold ${tab === item ? 'accent-bg-solid' : 'hover-surface'}`}>{item}</button>)}</div>{tab === 'Activity Logs' && <div className="space-y-4"><div className="card p-4 flex flex-wrap items-end gap-3"><label className="text-xs font-semibold"><span className="block text-[10px] text-muted uppercase mb-1"><Calendar size={11} className="inline mr-1" />Date</span><input type="date" value={date} onChange={e => setDate(e.target.value)} className="input-surface rounded-lg px-3 py-2 text-xs" /></label><label className="text-xs font-semibold"><span className="block text-[10px] text-muted uppercase mb-1"><User size={11} className="inline mr-1" />Domain User</span><select value={domainUser} onChange={e => setDomainUser(e.target.value)} className="input-surface rounded-lg px-3 py-2 text-xs"><option value="">All domain users</option>{activityUsers.map(user => <option key={user} value={user}>{user}</option>)}</select></label><button onClick={() => { setDate(''); setDomainUser(''); }} className="px-3 py-2 rounded-lg text-xs hover-surface">Clear</button></div><div className="grid grid-cols-1 xl:grid-cols-2 gap-4"><DailyStatusChart history={filteredHistory} /><HourlyActivityChart history={filteredHistory} /></div><ActivityTimeline history={filteredHistory} domainUser={domainUser} /></div>}{tab === 'Screenshots' && <ScreenshotTab deviceId={deviceId} date={date} setDate={setDate} domainUser={domainUser} setDomainUser={setDomainUser} refreshKey={refreshKey} />}{tab === 'Live View' && <LiveViewTab device={device} frames={liveFrames} domainUser={domainUser} setDomainUser={setDomainUser} />}</div>;
+  return <div className="flex flex-col gap-4 w-full"><div className="flex items-center justify-between gap-3"><button onClick={onBack} className="inline-flex items-center gap-1.5 text-xs font-semibold hover-surface px-3 py-2 rounded-lg"><ArrowLeft size={14} /> Device Management</button><button onClick={() => load()} className="p-2 rounded-lg hover-surface" title="Refresh"><RefreshCw size={14} /></button></div><div className="flex items-center gap-3"><div className="p-2.5 rounded-xl accent-bg"><Monitor size={20} /></div><div><h2 className="font-display font-bold text-lg">{device?.deviceName}</h2><div className="text-xs text-muted">{device?.hostname || 'Hostname pending'} · {device?.currentDomainUser || device?.domainUser || 'No current domain user'}</div></div></div><DeviceInfo device={device} /><div className="card p-2 flex flex-wrap gap-1">{tabs.map(item => <button key={item} onClick={() => { setTab(item); setDate(''); setDomainUser(''); setRefreshKey(k => k + 1); }} className={`px-4 py-2 rounded-lg text-xs font-bold ${tab === item ? 'accent-bg-solid' : 'hover-surface'}`}>{item}</button>)}</div>{tab === 'Activity Logs' && <div className="space-y-4"><div className="card p-4 flex flex-wrap items-end gap-3"><label className="text-xs font-semibold"><span className="block text-[10px] text-muted uppercase mb-1"><Calendar size={11} className="inline mr-1" />Date</span><input type="date" value={date} onChange={e => setDate(e.target.value)} className="input-surface rounded-lg px-3 py-2 text-xs" /></label><label className="text-xs font-semibold"><span className="block text-[10px] text-muted uppercase mb-1"><User size={11} className="inline mr-1" />Domain User</span><select value={domainUser} onChange={e => setDomainUser(e.target.value)} className="input-surface rounded-lg px-3 py-2 text-xs"><option value="">All domain users</option>{activityUsers.map(user => <option key={user} value={user}>{user}</option>)}</select></label><button onClick={() => { setDate(''); setDomainUser(''); }} className="px-3 py-2 rounded-lg text-xs hover-surface">Clear</button></div><div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-4"><DailyActivityBars history={userFilteredHistory} /><HourlyActivityHeatmap history={userFilteredHistory} /></div><ActivityTimeline history={filteredHistory} domainUser={domainUser} /></div>}{tab === 'Screenshots' && <ScreenshotTab deviceId={deviceId} date={date} setDate={setDate} domainUser={domainUser} setDomainUser={setDomainUser} refreshKey={refreshKey} />}{tab === 'Live View' && <LiveViewTab device={device} frames={liveFrames} domainUser={domainUser} setDomainUser={setDomainUser} />}</div>;
 }

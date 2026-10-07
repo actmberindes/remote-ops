@@ -25,17 +25,9 @@ async function getLiveView() {
 
 function toneFor(state) {
   if (state === 'locked') return 'var(--danger)';
-  if (state === 'disconnected') return 'var(--neutral)';
   if (state === 'idle') return 'var(--warning)';
   if (state === 'active') return 'var(--success)';
   return 'var(--neutral)';
-}
-
-// 'locked' and 'disconnected' both mean "no fresh frames are coming for this
-// tile right now" — a locked workstation, or a session that lost the console
-// to another user via Fast User Switching (or a dropped RDP connection).
-function isPausedTileState(state) {
-  return state === 'locked' || state === 'disconnected';
 }
 
 function applyLiveLockState(items) {
@@ -53,29 +45,23 @@ function applyLiveLockState(items) {
 
     const state = item.deviceStatus || 'active';
     const tone = toneFor(state);
-    badge.textContent = state === 'locked' ? 'LOCKED' : state === 'disconnected' ? 'AWAY' : state === 'idle' ? 'IDLE' : 'LIVE';
+    badge.textContent = state === 'locked' ? 'LOCKED' : state === 'idle' ? 'IDLE' : 'LIVE';
     badge.style.color = tone;
     badge.style.borderColor = `${tone}55`;
 
     tile.querySelectorAll('.remoteops-display-image').forEach(image => {
-      image.style.display = isPausedTileState(state) ? 'none' : 'block';
+      image.style.display = state === 'locked' ? 'none' : 'block';
     });
 
     tile.querySelectorAll('.remoteops-display-canvas').forEach(canvas => {
       const existing = canvas.querySelector('[data-remoteops-locked-overlay]');
-      if (isPausedTileState(state)) {
+      if (state === 'locked') {
         if (!existing) {
           const overlay = document.createElement('div');
           overlay.dataset.remoteopsLockedOverlay = 'true';
           overlay.className = 'remoteops-display-empty';
-          overlay.innerHTML = state === 'disconnected'
-            ? '<span>👤</span><span>Another user is active — Live View paused</span>'
-            : '<span>🔒</span><span>Workstation locked — Live View paused</span>';
+          overlay.innerHTML = '<span>🔒</span><span>Workstation locked — Live View paused</span>';
           canvas.appendChild(overlay);
-        } else {
-          existing.innerHTML = state === 'disconnected'
-            ? '<span>👤</span><span>Another user is active — Live View paused</span>'
-            : '<span>🔒</span><span>Workstation locked — Live View paused</span>';
         }
       } else {
         existing?.remove();
@@ -85,8 +71,6 @@ function applyLiveLockState(items) {
     tile.querySelectorAll('.remoteops-display-updated').forEach(el => {
       if (state === 'locked') {
         el.textContent = 'Live capture paused while locked';
-      } else if (state === 'disconnected') {
-        el.textContent = 'Live capture paused — another user is active';
       } else if (item.capturedAt) {
         const captured = new Date(item.capturedAt);
         el.textContent = Number.isNaN(captured.getTime()) ? 'No frame' : `Updated ${captured.toLocaleTimeString()}`;
