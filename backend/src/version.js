@@ -11,7 +11,7 @@ export const REMOTE_OPS_CHANGELOG = [
     changes: [
       'Changed live and scheduled screenshot capture to stay in memory during upload.',
       'Removed agent-created screenshot files from the Windows TEMP workflow.',
-      'Windows Agent remains tracked as v2.0.1.',
+      'Windows Agent remains tracked as v2.0.2.',
       'Updated RDP locked-session monitoring so Live View frames and screenshots continue capturing while the RDP session is locked.',
     ],
   },
@@ -33,7 +33,7 @@ export function getVersionInfo() {
     version: REMOTE_OPS_VERSION,
     releaseDate: REMOTE_OPS_RELEASE_DATE,
     releaseCommit: REMOTE_OPS_RELEASE_COMMIT,
-    agentVersion: '2.0.1',
+    agentVersion: '2.0.2',
     changelog: REMOTE_OPS_CHANGELOG,
   };
 }
