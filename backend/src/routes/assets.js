@@ -896,6 +896,65 @@ assetsRouter.post('/:id/retire', requireRole('Admin'), async (req, res) => {
   res.json(enrichAsset(asset));
 });
 
+assetsRouter.patch('/:id/status', requireRole('Admin'), async (req, res) => {
+  const id = Number(req.params.id);
+  const asset = db.data.assets.find(a => a.id === id);
+  if (!asset) return res.status(404).json({ error: 'Asset not found.' });
+
+  const status = String(req.body?.status || '').trim();
+  // This endpoint only handles the manual "send to / return from
+  // maintenance" toggle. Every other status is driven by its own dedicated
+  // flow (assign/return/retire, or automatically by recomputeStockStatus
+  // for quantity-tracked stock), so route those there instead of here.
+  if (status !== 'Maintenance' && status !== 'Available') {
+    return res.status(400).json({
+      error: "Status must be 'Maintenance' or 'Available'.",
+    });
+  }
+
+  if (QUANTITY_TRACKED_TYPES.includes(asset.type)) {
+    return res.status(400).json({
+      error: 'Quantity-tracked assets track stock automatically and cannot be manually set to Maintenance.',
+    });
+  }
+
+  if (status === 'Maintenance') {
+    if (asset.status !== 'Available') {
+      return res.status(409).json({
+        error: `Only an Available asset can be sent to Maintenance (current status: ${asset.status}).`,
+      });
+    }
+    if (activeAssignmentsFor(id).length > 0) {
+      return res.status(409).json({
+        error: 'Return this asset before sending it to Maintenance.',
+      });
+    }
+    asset.status = 'Maintenance';
+    logAction(
+      id,
+      'Status Changed',
+      req.user.id,
+      `${asset.name} (${asset.assetTag}) was sent to Maintenance by ${req.user.name}.`
+    );
+  } else {
+    if (asset.status !== 'Maintenance') {
+      return res.status(409).json({
+        error: `Only an asset currently in Maintenance can be marked Available (current status: ${asset.status}).`,
+      });
+    }
+    asset.status = 'Available';
+    logAction(
+      id,
+      'Status Changed',
+      req.user.id,
+      `${asset.name} (${asset.assetTag}) completed Maintenance and was marked Available by ${req.user.name}.`
+    );
+  }
+
+  await db.write();
+  res.json(enrichAsset(asset));
+});
+
 assetsRouter.get('/:id/history', requireRole('Admin', 'Manager'), (req, res) => {
   const id = Number(req.params.id);
 

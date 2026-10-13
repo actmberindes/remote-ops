@@ -6,7 +6,7 @@ import {
   Search, CheckCircle2, XCircle, AlertCircle, Play, Square, Users, Home, ArrowLeft, ArrowRight,
   Monitor, Wifi, MapPin, Briefcase, FileText, Eye, Ticket, Package, Paperclip, Download, ZoomIn,
   Send, UserPlus, RotateCcw, Archive, History, ImageOff, ImagePlus, RefreshCw, Camera, Radio,
-  Laptop, ShieldOff, KeyRound, Copy, Globe2
+  Laptop, ShieldOff, KeyRound, Copy, Globe2, Wrench
 } from 'lucide-react';
 import { api, getToken, setToken } from './lib/api.js';
 import WebUsageWidget from './components/WebUsageWidget.jsx';
@@ -1391,10 +1391,24 @@ function UserFormModal({ isOpen, onClose, user, onSaved }) {
 function AdminUserManagement() {
   const { users, setUsers, currentUser, addToast } = useApp();
   const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [editingUser, setEditingUser] = useState(null);
   const [creating, setCreating] = useState(false);
 
-  const filtered = users.filter(u => (u.name + u.email + u.department + u.jobTitle).toLowerCase().includes(query.toLowerCase()));
+  // "Live Status" is active/idle/offline/logged-out for Employees (derived
+  // from their devices' telemetry) and whatever account status is stored
+  // for Admin/Manager accounts — so the filter options are built from
+  // whatever actually shows up in the table rather than a hardcoded list,
+  // to stay accurate for either kind of value.
+  const statusOptions = useMemo(
+    () => [...new Set(users.map(u => u.status || 'inactive'))].sort(),
+    [users]
+  );
+
+  const filtered = users.filter(u =>
+    (u.name + u.email + u.department + u.jobTitle).toLowerCase().includes(query.toLowerCase()) &&
+    (!statusFilter || (u.status || 'inactive') === statusFilter)
+  );
 
   const handleSaved = (saved, isNew) => {
     setUsers(prev => isNew ? [...prev, saved] : prev.map(u => u.id === saved.id ? saved : u));
@@ -1419,12 +1433,20 @@ function AdminUserManagement() {
   return (
     <div className="flex flex-col gap-5 w-full">
     <Card className="w-full">
-      <div className="flex items-center justify-between mb-4">
-        <div className="relative w-64">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-          <input className={`${inputCls} pl-8`} placeholder="Search users by name or department…" value={query} onChange={e => setQuery(e.target.value)} />
+      <div className="flex items-center justify-between mb-4 gap-3">
+        <div className="flex items-center gap-2">
+          <div className="relative w-64">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+            <input className={`${inputCls} pl-8`} placeholder="Search users by name or department…" value={query} onChange={e => setQuery(e.target.value)} />
+          </div>
+          <select className={`${inputCls} w-40`} value={statusFilter} onChange={e => setStatusFilter(e.target.value)} title="Filter by status">
+            <option value="">All Statuses</option>
+            {statusOptions.map(s => (
+              <option key={s} value={s} className="capitalize">{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+            ))}
+          </select>
         </div>
-        <button onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold accent-bg-solid shadow-sm">
+        <button onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold accent-bg-solid shadow-sm shrink-0">
           <Plus size={14} /> Add New User
         </button>
       </div>
@@ -1471,7 +1493,7 @@ function AdminUserManagement() {
               </tr>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={7} className="py-6 text-center text-muted">No users found matching query.</td></tr>
+              <tr><td colSpan={7} className="py-6 text-center text-muted">No users found matching the current search/status filter.</td></tr>
             )}
           </tbody>
         </table>
@@ -3956,7 +3978,7 @@ function AssetImageLightbox({ url, name, onClose }) {
   );
 }
 
-function AssetsGrid({ assetList, mode, onEdit, onAssign, onBulkAssign, onReturn, onRetire, onDelete, onClone, onHistory, onView }) {
+function AssetsGrid({ assetList, mode, onEdit, onAssign, onBulkAssign, onReturn, onRetire, onSetMaintenance, onRestoreAvailable, onDelete, onClone, onHistory, onView }) {
   const { addToast } = useApp();
   const [lightbox, setLightbox] = useState(null);
   return (
@@ -4066,6 +4088,12 @@ function AssetsGrid({ assetList, mode, onEdit, onAssign, onBulkAssign, onReturn,
                       )}
                       {a.assignedCount > 0 && (
                         <button onClick={() => onReturn(a)} className="p-1.5 rounded-lg hover-surface" title="Return"><RotateCcw size={13} /></button>
+                      )}
+                      {a.status === 'Available' && !hasQuantity && (
+                        <button onClick={() => onSetMaintenance(a)} className="p-1.5 rounded-lg hover-surface" title="Send to Maintenance"><Wrench size={13} /></button>
+                      )}
+                      {a.status === 'Maintenance' && (
+                        <button onClick={() => onRestoreAvailable(a)} className="p-1.5 rounded-lg hover-surface" style={{ color: 'var(--success)' }} title="Mark Available"><CheckCircle2 size={13} /></button>
                       )}
                       {a.status === 'Available' && !hasQuantity && (
                         <button onClick={() => onRetire(a)} className="p-1.5 rounded-lg hover-surface" title="Retire"><Archive size={13} /></button>
@@ -4243,6 +4271,20 @@ function AdminAssets() {
       addToast('Asset retired.', 'success');
     } catch (e) { addToast(e.message, 'error'); }
   };
+  const handleSetMaintenance = async (asset) => {
+    try {
+      const updated = await api.assets.setStatus(asset.id, 'Maintenance');
+      syncAsset(updated);
+      addToast('Asset sent to Maintenance.', 'success');
+    } catch (e) { addToast(e.message, 'error'); }
+  };
+  const handleRestoreAvailable = async (asset) => {
+    try {
+      const updated = await api.assets.setStatus(asset.id, 'Available');
+      syncAsset(updated);
+      addToast('Asset marked Available.', 'success');
+    } catch (e) { addToast(e.message, 'error'); }
+  };
   const handleDelete = async (asset) => {
     if (!window.confirm(`Delete asset ${asset.name}? This cannot be undone.`)) return;
     try {
@@ -4270,6 +4312,40 @@ function AdminAssets() {
     }
   };
 
+  const handleExportExcel = () => {
+    if (!filtered.length) {
+      addToast('No assets match the current filters to export.', 'info');
+      return;
+    }
+    const rows = filtered.map(a => ({
+      'Asset Tag': a.assetTag || '',
+      'Name': a.name || '',
+      'Brand': a.brand || '',
+      'Model': a.model || '',
+      'Type': a.type || '',
+      'Serial Number': a.serialNumber || '',
+      'Status': a.status || '',
+      'Quantity': a.quantity ?? '',
+      'Quantity Available': a.quantityAvailable ?? '',
+      'Assigned To': a.assignedCount === 0 ? '' : a.assignedCount === 1 ? (a.currentAssignment?.employeeName || '') : `${a.assignedCount} employees`,
+      'Purchase Date': a.purchaseDate || '',
+      'Cost': a.cost ?? '',
+      'Warranty Expiry': a.warrantyExpiry || '',
+      'Remarks': a.remarks || '',
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    worksheet['!cols'] = [
+      { wch: 12 }, { wch: 24 }, { wch: 14 }, { wch: 16 }, { wch: 14 },
+      { wch: 18 }, { wch: 12 }, { wch: 10 }, { wch: 16 }, { wch: 20 },
+      { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 30 },
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Assets');
+    const stamp = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(workbook, `assets-export-${stamp}.xlsx`);
+    addToast(`Exported ${rows.length} asset${rows.length === 1 ? '' : 's'} to Excel.`, 'success');
+  };
+
   return (
     <Card>
       <div className="flex items-center justify-between mb-4">
@@ -4277,9 +4353,18 @@ function AdminAssets() {
           <h3 className="font-display font-bold text-base">Asset Management</h3>
           <p className="text-xs text-muted mt-0.5">Create, assign, retire, and audit company assets — including peripherals and software licenses.</p>
         </div>
-        <button onClick={() => { setEditingAsset(null); setFormOpen(true); }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold accent-bg-solid shadow-sm shrink-0">
-          <Plus size={14} /> Add Asset
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={handleExportExcel}
+            title="Export the currently filtered asset list to an Excel file"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold border border-[var(--border)] hover-surface"
+          >
+            <Download size={14} /> Export to Excel
+          </button>
+          <button onClick={() => { setEditingAsset(null); setFormOpen(true); }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold accent-bg-solid shadow-sm">
+            <Plus size={14} /> Add Asset
+          </button>
+        </div>
       </div>
       <AssetSearchFilterBar query={query} setQuery={setQuery} typeFilter={typeFilter} setTypeFilter={setTypeFilter}
         statusFilter={statusFilter} setStatusFilter={setStatusFilter} statusOptions={['Available', 'In Use', 'Out of Stock', 'Maintenance', 'Retired']} sortOrder={sortOrder} setSortOrder={setSortOrder}/>
@@ -4289,6 +4374,8 @@ function AdminAssets() {
         onBulkAssign={(a) => setBulkAssigning(a)}
         onReturn={(a) => setReturning(a)}
         onRetire={handleRetire}
+        onSetMaintenance={handleSetMaintenance}
+        onRestoreAvailable={handleRestoreAvailable}
         onDelete={handleDelete}
         onClone={handleClone}
         onHistory={(a) => setHistoryAsset(a)}
@@ -4565,6 +4652,7 @@ function ScreenshotsSection({
   subtitle,
   limit,
   employeeOptions,
+  deviceOptions,
   showFilters,
   onViewAll
 }) {
@@ -4572,8 +4660,14 @@ function ScreenshotsSection({
 
   const [shots, setShots] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [employeeFilter, setEmployeeFilter] = useState('');
+  // A single combined filter covering both "Device" and "Registered Owner"
+  // (employee) options, encoded as `device:<id>` or `employee:<id>` so one
+  // <select> can drive either filter dimension.
+  const [targetFilter, setTargetFilter] = useState('');
   const [dateFilter, setDateFilter] = useState('');
+  const [targetKind, targetId] = targetFilter ? targetFilter.split(':') : [null, null];
+  const employeeFilter = targetKind === 'employee' ? targetId : '';
+  const deviceFilter = targetKind === 'device' ? targetId : '';
   const [selectedIds, setSelectedIds] = useState([]);
   const [deleting, setDeleting] = useState(false);
 
@@ -4593,6 +4687,7 @@ function ScreenshotsSection({
         page,
         pageSize: limit || 60,
         employeeId: employeeFilter || undefined,
+        deviceId: deviceFilter || undefined,
         date: dateFilter || undefined
       });
 
@@ -4615,7 +4710,7 @@ function ScreenshotsSection({
 
   useEffect(() => {
     load();
-  }, [employeeFilter, dateFilter, page]);
+  }, [targetFilter, dateFilter, page]);
 
   const allVisibleSelected =
     shots.length > 0 &&
@@ -4742,26 +4837,39 @@ function ScreenshotsSection({
       {showFilters && (
         <>
           <div className="flex flex-wrap items-end gap-2 mb-4 w-full">
-            <div className="flex-1 min-w-[220px]">
+            <div className="flex-1 min-w-[260px]">
               <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">
-                Employee
+                Device / Registered Owner
               </label>
 
               <select
                 className={`${inputCls} h-9`}
-                value={employeeFilter}
+                value={targetFilter}
                 onChange={e => {
-                  setEmployeeFilter(e.target.value);
+                  setTargetFilter(e.target.value);
                   setPage(1);
                 }}
               >
-                <option value="">All Employees</option>
+                <option value="">All Devices &amp; Owners</option>
 
-                {employeeOptions.map(e => (
-                  <option key={e.id} value={e.id}>
-                    {e.name}
-                  </option>
-                ))}
+                {deviceOptions && deviceOptions.length > 0 && (
+                  <optgroup label="Devices">
+                    {deviceOptions.map(d => (
+                      <option key={`device:${d.id}`} value={`device:${d.id}`}>
+                        {d.hostname || `Device #${d.id}`}
+                        {d.registeredEmployeeName ? ` — ${d.registeredEmployeeName}` : ''}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+
+                <optgroup label="Registered Owner">
+                  {employeeOptions.map(e => (
+                    <option key={`employee:${e.id}`} value={`employee:${e.id}`}>
+                      {e.name}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
             </div>
 
@@ -4781,10 +4889,10 @@ function ScreenshotsSection({
               />
             </div>
 
-            {(employeeFilter || dateFilter) && (
+            {(targetFilter || dateFilter) && (
               <button
                 onClick={() => {
-                  setEmployeeFilter('');
+                  setTargetFilter('');
                   setDateFilter('');
                   setPage(1);
                 }}
@@ -4843,19 +4951,28 @@ function ScreenshotsSection({
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {shots.map(s => (
+            {shots.map(s => {
+              const isSelected = selectedIds.includes(s.id);
+              return (
               <div
                 key={s.id}
-                className={`relative rounded-lg border transition-all ${
-                  selectedIds.includes(s.id)
+                className={`group relative rounded-lg border transition-all ${
+                  isSelected
                     ? 'border-[var(--accent)] ring-1 ring-[var(--accent)]'
                     : 'border-[var(--border)]'
                 }`}
               >
-                <div className="absolute top-2 left-2 z-10">
+                {/* Hidden until the tile is hovered (or focused via keyboard),
+                    except once checked — then it stays visible so the
+                    selection state is still visible without hovering. */}
+                <div
+                  className={`absolute top-2 left-2 z-10 transition-opacity ${
+                    isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+                  }`}
+                >
                   <input
                     type="checkbox"
-                    checked={selectedIds.includes(s.id)}
+                    checked={isSelected}
                     onChange={() =>
                       toggleSelected(s.id)
                     }
@@ -4871,7 +4988,7 @@ function ScreenshotsSection({
                   viewerTitle={getScreenshotDisplayLabel(s)}
                 />
 
-                <div className="absolute top-2 right-2 z-10">
+                <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                   <button
                     onClick={() => deleteSingle(s)}
                     disabled={deleting}
@@ -4882,7 +4999,8 @@ function ScreenshotsSection({
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
 
           {pagination.totalPages > 1 && (
@@ -4939,9 +5057,19 @@ function ScreenshotsSection({
 }
 
 function ScreenshotsPage({ title, subtitle, employeeOptions: overrideOptions }) {
-  const { users, currentUser } = useApp();
+  const { users, currentUser, addToast } = useApp();
   const employeeOptions = overrideOptions || users.filter(u => u.role === 'Employee');
-  return <ScreenshotsSection title={title} subtitle={subtitle} employeeOptions={employeeOptions} showFilters />;
+  const [deviceOptions, setDeviceOptions] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.agent.devices()
+      .then(list => { if (!cancelled) setDeviceOptions(list || []); })
+      .catch(e => { if (!cancelled) addToast(e.message, 'error'); });
+    return () => { cancelled = true; };
+  }, []);
+
+  return <ScreenshotsSection title={title} subtitle={subtitle} employeeOptions={employeeOptions} deviceOptions={deviceOptions} showFilters />;
 }
 
 function AdminLiveView() {

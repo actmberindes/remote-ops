@@ -31,6 +31,7 @@ screenshotPaginationRouter.get('/screenshots-page', requireAuth(db), requireRole
 
   const allowed = scopedEmployeeIds(req.user);
   const employeeId = req.query.employeeId ? Number(req.query.employeeId) : null;
+  const deviceId = req.query.deviceId ? Number(req.query.deviceId) : null;
   const date = String(req.query.date || '').trim();
   const pageSize = Math.min(Math.max(Number(req.query.pageSize) || 60, 1), 100);
   const page = Math.max(Number(req.query.page) || 1, 1);
@@ -38,6 +39,7 @@ screenshotPaginationRouter.get('/screenshots-page', requireAuth(db), requireRole
   let list = db.data.screenshots.filter(item => !allowed || allowed.has(item.employeeId));
 
   if (employeeId) list = list.filter(item => item.employeeId === employeeId);
+  if (deviceId) list = list.filter(item => Number(item.deviceId) === deviceId);
   if (date) list = list.filter(item => String(item.capturedAt || '').slice(0, 10) === date);
 
   list.sort((a, b) => (a.capturedAt < b.capturedAt ? 1 : -1));

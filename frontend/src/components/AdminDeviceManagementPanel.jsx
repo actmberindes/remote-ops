@@ -8,6 +8,7 @@ function statusTone(status) {
     active: 'var(--success)',
     idle: 'var(--warning)',
     locked: 'var(--danger)',
+    disconnected: 'var(--neutral)',
     'logged-out': 'var(--neutral)',
     offline: 'var(--danger)',
     pending: 'var(--info)',
@@ -20,12 +21,18 @@ function statusLabel(status) {
     active: 'Active',
     idle: 'Idle',
     locked: 'Locked',
+    disconnected: 'Switched Away',
     'logged-out': 'No User Logged In',
     offline: 'Offline',
     pending: 'Pending Enrollment',
     revoked: 'Revoked',
   }[status] || status || 'Unknown';
 }
+
+// Every value `device.status` can actually come back as (see resolveDeviceState
+// on the backend) — kept as a fixed list so the filter always offers every
+// status, not just the ones present in the current device list.
+const DEVICE_STATUS_FILTER_KEYS = ['active', 'idle', 'locked', 'disconnected', 'logged-out', 'offline', 'pending', 'revoked'];
 
 function connectionLabel(device) {
   if (device.isRdp || device.connectionType === 'RDP') return 'RDP';
@@ -43,10 +50,16 @@ export default function AdminDeviceManagementPanel({ users = [], addToast }) {
   const [deviceType, setDeviceType] = useState('desktop-agent');
   const [enrollment, setEnrollment] = useState(null);
   const [selectedDeviceId, setSelectedDeviceId] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('');
 
   const employees = useMemo(
     () => users.filter(u => u.role === 'Employee'),
     [users]
+  );
+
+  const filteredDevices = useMemo(
+    () => statusFilter ? devices.filter(d => d.status === statusFilter) : devices,
+    [devices, statusFilter]
   );
 
   const load = async () => {
@@ -146,6 +159,17 @@ export default function AdminDeviceManagementPanel({ users = [], addToast }) {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <select
+              className="rounded-lg px-3 py-2 input-surface text-xs font-semibold"
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value)}
+              title="Filter by status"
+            >
+              <option value="">All Statuses</option>
+              {DEVICE_STATUS_FILTER_KEYS.map(key => (
+                <option key={key} value={key}>{statusLabel(key)}</option>
+              ))}
+            </select>
             <button onClick={load} className="p-2 rounded-lg hover-surface" title="Refresh"><RefreshCw size={14} /></button>
             <button onClick={() => setFormOpen(v => !v)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold accent-bg-solid shadow-sm"><UserPlus size={14} /> Register Device</button>
           </div>
@@ -189,14 +213,14 @@ export default function AdminDeviceManagementPanel({ users = [], addToast }) {
           </div>
         )}
 
-        {loading ? <div className="py-8 text-center text-sm text-muted">Loading devices…</div> : devices.length === 0 ? <div className="py-8 text-center text-sm text-muted">No managed devices registered.</div> : (
+        {loading ? <div className="py-8 text-center text-sm text-muted">Loading devices…</div> : devices.length === 0 ? <div className="py-8 text-center text-sm text-muted">No managed devices registered.</div> : filteredDevices.length === 0 ? <div className="py-8 text-center text-sm text-muted">No devices match the "{statusLabel(statusFilter)}" status filter.</div> : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead><tr className="font-bold text-muted uppercase tracking-wider border-b border-[var(--border)]">
                 <th className="pb-2.5 px-2">Device</th><th className="pb-2.5 px-2">Registered To</th><th className="pb-2.5 px-2">Current User</th><th className="pb-2.5 px-2">Session</th><th className="pb-2.5 px-2">Status</th><th className="pb-2.5 px-2">Last Seen</th><th className="pb-2.5 px-2">Agent</th><th className="pb-2.5 px-2 text-right">Actions</th>
               </tr></thead>
               <tbody className="divide-y divide-[var(--border)]">
-                {devices.map(d => {
+                {filteredDevices.map(d => {
                   const tone = statusTone(d.status);
                   const isRdp = d.isRdp || d.connectionType === 'RDP';
                   return <tr key={d.id} className="hover:bg-[var(--bg)] transition-colors">
