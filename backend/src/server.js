@@ -89,7 +89,7 @@ try {
   console.log(`[retention] Config loaded | Live View retention: ${Number(db.data.agentConfig.liveViewRetentionDays)} days (${(Number(db.data.agentConfig.liveViewRetentionDays) * 24 * 60).toFixed(2)} min) | Screenshot retention: ${Number(db.data.agentConfig.screenshotRetentionDays)} days`);
   await runMonitoringRetention();
 } catch (err) { console.error(`Initial monitoring retention cleanup failed: ${err.message}`); }
-const RETENTION_SWEEP_MS = 2 * 60 * 1000;
+const RETENTION_SWEEP_MS = 1 * 60 * 1000;
 setInterval(async () => { try { await runMonitoringRetention(); } catch (err) { console.error(`Monitoring retention sweep failed: ${err.message}`); } }, RETENTION_SWEEP_MS).unref();
 app.use((err, req, res, next) => { console.error(err); res.status(500).json({ error: 'Something went wrong on the server.' }); });
 const PORT = process.env.PORT || 4000;
