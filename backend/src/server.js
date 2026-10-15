@@ -91,7 +91,19 @@ try {
 } catch (err) { console.error(`Initial monitoring retention cleanup failed: ${err.message}`); }
 const RETENTION_SWEEP_MS = 2 * 60 * 1000;
 setInterval(async () => { try { await runMonitoringRetention(); } catch (err) { console.error(`Monitoring retention sweep failed: ${err.message}`); } }, RETENTION_SWEEP_MS).unref();
-app.use((err, req, res, next) => { console.error(err); res.status(500).json({ error: 'Something went wrong on the server.' }); });
+app.use((err, req, res, next) => {
+  // A client disconnecting mid-upload is expected occasionally. The socket is
+  // already gone, so don't emit a full server-error stack trace for Multer's
+  // request-aborted error.
+  if (err?.message === 'Request aborted' || req.aborted) {
+    console.info('[upload] Client disconnected before the request completed.');
+    if (!res.headersSent && !res.destroyed) return res.status(400).end();
+    return;
+  }
+  console.error(err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: 'Something went wrong on the server.' });
+});
 const PORT = process.env.PORT || 4000;
 const HOST = process.env.HOST || '0.0.0.0';
 app.listen(PORT, HOST, () => console.log(`Remote Ops backend listening on http://${HOST}:${PORT}`));
