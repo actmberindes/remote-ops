@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url';
 import { db, nextId } from '../db.js';
 import { requireAuth, requireRole, requireDevice } from '../auth.js';
 import { buildLiveVideo } from '../live-video.js';
-import { deleteMonitoringFile } from '../monitoring-files.js';
 
 export const activityRouter = Router();
 
@@ -56,7 +55,11 @@ function monitoringFilePath(url) {
 function deleteStoredMonitoringFile(url) {
   const filePath = monitoringFilePath(url);
   if (!filePath) return;
-  if (fs.existsSync(filePath)) deleteMonitoringFile(filePath, 'monitoring');
+  try {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch (e) {
+    console.warn(`Unable to delete monitoring file ${filePath}: ${e.message}`);
+  }
 }
 
 export function purgeOldActivity() {

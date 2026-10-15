@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { deleteMonitoringFile } from './monitoring-files.js';
 
 /**
  * Removes monitoring files that have exceeded their configured retention.
@@ -73,7 +72,12 @@ export function purgeMonitoringFiles({ monitoringUploadsDir, liveViewDays = 3, s
 
       if (!shouldDelete) continue;
 
-      if (deleteMonitoringFile(fullPath, 'retained monitoring')) deleted += 1;
+      try {
+        fs.unlinkSync(fullPath);
+        deleted += 1;
+      } catch (e) {
+        console.warn(`Unable to delete retained monitoring file ${fullPath}: ${e.message}`);
+      }
     }
   };
 
