@@ -95,7 +95,7 @@ app.use((err, req, res, next) => {
   // A client disconnecting mid-upload is expected occasionally. The socket is
   // already gone, so don't emit a full server-error stack trace for Multer's
   // request-aborted error.
-  if (err?.message === 'Request aborted' || req.aborted) {
+  if (err?.message === 'Request aborted') {
     console.info('[upload] Client disconnected before the request completed.');
     if (!res.headersSent && !res.destroyed) return res.status(400).end();
     return;
