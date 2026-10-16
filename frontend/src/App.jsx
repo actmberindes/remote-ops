@@ -14,6 +14,7 @@ import AdminDeviceManagementPanel from './components/AdminDeviceManagementPanel.
 import ManagerDeviceManagementPage from './components/ManagerDeviceManagementPage.jsx';
 import DeviceDetailsPage from './components/DeviceDetailsPage.jsx';
 import LiveViewVideoPlayer from './components/LiveViewVideoPlayer.jsx';
+import LicenseManagementTab from './LicenseManagementTab.jsx';
 
 /* ============================== CONSTANTS ============================== */
 
@@ -4249,6 +4250,7 @@ function useAssetFilters(assets) {
 }
 
 function AdminAssets() {
+  const [assetTab, setAssetTab] = useState('assets');
   const { assets, setAssets, addToast } = useApp();
   const [formOpen, setFormOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState(null);
@@ -4358,6 +4360,11 @@ function AdminAssets() {
 
   return (
     <Card>
+      <div className="flex gap-2 border-b border-[var(--border)] mb-5 pb-3">
+        <button onClick={() => setAssetTab('assets')} className={`px-4 py-2 rounded-lg text-xs font-bold ${assetTab === 'assets' ? 'accent-bg-solid' : 'hover-surface border border-[var(--border)]'}`}>Assets</button>
+        <button onClick={() => setAssetTab('licenses')} className={`px-4 py-2 rounded-lg text-xs font-bold ${assetTab === 'licenses' ? 'accent-bg-solid' : 'hover-surface border border-[var(--border)]'}`}>Licenses</button>
+      </div>
+      {assetTab === 'licenses' ? <LicenseManagementTab /> : <>
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="font-display font-bold text-base">Asset Management</h3>
@@ -4397,6 +4404,7 @@ function AdminAssets() {
       <ReturnAssetModal isOpen={!!returning} onClose={() => setReturning(null)} asset={returning} onReturned={(updated) => { syncAsset(updated); setReturning(updated); }} />
       <AssetHistoryModal isOpen={!!historyAsset} onClose={() => setHistoryAsset(null)} asset={historyAsset} />
       <AssetDetailModal isOpen={!!viewingAsset} onClose={() => setViewingAsset(null)} asset={viewingAsset} />
+      </>}
     </Card>
   );
 }
