@@ -4336,14 +4336,14 @@ function AdminAssets() {
     const headers = Object.keys(rows[0]);
     const escapeCsvCell = (value) => {
       const text = String(value ?? '');
-      return /[",\\r\\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+      return (text.includes(",") || text.includes('"') || text.includes("\\r") || text.includes("\\n")) ? `"${text.replace(/"/g, '""')}"` : text;
     };
     const csv = [
       headers.map(escapeCsvCell).join(','),
       ...rows.map(row => headers.map(header => escapeCsvCell(row[header])).join(',')),
-    ].join('\\r\\n');
+    ].join(String.fromCharCode(13, 10));
     // Include a UTF-8 BOM so Excel correctly detects the CSV's text encoding.
-    const blob = new Blob([\\uFEFF, csv], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([String.fromCharCode(0xFEFF), csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     const stamp = new Date().toISOString().slice(0, 10);
