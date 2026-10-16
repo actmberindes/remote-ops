@@ -84,6 +84,18 @@ export const api = {
     update: (id, body) => request(`/tickets/${id}`, { method: 'PATCH', body }),
     assignAsset: (id, assetId) => request(`/tickets/${id}/assign-asset`, { method: 'POST', body: { assetId } }),
   },
+  licenses: {
+    list: () => request('/licenses'),
+    create: (body) => request('/licenses', { method: 'POST', body }),
+    update: (id, body) => request(`/licenses/${id}`, { method: 'PUT', body }),
+    clone: (id) => request(`/licenses/${id}/clone`, { method: 'POST' }),
+    remove: (id) => request(`/licenses/${id}`, { method: 'DELETE' }),
+    renew: (id, body) => request(`/licenses/${id}/renew`, { method: 'POST', body }),
+    history: (id) => request(`/licenses/${id}/history`),
+    assignments: (id) => request(`/licenses/${id}/assignments`),
+    assign: (id, employeeId, seats) => request(`/licenses/${id}/assign`, { method: 'POST', body: { employeeId, seats } }),
+    releaseAssignment: (id, assignmentId) => request(`/licenses/${id}/assignments/${assignmentId}`, { method: 'DELETE' }),
+  },
   assets: {
     list: () => request('/assets'),
     create: (body) => request('/assets', { method: 'POST', body }),
