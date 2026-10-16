@@ -4333,17 +4333,27 @@ function AdminAssets() {
       'Warranty Expiry': a.warrantyExpiry || '',
       'Remarks': a.remarks || '',
     }));
-    const worksheet = XLSX.utils.json_to_sheet(rows);
-    worksheet['!cols'] = [
-      { wch: 12 }, { wch: 24 }, { wch: 14 }, { wch: 16 }, { wch: 14 },
-      { wch: 18 }, { wch: 12 }, { wch: 10 }, { wch: 16 }, { wch: 20 },
-      { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 30 },
-    ];
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Assets');
+    const headers = Object.keys(rows[0]);
+    const escapeCsvCell = (value) => {
+      const text = String(value ?? '');
+      return /[",\\r\\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const csv = [
+      headers.map(escapeCsvCell).join(','),
+      ...rows.map(row => headers.map(header => escapeCsvCell(row[header])).join(',')),
+    ].join('\\r\\n');
+    // Include a UTF-8 BOM so Excel correctly detects the CSV's text encoding.
+    const blob = new Blob([\\uFEFF, csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
     const stamp = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(workbook, `assets-export-${stamp}.xlsx`);
-    addToast(`Exported ${rows.length} asset${rows.length === 1 ? '' : 's'} to Excel.`, 'success');
+    link.href = url;
+    link.download = `assets-export-${stamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    addToast(`Exported ${rows.length} asset${rows.length === 1 ? '' : 's'} to an Excel-compatible CSV.`, 'success');
   };
 
   return (
