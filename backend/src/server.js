@@ -8,6 +8,7 @@ import { timeSessionsRouter } from './routes/timesessions.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { ticketsRouter } from './routes/tickets.js';
 import { assetsRouter } from './routes/assets.js';
+import { licensesRouter } from './routes/licenses.js';
 import { assetTagsRouter } from './routes/asset-tags.js';
 import { uploadsRouter, uploadsDir } from './uploads.js';
 import { agentReadonlyRouter } from './routes/agent-readonly.js';
@@ -59,6 +60,7 @@ app.use('/api/assets', (req, res, next) => {
   next();
 });
 app.use('/api/assets', assetsRouter);
+app.use('/api/licenses', licensesRouter);
 app.use('/api/asset-tags', assetTagsRouter);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/agent', agentReadonlyRouter);
