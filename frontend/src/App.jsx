@@ -4336,7 +4336,7 @@ function AdminAssets() {
     const headers = Object.keys(rows[0]);
     const escapeCsvCell = (value) => {
       const text = String(value ?? '');
-      return (text.includes(",") || text.includes('"') || text.includes("\\r") || text.includes("\\n")) ? `"${text.replace(/"/g, '""')}"` : text;
+      return (text.includes(",") || text.includes('"') || text.includes(String.fromCharCode(13)) || text.includes(String.fromCharCode(10))) ? `"${text.replace(/"/g, '""')}"` : text;
     };
     const csv = [
       headers.map(escapeCsvCell).join(','),
