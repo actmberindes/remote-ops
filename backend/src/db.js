@@ -12,6 +12,7 @@ const defaultData = {
   users: [], applications: [], timeSessions: [], notifications: [],
   tickets: [], ticketMessages: [], ticketAttachments: [],
   assets: [], assetAssignments: [], assetLogs: [],
+  licenses: [], licenseAssignments: [], licenseLogs: [],
   devices: [], pairingCodes: [], deviceStateHistory: [], screenshots: [], liveFrames: [], liveFrameHistory: [], webUsageLogs: [],
   agentConfig: {
     screenshotIntervalMinutes: 10,
