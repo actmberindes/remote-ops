@@ -115,7 +115,7 @@ Asset types now include peripherals (`Mouse`, `Keyboard`, `Headset`) and
 form renders a different set of specification fields depending on the
 selected type (`TYPE_SPEC_FIELDS` in `frontend/src/App.jsx`):
 
-- **Desktop / Laptop**: Motherboard, CPU, RAM, Storage Size, Video Card, OS
+- **Desktop / Laptop**: Motherboard, CPU, RAM, Storage Size (with an optional second storage field), Video Card, OS, Hostname, OS Product Key
 - **Monitor**: Display Size, Panel Type, Resolution, Viewing Angle, Refresh Rate, Inputs, Wall Mount Compatible
 - **Printer**: Print Type, Connectivity, Duty Cycle, Paper Size
 - **Server**: CPU, RAM, Storage Size, RAID Configuration, OS
