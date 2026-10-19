@@ -56,6 +56,8 @@ new employee.
 
 Admin, Manager, and Employee dashboards support personal widget layouts. Use **Customize dashboard** to add or remove role-appropriate widgets, drag widgets to reorder them, rename widgets, and choose one-, two-, or full-width sizing. Layouts are saved in the browser's local storage per signed-in user and role; **Reset layout** restores the role's default widgets. Dashboard widget availability follows the existing role-specific data scopes and API permissions. Layouts are device/browser-specific rather than synchronized across devices.
 
+The customizable dashboard includes Employee Overview, Attendance & Schedules, Support Tickets, Assets & Devices, Desktop Monitoring, and Reports & Trends widgets. Metrics are derived from existing workspace, ticket, asset, time-session, live-view, and paired-device APIs; where the current data model does not record a value (for example, a late-arrival flag), the widget does not infer it.
+
 ## What's stored where
 
 `backend/data/db.json` is the single source of truth: users, WFH
