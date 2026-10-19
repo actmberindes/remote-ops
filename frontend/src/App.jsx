@@ -1010,42 +1010,120 @@ function AdminMonitoringSettings() {
 }
 
 
-function AdminDashboard() {
-  const { users, applications, navigate } = useApp();
 
-  return (
-    <div className="flex flex-col gap-5">
-      <DashboardShared
-        scopeUsers={users}
-        scopeApps={applications}
-        onViewApplications={() => navigate('admin', 'applications')}
-      />
+const DASHBOARD_WIDGETS = {
+  Admin: [
+    { id: 'staff-overview', title: 'Staff Overview', span: 2 },
+    { id: 'operations', title: 'Operations & Inventory', span: 2 },
+    { id: 'live-view', title: 'Live Desktop View', span: 1 },
+    { id: 'screenshots', title: 'Recent Screenshots', span: 1 },
+    { id: 'web-usage', title: 'Web Usage', span: 2 },
+  ],
+  Manager: [
+    { id: 'staff-overview', title: 'Team Overview', span: 2 },
+    { id: 'live-view', title: 'Team Live View', span: 1 },
+    { id: 'screenshots', title: 'Recent Team Screenshots', span: 1 },
+    { id: 'web-usage', title: 'Team Web Usage', span: 2 },
+  ],
+  Employee: [
+    { id: 'welcome', title: 'Welcome & Quick Actions', span: 2 },
+    { id: 'my-assets', title: 'Assigned Assets', span: 1 },
+    { id: 'my-work', title: 'My Work Snapshot', span: 1 },
+  ],
+};
 
-      <OpsCharts />
-
-      <div className="grid grid-cols-2 gap-5">
-        <LiveViewSection
-          title="Live Desktop View"
-          subtitle="Employees currently active"
-          limit={6}
-          onViewAll={() => navigate('admin', 'live-view')}
-        />
-
-        <ScreenshotsSection
-          title="Recent Screenshots"
-          subtitle="Latest scheduled captures"
-          limit={8}
-          onViewAll={() => navigate('admin', 'screenshots')}
-        />
-      </div>
-
-      <WebUsageWidget
-        navigate={navigate}
-        routeRole="admin"
-      />
-    </div>
-  );
+function DashboardWidgetContent({ widgetId, role, scopeUsers, scopeApps, currentUser, navigate, assets, tickets }) {
+  if (widgetId === 'staff-overview') return <DashboardShared scopeUsers={scopeUsers} scopeApps={scopeApps} onViewApplications={() => navigate(role === 'Admin' ? 'admin' : 'manager', 'applications')} />;
+  if (widgetId === 'operations') return <OpsCharts />;
+  if (widgetId === 'live-view') return <LiveViewSection title={role === 'Admin' ? 'Live Desktop View' : 'Team Live View'} subtitle={role === 'Admin' ? 'Employees currently active' : 'Your direct reports currently active'} limit={role === 'Admin' ? 6 : 3} onViewAll={() => navigate(role.toLowerCase(), 'live-view')} />;
+  if (widgetId === 'screenshots') return <ScreenshotsSection title={role === 'Admin' ? 'Recent Screenshots' : 'Recent Team Screenshots'} subtitle={role === 'Admin' ? 'Latest scheduled captures' : 'Latest captures from your team'} limit={8} onViewAll={() => navigate(role.toLowerCase(), 'screenshots')} />;
+  if (widgetId === 'web-usage') return <WebUsageWidget navigate={navigate} routeRole={role.toLowerCase()} />;
+  if (widgetId === 'welcome') return <div className="flex flex-col gap-4">
+    <div className="flex items-center gap-3"><Avatar name={currentUser.name} size={42} /><div><h2 className="font-display font-bold text-lg">Welcome, {currentUser.name}</h2><p className="text-xs text-muted mt-0.5">Employee Portal</p></div></div>
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">{[['WFH Applications','Submit and review your remote-work requests.','wfh'],['My Tickets','Submit and track your IT support requests.','tickets'],['Assigned Assets','View company equipment assigned to you.','assets']].map(([title, desc, page]) => <button key={page} onClick={() => navigate('employee', page)} className="p-4 rounded-xl border border-[var(--border)] text-left hover-surface"><div className="font-semibold text-sm">{title}</div><div className="text-[10px] text-muted mt-1">{desc}</div></button>)}</div>
+  </div>;
+  if (widgetId === 'my-assets') return <div className="flex flex-col gap-2">
+    {assets.length === 0 ? <p className="text-xs text-muted">No assets are currently assigned to you.</p> : assets.slice(0, 5).map(asset => <div key={asset.id} className="flex items-center gap-3 p-3 rounded-lg border border-[var(--border)]"><div className="w-9 h-9 rounded-lg flex items-center justify-center accent-bg shrink-0"><Package size={16} /></div><div className="min-w-0"><div className="text-xs font-semibold truncate">{asset.name}</div><div className="text-[10px] text-muted">{asset.assetTag} · {asset.type}</div></div></div>)}
+    <button onClick={() => navigate('employee', 'assets')} className="text-xs font-bold accent-text self-start">View all assets</button>
+  </div>;
+  if (widgetId === 'my-work') {
+    const myTickets = tickets.filter(t => String(t.userId ?? t.createdBy ?? t.employeeId) === String(currentUser.id));
+    return <div className="grid grid-cols-2 gap-3">
+      <div className="rounded-lg border border-[var(--border)] p-3"><div className="text-xs text-muted">WFH requests</div><div className="text-2xl font-bold mt-1">{scopeApps.length}</div><div className="text-[10px] text-muted">{scopeApps.filter(a => a.status === 'pending').length} pending</div><button onClick={() => navigate('employee','wfh')} className="text-xs font-bold accent-text mt-2">Open requests</button></div>
+      <div className="rounded-lg border border-[var(--border)] p-3"><div className="text-xs text-muted">Support tickets</div><div className="text-2xl font-bold mt-1">{myTickets.length}</div><div className="text-[10px] text-muted">{myTickets.filter(t => !['Closed','Resolved'].includes(t.status)).length} open</div><button onClick={() => navigate('employee','tickets')} className="text-xs font-bold accent-text mt-2">Open tickets</button></div>
+    </div>;
+  }
+  return null;
 }
+
+function CustomizableDashboard({ role }) {
+  const { users, applications, currentUser, navigate, assets, tickets } = useApp();
+  const isAdmin = role === 'Admin';
+  const team = isAdmin ? users : users.filter(u => u.managerId === currentUser.id);
+  const scopedAssets = role === 'Employee' ? assets : assets;
+  const scopedApps = isAdmin ? applications : role === 'Manager' ? applications.filter(a => team.some(u => u.id === a.userId)) : applications.filter(a => a.userId === currentUser.id);
+  const storageKey = 'remote_ops_dashboard_' + String(currentUser.id) + '_' + role.toLowerCase();
+  const defaults = DASHBOARD_WIDGETS[role] || DASHBOARD_WIDGETS.Employee;
+  const [layout, setLayout] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
+      if (Array.isArray(saved)) {
+        const allowed = new Set(defaults.map(w => w.id));
+        return saved.filter(w => allowed.has(w.id)).map(w => {
+          const base = defaults.find(d => d.id === w.id);
+          return { ...base, ...w, span: Math.max(1, Math.min(3, Number(w.span) || base.span)) };
+        });
+      }
+    } catch {}
+    return defaults.map(w => ({ ...w }));
+  });
+  const [editing, setEditing] = useState(false);
+  const [addWidget, setAddWidget] = useState('');
+  const [settingsWidget, setSettingsWidget] = useState(null);
+  const [draggingId, setDraggingId] = useState(null);
+  useEffect(() => { try { localStorage.setItem(storageKey, JSON.stringify(layout)); } catch {} }, [layout, storageKey]);
+  useEffect(() => { setLayout(current => current.filter(w => defaults.some(d => d.id === w.id))); }, [storageKey]);
+  const available = defaults.filter(w => !layout.some(item => item.id === w.id));
+  const updateWidget = (id, changes) => setLayout(current => current.map(w => w.id === id ? { ...w, ...changes } : w));
+  const moveWidget = targetId => {
+    if (!draggingId || draggingId === targetId) return;
+    setLayout(current => {
+      const next = [...current], from = next.findIndex(w => w.id === draggingId), to = next.findIndex(w => w.id === targetId);
+      if (from < 0 || to < 0) return current;
+      const item = next.splice(from, 1)[0]; next.splice(to, 0, item); return next;
+    });
+    setDraggingId(null);
+  };
+  const resetLayout = () => { setLayout(defaults.map(w => ({ ...w }))); setEditing(false); };
+  return <div className="flex flex-col gap-4 w-full">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div><h2 className="font-display font-bold text-lg">{role} Dashboard</h2><p className="text-xs text-muted mt-1">Personalize your workspace. Your layout is saved on this device.</p></div>
+      <div className="flex flex-wrap items-center gap-2">
+        {editing && <><select aria-label="Add dashboard widget" className={inputCls} value={addWidget} onChange={e => { const id = e.target.value; setAddWidget(''); const item = defaults.find(w => w.id === id); if (item) setLayout(current => [...current, { ...item }]); }}><option value="">Add widget…</option>{available.map(w => <option key={w.id} value={w.id}>{w.title}</option>)}</select><button onClick={resetLayout} className="px-3 py-2 rounded-lg text-xs font-semibold border border-[var(--border)] hover-surface">Reset layout</button></>}
+        <button onClick={() => { setEditing(v => !v); setSettingsWidget(null); }} className="px-3 py-2 rounded-lg text-xs font-bold accent-bg-solid">{editing ? 'Done editing' : 'Customize dashboard'}</button>
+      </div>
+    </div>
+    {editing && <div className="rounded-lg border border-[var(--border)] p-3 text-xs text-muted">Drag widgets by their header to reorder them. Open Settings to rename or resize a widget, or remove widgets you don't need.</div>}
+    {layout.length === 0 ? <div className="rounded-xl border border-dashed border-[var(--border)] p-10 text-center"><p className="text-sm font-semibold">Your dashboard is empty</p><p className="text-xs text-muted mt-1">Add a widget to get started.</p></div> :
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+        {layout.map(widget => <section key={widget.id} onDragOver={e => { if (editing) e.preventDefault(); }} onDrop={e => { e.preventDefault(); moveWidget(widget.id); }} className="min-w-0" style={{ gridColumn: 'span ' + Math.min(3, Math.max(1, widget.span || 1)) + ' / span ' + Math.min(3, Math.max(1, widget.span || 1)) }}>
+          <div className="h-full rounded-xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
+            <div draggable={editing} onDragStart={e => { setDraggingId(widget.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', widget.id); }} onDragEnd={() => setDraggingId(null)} className={'flex items-center gap-2 px-4 py-3 border-b border-[var(--border)] ' + (editing ? 'cursor-grab active:cursor-grabbing' : '')}>
+              <span className="flex-1 min-w-0 text-sm font-display font-bold truncate">{widget.title}</span>
+              {editing && <><button onClick={() => setSettingsWidget(settingsWidget === widget.id ? null : widget.id)} className="px-2 py-1 rounded-md border border-[var(--border)] text-xs font-semibold hover-surface">Settings</button><button aria-label={'Remove ' + widget.title} onClick={() => { setLayout(current => current.filter(w => w.id !== widget.id)); if (settingsWidget === widget.id) setSettingsWidget(null); }} className="p-1.5 rounded-md border border-[var(--border)] hover-surface"><X size={14} /></button></>}
+            </div>
+            {editing && settingsWidget === widget.id && <div className="p-3 border-b border-[var(--border)] bg-[var(--bg)] grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="text-xs font-semibold">Widget title<input className={inputCls + ' mt-1'} value={widget.title} maxLength={60} onChange={e => updateWidget(widget.id, { title: e.target.value })} /></label>
+              <label className="text-xs font-semibold">Width<select className={inputCls + ' mt-1'} value={widget.span} onChange={e => updateWidget(widget.id, { span: Number(e.target.value) })}><option value={1}>One column</option><option value={2}>Two columns</option><option value={3}>Full width</option></select></label>
+            </div>}
+            <div className="p-3 min-w-0"><DashboardWidgetContent widgetId={widget.id} role={role} scopeUsers={team} scopeApps={scopedApps} currentUser={currentUser} navigate={navigate} assets={scopedAssets} tickets={tickets} /></div>
+          </div>
+        </section>)}
+      </div>}
+  </div>;
+}
+
+function AdminDashboard() { return <CustomizableDashboard role="Admin" />; }
 
 function AdminApplications() {
   const { users, applications, setApplications, addToast } = useApp();
@@ -1507,44 +1585,7 @@ function AdminUserManagement() {
   );
 }
 
-function ManagerDashboard() {
-  const { users, applications, currentUser, navigate } = useApp();
-
-  const team = users.filter(u => u.managerId === currentUser.id);
-  const teamIds = new Set(team.map(u => u.id));
-  const teamApps = applications.filter(a => teamIds.has(a.userId));
-
-  return (
-    <div className="flex flex-col gap-5">
-      <DashboardShared
-        scopeUsers={team}
-        scopeApps={teamApps}
-        onViewApplications={() => navigate('manager', 'applications')}
-      />
-
-      <div className="grid grid-cols-2 gap-5">
-        <LiveViewSection
-          title="Team Live View"
-          subtitle="Your direct reports currently active"
-          limit={3}
-          onViewAll={() => navigate('manager', 'live-view')}
-        />
-
-        <ScreenshotsSection
-          title="Recent Screenshots"
-          subtitle="Latest captures from your team"
-          limit={8}
-          onViewAll={() => navigate('manager', 'screenshots')}
-        />
-      </div>
-
-      <WebUsageWidget
-        navigate={navigate}
-        routeRole="manager"
-      />
-    </div>
-  );
-}
+function ManagerDashboard() { return <CustomizableDashboard role="Manager" />; }
 
 function ManagerApplications() {
   const { users, applications, setApplications, currentUser, addToast } = useApp();
@@ -2207,123 +2248,7 @@ function AssignedAssetsWidget() {
   );
 }
 
-function EmployeeDashboard() {
-  const { currentUser, navigate, assets } = useApp();
-
-  const assignedAssets = assets.slice(0, 3);
-
-  return (
-    <div className="flex flex-col gap-5 w-full">
-      <Card>
-        <div className="flex items-center gap-3">
-          <Avatar name={currentUser.name} size={42} />
-
-          <div>
-            <h2 className="font-display font-bold text-lg">
-              Welcome, {currentUser.name}
-            </h2>
-
-            <p className="text-xs text-muted mt-0.5">
-              Employee Portal
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-5">
-          <button
-            onClick={() => navigate('employee', 'wfh')}
-            className="p-4 rounded-xl border border-[var(--border)] text-left hover-surface"
-          >
-            <div className="font-semibold text-sm">
-              WFH Applications
-            </div>
-
-            <div className="text-[10px] text-muted mt-1">
-              Submit and review your remote-work requests.
-            </div>
-          </button>
-
-          <button
-            onClick={() => navigate('employee', 'tickets')}
-            className="p-4 rounded-xl border border-[var(--border)] text-left hover-surface"
-          >
-            <div className="font-semibold text-sm">
-              My Tickets
-            </div>
-
-            <div className="text-[10px] text-muted mt-1">
-              Submit and track your IT support requests.
-            </div>
-          </button>
-
-          <button
-            onClick={() => navigate('employee', 'assets')}
-            className="p-4 rounded-xl border border-[var(--border)] text-left hover-surface"
-          >
-            <div className="font-semibold text-sm">
-              Assigned Assets
-            </div>
-
-            <div className="text-[10px] text-muted mt-1">
-              View company equipment assigned to you.
-            </div>
-          </button>
-        </div>
-      </Card>
-
-      <Card>
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h3 className="font-display font-bold text-base flex items-center gap-2">
-              <Package size={16} className="accent-text" />
-              Assigned Assets
-            </h3>
-
-            <p className="text-xs text-muted mt-0.5">
-              Company equipment currently assigned to you.
-            </p>
-          </div>
-
-          <button
-            onClick={() => navigate('employee', 'assets')}
-            className="text-xs font-bold accent-text"
-          >
-            View All
-          </button>
-        </div>
-
-        {assignedAssets.length === 0 ? (
-          <p className="text-xs text-muted">
-            No assets are currently assigned to you.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {assignedAssets.map(asset => (
-              <div
-                key={asset.id}
-                className="flex items-center gap-3 p-3 rounded-lg border border-[var(--border)]"
-              >
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center accent-bg shrink-0">
-                  <Package size={16} />
-                </div>
-
-                <div className="min-w-0">
-                  <div className="text-xs font-semibold truncate">
-                    {asset.name}
-                  </div>
-
-                  <div className="text-[10px] text-muted">
-                    {asset.assetTag} · {asset.type}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-    </div>
-  );
-}
+function EmployeeDashboard() { return <CustomizableDashboard role="Employee" />; }
 
 function EmployeeWFHAndSchedule() {
   const [tab, setTab] = useState('request');
