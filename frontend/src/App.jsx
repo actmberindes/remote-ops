@@ -1082,19 +1082,7 @@ function CustomizableDashboard({ role }) {
   const [settingsWidget, setSettingsWidget] = useState(null);
   const [draggingId, setDraggingId] = useState(null);
   useEffect(() => { try { localStorage.setItem(storageKey, JSON.stringify(layout)); } catch {} }, [layout, storageKey]);
-  useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
-      if (Array.isArray(saved)) {
-        setLayout(saved.filter(w => defaults.some(d => d.id === w.id)).map(w => {
-          const base = defaults.find(d => d.id === w.id);
-          return { ...base, ...w, span: Math.max(1, Math.min(3, Number(w.span) || base.span)) };
-        }));
-        return;
-      }
-    } catch {}
-    setLayout(defaults.map(w => ({ ...w })));
-  }, [storageKey]);
+
   const available = defaults.filter(w => !layout.some(item => item.id === w.id));
   const updateWidget = (id, changes) => setLayout(current => current.map(w => w.id === id ? { ...w, ...changes } : w));
   const moveWidget = targetId => {
