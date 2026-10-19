@@ -1013,27 +1013,42 @@ function AdminMonitoringSettings() {
 
 const DASHBOARD_WIDGETS = {
   Admin: [
-    { id: 'staff-overview', title: 'Staff Overview', span: 2 },
-    { id: 'operations', title: 'Operations & Inventory', span: 2 },
+    { id: 'staff-overview', title: 'Employee Overview', span: 2 },
+    { id: 'attendance-schedules', title: 'Attendance & Schedules', span: 2 },
+    { id: 'support-tickets', title: 'Support Tickets', span: 2 },
+    { id: 'assets-devices', title: 'Assets & Devices', span: 2 },
+    { id: 'desktop-monitoring', title: 'Desktop Monitoring', span: 2 },
+    { id: 'operations', title: 'Reports & Trends', span: 2 },
     { id: 'live-view', title: 'Live Desktop View', span: 1 },
     { id: 'screenshots', title: 'Recent Screenshots', span: 1 },
     { id: 'web-usage', title: 'Web Usage', span: 2 },
   ],
   Manager: [
-    { id: 'staff-overview', title: 'Team Overview', span: 2 },
+    { id: 'staff-overview', title: 'Employee Overview', span: 2 },
+    { id: 'attendance-schedules', title: 'Attendance & Schedules', span: 2 },
+    { id: 'support-tickets', title: 'Support Tickets', span: 2 },
+    { id: 'assets-devices', title: 'Assets & Devices', span: 2 },
+    { id: 'desktop-monitoring', title: 'Desktop Monitoring', span: 2 },
+    { id: 'operations', title: 'Reports & Trends', span: 2 },
     { id: 'live-view', title: 'Team Live View', span: 1 },
     { id: 'screenshots', title: 'Recent Team Screenshots', span: 1 },
     { id: 'web-usage', title: 'Team Web Usage', span: 2 },
   ],
   Employee: [
     { id: 'welcome', title: 'Welcome & Quick Actions', span: 2 },
-    { id: 'my-assets', title: 'Assigned Assets', span: 1 },
+    { id: 'attendance-schedules', title: 'My Attendance & Schedule', span: 2 },
+    { id: 'support-tickets', title: 'My Support Tickets', span: 1 },
+    { id: 'assets-devices', title: 'My Assigned Assets', span: 1 },
     { id: 'my-work', title: 'My Work Snapshot', span: 1 },
   ],
 };
 
 function DashboardWidgetContent({ widgetId, role, scopeUsers, scopeApps, currentUser, navigate, assets, tickets }) {
   if (widgetId === 'staff-overview') return <DashboardShared scopeUsers={scopeUsers} scopeApps={scopeApps} onViewApplications={() => navigate(role === 'Admin' ? 'admin' : 'manager', 'applications')} />;
+  if (widgetId === 'attendance-schedules') return <DashboardAttendanceWidget role={role} scopeUsers={scopeUsers} scopeApps={scopeApps} currentUser={currentUser} navigate={navigate} />;
+  if (widgetId === 'support-tickets') return <DashboardTicketsWidget role={role} tickets={tickets} currentUser={currentUser} navigate={navigate} />;
+  if (widgetId === 'assets-devices') return <DashboardAssetsWidget role={role} assets={assets} currentUser={currentUser} navigate={navigate} />;
+  if (widgetId === 'desktop-monitoring') return <DashboardMonitoringWidget role={role} navigate={navigate} />;
   if (widgetId === 'operations') return <OpsCharts />;
   if (widgetId === 'live-view') return <LiveViewSection title={role === 'Admin' ? 'Live Desktop View' : 'Team Live View'} subtitle={role === 'Admin' ? 'Employees currently active' : 'Your direct reports currently active'} limit={role === 'Admin' ? 6 : 3} onViewAll={() => navigate(role.toLowerCase(), 'live-view')} />;
   if (widgetId === 'screenshots') return <ScreenshotsSection title={role === 'Admin' ? 'Recent Screenshots' : 'Recent Team Screenshots'} subtitle={role === 'Admin' ? 'Latest scheduled captures' : 'Latest captures from your team'} limit={8} onViewAll={() => navigate(role.toLowerCase(), 'screenshots')} />;
@@ -1042,18 +1057,95 @@ function DashboardWidgetContent({ widgetId, role, scopeUsers, scopeApps, current
     <div className="flex items-center gap-3"><Avatar name={currentUser.name} size={42} /><div><h2 className="font-display font-bold text-lg">Welcome, {currentUser.name}</h2><p className="text-xs text-muted mt-0.5">Employee Portal</p></div></div>
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">{[['WFH Applications','Submit and review your remote-work requests.','wfh'],['My Tickets','Submit and track your IT support requests.','tickets'],['Assigned Assets','View company equipment assigned to you.','assets']].map(([title, desc, page]) => <button key={page} onClick={() => navigate('employee', page)} className="p-4 rounded-xl border border-[var(--border)] text-left hover-surface"><div className="font-semibold text-sm">{title}</div><div className="text-[10px] text-muted mt-1">{desc}</div></button>)}</div>
   </div>;
-  if (widgetId === 'my-assets') return <div className="flex flex-col gap-2">
-    {assets.length === 0 ? <p className="text-xs text-muted">No assets are currently assigned to you.</p> : assets.slice(0, 5).map(asset => <div key={asset.id} className="flex items-center gap-3 p-3 rounded-lg border border-[var(--border)]"><div className="w-9 h-9 rounded-lg flex items-center justify-center accent-bg shrink-0"><Package size={16} /></div><div className="min-w-0"><div className="text-xs font-semibold truncate">{asset.name}</div><div className="text-[10px] text-muted">{asset.assetTag} · {asset.type}</div></div></div>)}
-    <button onClick={() => navigate('employee', 'assets')} className="text-xs font-bold accent-text self-start">View all assets</button>
-  </div>;
-  if (widgetId === 'my-work') {
-    const myTickets = tickets.filter(t => String(t.userId ?? t.createdBy ?? t.employeeId) === String(currentUser.id));
-    return <div className="grid grid-cols-2 gap-3">
-      <div className="rounded-lg border border-[var(--border)] p-3"><div className="text-xs text-muted">WFH requests</div><div className="text-2xl font-bold mt-1">{scopeApps.length}</div><div className="text-[10px] text-muted">{scopeApps.filter(a => a.status === 'pending').length} pending</div><button onClick={() => navigate('employee','wfh')} className="text-xs font-bold accent-text mt-2">Open requests</button></div>
-      <div className="rounded-lg border border-[var(--border)] p-3"><div className="text-xs text-muted">Support tickets</div><div className="text-2xl font-bold mt-1">{myTickets.length}</div><div className="text-[10px] text-muted">{myTickets.filter(t => !['Closed','Resolved'].includes(t.status)).length} open</div><button onClick={() => navigate('employee','tickets')} className="text-xs font-bold accent-text mt-2">Open tickets</button></div>
-    </div>;
-  }
+  if (widgetId === 'my-assets') return <DashboardAssetsWidget role="Employee" assets={assets} currentUser={currentUser} navigate={navigate} />;
+  if (widgetId === 'my-work') return <DashboardMyWorkWidget scopeApps={scopeApps} tickets={tickets} currentUser={currentUser} navigate={navigate} />;
   return null;
+}
+
+function DashboardMetric({ label, value, tone = 'neutral', hint }) {
+  return <div className="rounded-lg border border-[var(--border)] p-3 min-w-0"><div className="text-[11px] text-muted">{label}</div><div className="text-2xl font-bold mt-1" style={{ color: tone === 'danger' ? 'var(--danger)' : tone === 'success' ? 'var(--success)' : tone === 'warning' ? 'var(--warning)' : 'var(--text)' }}>{value}</div>{hint && <div className="text-[10px] text-muted mt-1">{hint}</div>}</div>;
+}
+
+function DashboardAttendanceWidget({ role, scopeUsers, scopeApps, currentUser, navigate }) {
+  const { timeSessions } = useApp();
+  const today = new Date().toLocaleDateString('en-CA');
+  const usersInScope = role === 'Employee' ? [currentUser] : scopeUsers.filter(u => u.role === 'Employee');
+  const ids = new Set(usersInScope.map(u => String(u.id)));
+  const todaysSessions = timeSessions.filter(session => {
+    const userId = session.userId ?? session.employeeId;
+    const dateValue = session.date || session.startedAt || session.startTime || session.createdAt;
+    return ids.has(String(userId)) && dateValue && new Date(dateValue).toLocaleDateString('en-CA') === today;
+  });
+  const presentIds = new Set(todaysSessions.filter(session => !session.endTime && !session.endedAt && !session.completedAt).map(session => String(session.userId ?? session.employeeId)));
+  const present = role === 'Employee' ? (currentUser.status === 'active' ? 1 : presentIds.size) : presentIds.size;
+  const total = usersInScope.length;
+  const late = todaysSessions.filter(session => session.late === true || session.isLate === true).length;
+  const upcoming = scopeApps.filter(app => {
+    const dateValue = app.date || app.scheduleDate || app.startDate;
+    return ids.has(String(app.userId)) && dateValue && new Date(dateValue).toLocaleDateString('en-CA') >= today && !['rejected', 'cancelled'].includes(String(app.status).toLowerCase());
+  }).length;
+  return <div className="flex flex-col gap-3">
+    <div className="grid grid-cols-2 xl:grid-cols-4 gap-2">
+      <DashboardMetric label={role === 'Employee' ? 'Working now' : "Today's working"} value={present} tone="success" />
+      <DashboardMetric label="Not checked in" value={Math.max(0, total - present)} />
+      <DashboardMetric label="Late arrivals recorded" value={late} tone={late ? 'warning' : 'neutral'} />
+      <DashboardMetric label="Upcoming schedules / requests" value={upcoming} />
+    </div>
+    <p className="text-[10px] text-muted">Attendance counts use existing time-session and user-status data. Late arrivals are counted only where the stored session explicitly marks them late.</p>
+    <button onClick={() => navigate(role === 'Admin' ? 'admin' : role === 'Manager' ? 'manager' : 'employee', role === 'Employee' ? 'wfh' : 'schedules')} className="text-xs font-bold accent-text self-start">{role === 'Employee' ? 'View my requests and schedule' : 'View schedules and attendance'}</button>
+  </div>;
+}
+
+function DashboardTicketsWidget({ role, tickets, currentUser, navigate }) {
+  const scoped = role === 'Employee' ? tickets.filter(t => String(t.userId ?? t.createdBy ?? t.employeeId) === String(currentUser.id)) : tickets;
+  const active = scoped.filter(t => !['Closed', 'Resolved'].includes(String(t.status).toLowerCase()));
+  const pending = scoped.filter(t => String(t.status).toLowerCase() === 'pending');
+  const urgent = scoped.filter(t => /urgent|critical|high/i.test(String(t.priority || t.severity || '')));
+  const resolved = scoped.filter(t => ['Closed', 'Resolved'].includes(String(t.status)));
+  const recent = [...resolved].sort((a,b) => new Date(b.updatedAt || b.resolvedAt || b.createdAt || 0) - new Date(a.updatedAt || a.resolvedAt || a.createdAt || 0)).slice(0,3);
+  return <div className="flex flex-col gap-3">
+    <div className="grid grid-cols-2 xl:grid-cols-4 gap-2"><DashboardMetric label={role === 'Employee' ? 'My open tickets' : 'Open tickets'} value={active.length} tone="warning"/><DashboardMetric label="Pending" value={pending.length}/><DashboardMetric label="Urgent / critical" value={urgent.length} tone={urgent.length ? 'danger' : 'neutral'}/><DashboardMetric label="Resolved / closed" value={resolved.length} tone="success"/></div>
+    <div><div className="text-xs font-semibold mb-2">Recently resolved</div>{recent.length ? <div className="flex flex-col gap-2">{recent.map(t=><div key={t.id} className="flex items-center justify-between gap-3 text-xs border-b border-[var(--border)] pb-2"><span className="truncate">{t.title || t.subject || ('Ticket #' + t.id)}</span><span className="text-muted shrink-0">{t.updatedAt || t.resolvedAt ? new Date(t.updatedAt || t.resolvedAt).toLocaleDateString() : t.status}</span></div>)}</div> : <p className="text-xs text-muted">No resolved tickets to show yet.</p>}</div>
+    <button onClick={() => navigate(role.toLowerCase(), 'tickets')} className="text-xs font-bold accent-text self-start">View support tickets</button>
+  </div>;
+}
+
+function DashboardAssetsWidget({ role, assets, currentUser, navigate }) {
+  const scoped = role === 'Employee' ? assets.filter(a => String(a.assignedTo ?? a.employeeId ?? a.assignedUserId ?? '') === String(currentUser.id) || (Array.isArray(a.assignments) && a.assignments.some(x => String(x.employeeId ?? x.userId) === String(currentUser.id)))) : assets;
+  const available = scoped.filter(a => String(a.status).toLowerCase() === 'available');
+  const assigned = scoped.filter(a => ['in use','assigned'].includes(String(a.status).toLowerCase()));
+  const maintenance = scoped.filter(a => String(a.status).toLowerCase() === 'maintenance');
+  const lowStock = scoped.filter(a => Number.isFinite(Number(a.quantity)) && Number(a.quantity) > 0 && Number(a.quantity) <= Number(a.lowStockThreshold ?? a.reorderLevel ?? 2));
+  return <div className="flex flex-col gap-3">
+    <div className="grid grid-cols-2 xl:grid-cols-4 gap-2"><DashboardMetric label="Available" value={available.length} tone="success"/><DashboardMetric label={role === 'Employee' ? 'Assigned to me' : 'Assigned / in use'} value={role === 'Employee' ? scoped.length : assigned.length}/><DashboardMetric label="Maintenance" value={maintenance.length} tone={maintenance.length ? 'warning' : 'neutral'}/><DashboardMetric label="Low stock" value={lowStock.length} tone={lowStock.length ? 'danger' : 'neutral'}/></div>
+    {lowStock.length > 0 && <div className="text-xs text-muted">{lowStock.slice(0,3).map(a => (a.name || a.type || 'Item') + ': ' + a.quantity).join(' · ')}</div>}
+    <button onClick={() => navigate(role.toLowerCase(), 'assets')} className="text-xs font-bold accent-text self-start">{role === 'Employee' ? 'View my assigned assets' : 'Open asset inventory'}</button>
+  </div>;
+}
+
+function DashboardMonitoringWidget({ role, navigate }) {
+  const { tiles, loading } = useLiveView(15000);
+  const [devices, setDevices] = useState([]);
+  const [deviceError, setDeviceError] = useState(false);
+  useEffect(() => {
+    let active = true;
+    if (role !== 'Admin') return () => { active = false; };
+    api.agent.devices().then(data => { if (active) setDevices(Array.isArray(data) ? data : []); }).catch(() => { if (active) setDeviceError(true); });
+    return () => { active = false; };
+  }, [role]);
+  const online = tiles.length;
+  const paired = devices.length;
+  const offline = devices.filter(d => d.revoked || d.status === 'offline' || d.online === false).length;
+  return <div className="flex flex-col gap-3">
+    <div className="grid grid-cols-2 xl:grid-cols-3 gap-2"><DashboardMetric label="Live devices" value={loading ? '…' : online} tone="success"/><DashboardMetric label={role === 'Admin' ? 'Paired devices' : 'Live team devices'} value={role === 'Admin' ? (deviceError ? '—' : paired) : (loading ? '…' : online)}/><DashboardMetric label="Offline / revoked records" value={role === 'Admin' ? (deviceError ? '—' : offline) : '—'} tone={offline ? 'warning' : 'neutral'}/></div>
+    <p className="text-[10px] text-muted">{role === 'Admin' ? 'Live count comes from the existing live-view feed. Device counts use the paired-device API; unavailable data is shown as —.' : 'Live device data is limited to the monitoring feed available to your account.'}</p>
+    <button onClick={() => navigate(role.toLowerCase(), 'live-view')} className="text-xs font-bold accent-text self-start">Open desktop monitoring</button>
+  </div>;
+}
+
+function DashboardMyWorkWidget({ scopeApps, tickets, currentUser, navigate }) {
+  const myTickets = tickets.filter(t => String(t.userId ?? t.createdBy ?? t.employeeId) === String(currentUser.id));
+  return <div className="grid grid-cols-2 gap-3"><div className="rounded-lg border border-[var(--border)] p-3"><div className="text-xs text-muted">WFH requests</div><div className="text-2xl font-bold mt-1">{scopeApps.length}</div><div className="text-[10px] text-muted">{scopeApps.filter(a => a.status === 'pending').length} pending</div><button onClick={() => navigate('employee','wfh')} className="text-xs font-bold accent-text mt-2">Open requests</button></div><div className="rounded-lg border border-[var(--border)] p-3"><div className="text-xs text-muted">Support tickets</div><div className="text-2xl font-bold mt-1">{myTickets.length}</div><div className="text-[10px] text-muted">{myTickets.filter(t => !['Closed','Resolved'].includes(t.status)).length} open</div><button onClick={() => navigate('employee','tickets')} className="text-xs font-bold accent-text mt-2">Open tickets</button></div></div>;
 }
 
 function CustomizableDashboard({ role }) {
