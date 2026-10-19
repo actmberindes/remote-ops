@@ -51,6 +51,11 @@ new employee.
   `/api/applications` request only ever returns their own direct reports —
   enforced on the server, not just hidden in the UI.
 
+
+### Customizable dashboards
+
+Admin, Manager, and Employee dashboards support personal widget layouts. Use **Customize dashboard** to add or remove role-appropriate widgets, drag widgets to reorder them, rename widgets, and choose one-, two-, or full-width sizing. Layouts are saved in the browser's local storage per signed-in user and role; **Reset layout** restores the role's default widgets. Dashboard widget availability follows the existing role-specific data scopes and API permissions. Layouts are device/browser-specific rather than synchronized across devices.
+
 ## What's stored where
 
 `backend/data/db.json` is the single source of truth: users, WFH
