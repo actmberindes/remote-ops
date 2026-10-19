@@ -3164,8 +3164,8 @@ const COMPONENT_PARENT_TYPES = {
 
 // Drives the dynamic "Specifications" section of the Add/Edit Asset form — different fields per asset type.
 const TYPE_SPEC_FIELDS = {
-  Desktop: ['Motherboard', 'CPU', 'RAM', 'Storage Size', 'Video Card', 'OS'],
-  Laptop: ['Motherboard', 'CPU', 'RAM', 'Storage Size', 'Video Card', 'OS'],
+  Desktop: ['Motherboard', 'CPU', 'RAM', 'Storage Size', 'Video Card', 'OS', 'Hostname', 'OS Product Key'],
+  Laptop: ['Motherboard', 'CPU', 'RAM', 'Storage Size', 'Video Card', 'OS', 'Hostname', 'OS Product Key'],
   Monitor: ['Display Size', 'Panel Type', 'Resolution', 'Viewing Angle', 'Refresh Rate', 'Inputs', 'Wall Mount Compatible'],
   Printer: ['Print Type', 'Connectivity', 'Duty Cycle', 'Paper Size'],
   Server: ['CPU', 'RAM', 'Storage Size', 'RAID Configuration', 'OS'],
@@ -3312,7 +3312,17 @@ function AssetFormModal({ isOpen, onClose, asset, onSaved }) {
                   <input className={inputCls} value={form.specs[fieldName] || ''} onChange={e => setSpec(fieldName, e.target.value)} />
                 </Field>
               ))}
+              {specFields.includes('Storage Size') && Object.prototype.hasOwnProperty.call(form.specs, 'Storage Size 2') && (
+                <Field label="Storage Size 2">
+                  <input className={inputCls} value={form.specs['Storage Size 2'] || ''} onChange={e => setSpec('Storage Size 2', e.target.value)} placeholder="e.g. 1 TB SSD" />
+                </Field>
+              )}
             </div>
+            {specFields.includes('Storage Size') && !Object.prototype.hasOwnProperty.call(form.specs, 'Storage Size 2') && (
+              <button type="button" onClick={() => setSpec('Storage Size 2', '')} className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--accent)] hover:underline">
+                <Plus size={13} /> Add another storage size
+              </button>
+            )}
           </div>
         )}
 
@@ -3811,8 +3821,11 @@ function AssetHistoryModal({ isOpen, onClose, asset }) {
 
 function AssetDetailModal({ isOpen, onClose, asset }) {
   if (!asset) return null;
-  const specFields = TYPE_SPEC_FIELDS[asset.type] || [];
   const specs = asset.specs || {};
+  const specFields = [
+    ...(TYPE_SPEC_FIELDS[asset.type] || []),
+    ...(specs['Storage Size 2'] ? ['Storage Size 2'] : []),
+  ];
   const hasAnySpec = specFields.some(f => specs[f]);
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={asset.name}>
