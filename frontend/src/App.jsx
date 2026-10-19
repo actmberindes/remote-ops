@@ -1082,7 +1082,19 @@ function CustomizableDashboard({ role }) {
   const [settingsWidget, setSettingsWidget] = useState(null);
   const [draggingId, setDraggingId] = useState(null);
   useEffect(() => { try { localStorage.setItem(storageKey, JSON.stringify(layout)); } catch {} }, [layout, storageKey]);
-  useEffect(() => { setLayout(current => current.filter(w => defaults.some(d => d.id === w.id))); }, [storageKey]);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
+      if (Array.isArray(saved)) {
+        setLayout(saved.filter(w => defaults.some(d => d.id === w.id)).map(w => {
+          const base = defaults.find(d => d.id === w.id);
+          return { ...base, ...w, span: Math.max(1, Math.min(3, Number(w.span) || base.span)) };
+        }));
+        return;
+      }
+    } catch {}
+    setLayout(defaults.map(w => ({ ...w })));
+  }, [storageKey]);
   const available = defaults.filter(w => !layout.some(item => item.id === w.id));
   const updateWidget = (id, changes) => setLayout(current => current.map(w => w.id === id ? { ...w, ...changes } : w));
   const moveWidget = targetId => {
@@ -1105,8 +1117,8 @@ function CustomizableDashboard({ role }) {
     </div>
     {editing && <div className="rounded-lg border border-[var(--border)] p-3 text-xs text-muted">Drag widgets by their header to reorder them. Open Settings to rename or resize a widget, or remove widgets you don't need.</div>}
     {layout.length === 0 ? <div className="rounded-xl border border-dashed border-[var(--border)] p-10 text-center"><p className="text-sm font-semibold">Your dashboard is empty</p><p className="text-xs text-muted mt-1">Add a widget to get started.</p></div> :
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
-        {layout.map(widget => <section key={widget.id} onDragOver={e => { if (editing) e.preventDefault(); }} onDrop={e => { e.preventDefault(); moveWidget(widget.id); }} className="min-w-0" style={{ gridColumn: 'span ' + Math.min(3, Math.max(1, widget.span || 1)) + ' / span ' + Math.min(3, Math.max(1, widget.span || 1)) }}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
+        {layout.map(widget => <section key={widget.id} onDragOver={e => { if (editing) e.preventDefault(); }} onDrop={e => { e.preventDefault(); moveWidget(widget.id); }} className={"min-w-0 " + (widget.span === 3 ? "lg:col-span-3" : widget.span === 2 ? "lg:col-span-2" : "lg:col-span-1")}>
           <div className="h-full rounded-xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
             <div draggable={editing} onDragStart={e => { setDraggingId(widget.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', widget.id); }} onDragEnd={() => setDraggingId(null)} className={'flex items-center gap-2 px-4 py-3 border-b border-[var(--border)] ' + (editing ? 'cursor-grab active:cursor-grabbing' : '')}>
               <span className="flex-1 min-w-0 text-sm font-display font-bold truncate">{widget.title}</span>
