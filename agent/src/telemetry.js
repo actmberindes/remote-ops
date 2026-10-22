@@ -18,7 +18,9 @@ function run(command, args) {
 }
 
 function getMachineId() {
-  if (process.platform !== 'win32') return os.hostname();
+  if (process.platform !== 'win32') {
+    throw new Error('Device enrollment requires Windows MachineGuid; this agent is intended to run on Windows.');
+  }
 
   const output = run('reg.exe', [
     'query',
@@ -28,7 +30,12 @@ function getMachineId() {
   ]);
 
   const match = output.match(/MachineGuid\s+REG_SZ\s+(.+)/i);
-  return match ? match[1].trim() : os.hostname();
+  const machineId = match ? match[1].trim() : '';
+  if (!machineId || !/^[0-9a-f-]{16,}$/i.test(machineId)) {
+    throw new Error('Unable to read a valid Windows MachineGuid. Run the installer as Administrator and try again; enrollment was stopped to avoid using a non-unique hostname as the device ID.');
+  }
+
+  return machineId;
 }
 
 function getPrimaryIPv4() {
