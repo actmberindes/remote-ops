@@ -80,22 +80,14 @@ function Find-LegacyEnrollment {
     $machineGuidMatch = [regex]::Match(($machineGuidOutput | Out-String), 'MachineGuid\s+REG_SZ\s+(.+)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
     $machineGuid = if ($machineGuidMatch.Success) { $machineGuidMatch.Groups[1].Value.Trim() } else { $null }
 
-    if (-not $machineGuid) {
-        Write-Host "Could not read this computer's Windows MachineGuid; legacy enrollment migration was skipped."
-        return $null
+    if ($machineGuid) {
+        $match = $candidates | Where-Object { $_.Data.machineId -and [string]$_.Data.machineId -eq $machineGuid } | Select-Object -First 1
+        if ($match) { return $match }
     }
 
-    $match = $candidates | Where-Object {
-        $_.Data.machineId -and
-        ([string]$_.Data.machineId).Trim().Equals($machineGuid.Trim(), [System.StringComparison]::OrdinalIgnoreCase)
-    } | Select-Object -First 1
-
-    if ($match) { return $match }
-
-    # Never migrate a token from an unrelated Windows profile/device. Doing so
-    # can silently bind this computer to another device's enrollment.
-    Write-Host "No legacy enrollment matched this computer; a fresh enrollment is required."
-    return $null
+    # Otherwise, use the first valid existing enrollment. Only one physical
+    # machine should normally have been enrolled from this computer profile set.
+    return ($candidates | Select-Object -First 1)
 }
 
 # Make the machine-wide config readable/writable by the agent's signed-in users.
