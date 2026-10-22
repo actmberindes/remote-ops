@@ -27,16 +27,14 @@ function resolveCurrentEmployee(domainUser) {
   const slash = normalized.lastIndexOf('\\');
   const username = slash >= 0 ? normalized.slice(slash + 1) : normalized;
   return db.data.users.find(u => {
-    // Registration owner (and therefore "current user") can be an Employee
-    // or a Manager — see POST /devices/register in agent.js.
-    if (u.role !== 'Employee' && u.role !== 'Manager') return false;
+    if (u.role !== 'Employee') return false;
     const emailLocal = String(u.email || '').split('@')[0].trim().toLowerCase();
     return emailLocal && emailLocal === username;
   }) || null;
 }
 
 function currentEmployee(device) {
-  const direct = device?.currentEmployeeId ? db.data.users.find(u => u.id === device.currentEmployeeId && (u.role === 'Employee' || u.role === 'Manager')) : null;
+  const direct = device?.currentEmployeeId ? db.data.users.find(u => u.id === device.currentEmployeeId && u.role === 'Employee') : null;
   return direct || resolveCurrentEmployee(device?.domainUser);
 }
 

@@ -52,11 +52,8 @@ export default function AdminDeviceManagementPanel({ users = [], addToast }) {
   const [selectedDeviceId, setSelectedDeviceId] = useState(null);
   const [statusFilter, setStatusFilter] = useState('');
 
-  // Registration owner can be any Employee or Manager — Managers are
-  // included so a device used by/assigned to a manager can be registered
-  // under their own name too, not just rank-and-file Employees.
   const employees = useMemo(
-    () => users.filter(u => u.role === 'Employee' || u.role === 'Manager'),
+    () => users.filter(u => u.role === 'Employee'),
     [users]
   );
 
@@ -183,8 +180,8 @@ export default function AdminDeviceManagementPanel({ users = [], addToast }) {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <label className="text-xs font-semibold">Registration Owner
                 <select className="w-full mt-1 rounded-lg px-3 py-2 input-surface text-xs" value={employeeId} onChange={e => setEmployeeId(e.target.value)}>
-                  <option value="">Select employee or manager…</option>
-                  {employees.map(e => <option key={e.id} value={e.id}>{e.name} — {e.department}{e.role === 'Manager' ? ' (Manager)' : ''}</option>)}
+                  <option value="">Select employee…</option>
+                  {employees.map(e => <option key={e.id} value={e.id}>{e.name} — {e.department}</option>)}
                 </select>
                 <span className="block text-[10px] font-normal text-muted mt-1">Used for device inventory. Current usage can switch between employees.</span>
               </label>
