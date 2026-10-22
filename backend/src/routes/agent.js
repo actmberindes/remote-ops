@@ -83,8 +83,26 @@ agentRouter.post('/enroll', async (req, res) => {
   if (!device) return res.status(404).json({ error: 'Invalid or already-used enrollment code.' });
   if (!device.enrollmentExpiresAt || device.enrollmentExpiresAt < Date.now()) return res.status(410).json({ error: 'This enrollment code has expired. Ask an Admin to register the device again.' });
   if (device.type !== deviceType) return res.status(400).json({ error: `This enrollment code is for a ${device.type} device.` });
-  const existing = db.data.devices.find(d => d.id !== device.id && d.machineId && d.machineId === machineId && !d.revoked);
-  if (existing) return res.status(409).json({ error: 'This computer is already enrolled as another managed device.' });
+  // Only an actively enrolled device can reserve a machine identity. Pending/legacy
+  // registration records must not block a fresh enrollment just because they contain
+  // a stale machineId from an earlier version or a failed migration.
+  const normalizedMachineId = String(machineId).trim().toLowerCase();
+  const existing = db.data.devices.find(d =>
+    d.id !== device.id &&
+    d.enrolled === true &&
+    d.revoked !== true &&
+    String(d.machineId || '').trim().toLowerCase() === normalizedMachineId
+  );
+  if (existing) {
+    console.warn('[agent/enroll] Duplicate machine identity rejected', {
+      requestedDeviceId: device.id,
+      existingDeviceId: existing.id,
+      requestedDeviceType: device.type,
+      existingDeviceType: existing.type,
+      existingEnrolled: existing.enrolled === true,
+    });
+    return res.status(409).json({ error: 'This computer is already enrolled as another managed device.' });
+  }
   const now = new Date().toISOString();
   const resolvedEmployee = resolveCurrentEmployee(domainUser);
   device.enrolled = true; device.enrolledAt = now; device.pairedAt = now; device.enrollmentCode = null; device.enrollmentExpiresAt = null;
