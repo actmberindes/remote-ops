@@ -25,9 +25,9 @@ async function runPairingFlow({ log = console.log } = {}) {
 
   const client = createClient(config.apiUrl);
   const code = await ask('Enrollment code: ');
-  const telemetry = getDeviceState();
 
   try {
+    const telemetry = getDeviceState();
     const result = await client.enroll(code, {
       machineId: telemetry.machineId,
       hostname: telemetry.hostname,
